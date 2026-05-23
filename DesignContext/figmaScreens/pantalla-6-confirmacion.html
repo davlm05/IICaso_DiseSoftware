@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartCart – Confirmacion final</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #e8ede8; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Segoe UI', system-ui, sans-serif; padding: 52px 0 20px; }
+.screen-tag { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: #1a7a58; color: white; font-size: 11px; font-weight: 600; padding: 5px 16px; border-radius: 20px; white-space: nowrap; z-index: 100; }
+.phone { width: 360px; height: 720px; background: #f5f7f5; border-radius: 44px; border: 2px solid #c8d0c8; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,0.13); }
+.statusbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px 2px; font-size: 11px; color: #7a8a7a; }
+.notch { width: 68px; height: 14px; background: #dce4dc; border-radius: 0 0 10px 10px; margin: 0 auto; }
+.topbar { display: flex; align-items: center; justify-content: center; padding: 11px 18px; border-bottom: 1px solid #dfe6df; background: #f5f7f5; }
+.topbar-title { font-size: 16px; font-weight: 700; color: #1a2a1a; }
+
+.content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 14px 16px; gap: 13px; }
+
+/* HERO */
+.hero { background: #1D9E75; border-radius: 22px; padding: 24px 20px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; color: white; }
+.hero-icon-wrap { width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+.hero-icon-wrap i { font-size: 30px; color: white; }
+.hero-title { font-size: 21px; font-weight: 800; letter-spacing: -0.5px; }
+.hero-sub { font-size: 12px; opacity: 0.85; }
+
+/* POINTS RESULT */
+.pts-result { background: white; border: 1px solid #dfe6df; border-radius: 18px; padding: 18px 16px; display: flex; align-items: center; gap: 14px; }
+.pts-result-big { font-size: 50px; font-weight: 800; color: #1D9E75; line-height: 1; letter-spacing: -2px; }
+.pts-result-info { flex: 1; }
+.pts-result-label { font-size: 10px; font-weight: 700; color: #7a8a7a; text-transform: uppercase; letter-spacing: 0.5px; }
+.pts-result-total { font-size: 15px; font-weight: 700; color: #1a2a1a; margin-top: 4px; }
+.pts-result-bar-bg { margin-top: 8px; height: 6px; background: #dfe6df; border-radius: 10px; overflow: hidden; }
+.pts-result-bar-fill { height: 100%; width: 76.5%; background: #1D9E75; border-radius: 10px; }
+.pts-result-next { font-size: 11px; color: #7a8a7a; margin-top: 4px; }
+.pts-result-star { font-size: 28px; color: #e6ac00; }
+
+/* PRODUCTS VALIDATED */
+.sec-head { display: flex; justify-content: space-between; align-items: center; }
+.sec-title { font-size: 11px; font-weight: 700; color: #7a8a7a; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.list-card { background: white; border: 1px solid #dfe6df; border-radius: 14px; overflow: hidden; }
+.list-row { display: flex; align-items: center; gap: 11px; padding: 11px 14px; border-bottom: 1px solid #eff4ef; }
+.list-row:last-child { border-bottom: none; }
+.row-check { width: 24px; height: 24px; border-radius: 50%; background: #e4f0ea; border: 1.5px solid #1D9E75; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.row-check i { font-size: 11px; color: #1D9E75; }
+.row-icon { width: 32px; height: 32px; border-radius: 10px; background: #f0f5f0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #5a8a6a; flex-shrink: 0; }
+.row-name { flex: 1; font-size: 13px; font-weight: 600; color: #1a2a1a; }
+.row-pts { background: #e4f0ea; color: #0d6e48; font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 10px; }
+
+/* TICKET TOTAL */
+.ticket-total { background: white; border: 1px solid #dfe6df; border-radius: 14px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }
+.ticket-label { font-size: 12px; color: #7a8a7a; }
+.ticket-amount { font-size: 16px; font-weight: 800; color: #1a2a1a; }
+
+/* BUTTONS */
+.btn-primary { width: 100%; background: #1D9E75; color: white; border: none; border-radius: 16px; padding: 15px 0; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: default; font-family: inherit; }
+.btn-secondary { width: 100%; background: transparent; color: #1D9E75; border: 1.5px solid #1D9E75; border-radius: 16px; padding: 13px 0; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: default; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="screen-tag">6 de 6 — Puntos acreditados</div>
+<div class="phone">
+  <div class="statusbar"><span>9:58</span><div class="notch"></div><span>85%</span></div>
+  <div class="topbar">
+    <div class="topbar-title">Compra validada</div>
+  </div>
+  <div class="content">
+
+    <!-- HERO -->
+    <div class="hero">
+      <div class="hero-icon-wrap"><i class="fa-solid fa-check"></i></div>
+      <div class="hero-title">Puntos acreditados</div>
+      <div class="hero-sub">Tu compra fue verificada en caja</div>
+    </div>
+
+    <!-- POINTS -->
+    <div class="pts-result">
+      <div class="pts-result-big">+33</div>
+      <div class="pts-result-info">
+        <div class="pts-result-label">Puntos ganados hoy</div>
+        <div class="pts-result-total">Total: 153 pts</div>
+        <div class="pts-result-bar-bg"><div class="pts-result-bar-fill"></div></div>
+        <div class="pts-result-next">Te faltan 47 pts para tu descuento</div>
+      </div>
+      <div class="pts-result-star"><i class="fa-solid fa-star"></i></div>
+    </div>
+
+    <!-- VALIDATED PRODUCTS -->
+    <div class="sec-head">
+      <div class="sec-title">Productos validados</div>
+    </div>
+    <div class="list-card">
+      <div class="list-row">
+        <div class="row-check"><i class="fa-solid fa-check"></i></div>
+        <div class="row-icon"><i class="fa-solid fa-mug-hot"></i></div>
+        <div class="row-name">Cafe Britt 500g</div>
+        <div class="row-pts">+15 pts</div>
+      </div>
+      <div class="list-row">
+        <div class="row-check"><i class="fa-solid fa-check"></i></div>
+        <div class="row-icon"><i class="fa-solid fa-droplet"></i></div>
+        <div class="row-name">Aceite Numar 1L</div>
+        <div class="row-pts">+10 pts</div>
+      </div>
+      <div class="list-row">
+        <div class="row-check"><i class="fa-solid fa-check"></i></div>
+        <div class="row-icon"><i class="fa-solid fa-cookie-bite"></i></div>
+        <div class="row-name">Galletas Pozuelo</div>
+        <div class="row-pts">+8 pts</div>
+      </div>
+    </div>
+
+    <!-- TICKET -->
+    <div class="ticket-total">
+      <div class="ticket-label">Total comprado en patrocinados</div>
+      <div class="ticket-amount">7,590</div>
+    </div>
+
+    <div class="btn-primary"><i class="fa-solid fa-house"></i> Volver al inicio</div>
+    <div class="btn-secondary"><i class="fa-solid fa-gift"></i> Ver mis recompensas</div>
+
+  </div>
+</div>
+</body>
+</html>

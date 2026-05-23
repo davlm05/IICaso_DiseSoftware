@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartCart – Confirmar producto</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #e8ede8; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Segoe UI', system-ui, sans-serif; padding: 52px 0 20px; }
+.screen-tag { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: #1a7a58; color: white; font-size: 11px; font-weight: 600; padding: 5px 16px; border-radius: 20px; white-space: nowrap; z-index: 100; }
+.phone { width: 360px; height: 720px; background: #f5f7f5; border-radius: 44px; border: 2px solid #c8d0c8; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,0.13); }
+.statusbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px 2px; font-size: 11px; color: #7a8a7a; }
+.notch { width: 68px; height: 14px; background: #dce4dc; border-radius: 0 0 10px 10px; margin: 0 auto; }
+
+.topbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid #dfe6df; background: #f5f7f5; }
+.back-btn { width: 32px; height: 32px; border-radius: 10px; background: #e4f0ea; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.back-btn i { font-size: 13px; color: #1D9E75; }
+.topbar-title { font-size: 16px; font-weight: 700; color: #1a2a1a; flex: 1; }
+
+.content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 16px; gap: 13px; }
+
+/* QUESTION */
+.question-row { text-align: center; padding: 4px 0 2px; }
+.question-icon-wrap { width: 56px; height: 56px; border-radius: 50%; background: #e4f0ea; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+.question-icon-wrap i { font-size: 24px; color: #1D9E75; }
+.question-title { font-size: 18px; font-weight: 800; color: #1a2a1a; }
+.question-sub { font-size: 12px; color: #7a8a7a; margin-top: 4px; line-height: 1.5; }
+
+/* PRODUCT BIG */
+.product-big { background: white; border: 2px solid #1D9E75; border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 6px 20px rgba(29,158,117,0.15); }
+.product-top { display: flex; gap: 13px; align-items: center; }
+.product-icon-big { width: 72px; height: 72px; border-radius: 16px; background: linear-gradient(135deg, #8B5A2B, #5C3A1E); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.product-icon-big i { font-size: 32px; color: white; }
+.product-text { flex: 1; }
+.product-name-big { font-size: 16px; font-weight: 800; color: #1a2a1a; line-height: 1.2; }
+.product-brand-big { font-size: 11px; color: #7a8a7a; margin-top: 3px; }
+.product-price-big { font-size: 14px; color: #1a2a1a; font-weight: 700; margin-top: 6px; }
+.product-pts-big { background: #1D9E75; color: white; font-size: 14px; font-weight: 800; padding: 8px 12px; border-radius: 12px; align-self: flex-start; }
+
+.product-bottom { padding-top: 12px; border-top: 1px dashed #dfe6df; display: flex; flex-direction: column; gap: 7px; }
+.product-detail { display: flex; justify-content: space-between; font-size: 12px; }
+.detail-label { color: #7a8a7a; }
+.detail-value { color: #1a2a1a; font-weight: 600; font-family: 'Courier New', monospace; }
+
+/* VERIFY ROW */
+.verify-card { background: #fff8e1; border: 1px solid #f0c040; border-radius: 12px; padding: 11px 14px; display: flex; align-items: center; gap: 10px; }
+.verify-card i { font-size: 16px; color: #b8860b; flex-shrink: 0; }
+.verify-text { font-size: 12px; color: #5a4200; line-height: 1.5; }
+.verify-text strong { color: #3a2a00; }
+
+/* BUTTONS */
+.btn-primary { width: 100%; background: #1D9E75; color: white; border: none; border-radius: 16px; padding: 16px 0; font-size: 15px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: default; font-family: inherit; box-shadow: 0 4px 12px rgba(29,158,117,0.25); }
+.btn-secondary { width: 100%; background: white; color: #c0392b; border: 1.5px solid #f5c4be; border-radius: 16px; padding: 13px 0; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: default; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="screen-tag">2C — Confirmar producto</div>
+<div class="phone">
+  <div class="statusbar"><span>9:42</span><div class="notch"></div><span>87%</span></div>
+  <div class="topbar">
+    <div class="back-btn"><i class="fa-solid fa-arrow-left"></i></div>
+    <div class="topbar-title">Confirmar producto</div>
+  </div>
+  <div class="content">
+
+    <!-- QUESTION -->
+    <div class="question-row">
+      <div class="question-icon-wrap"><i class="fa-solid fa-circle-question"></i></div>
+      <div class="question-title">?Es este el producto?</div>
+      <div class="question-sub">Verifica que coincida con el que tienes en mano antes de continuar</div>
+    </div>
+
+    <!-- PRODUCT -->
+    <div class="product-big">
+      <div class="product-top">
+        <div class="product-icon-big"><i class="fa-solid fa-mug-hot"></i></div>
+        <div class="product-text">
+          <div class="product-name-big">Cafe Britt 500g</div>
+          <div class="product-brand-big">Marca: Cafe Britt</div>
+          <div class="product-price-big">3,250</div>
+        </div>
+        <div class="product-pts-big">+15 pts</div>
+      </div>
+      <div class="product-bottom">
+        <div class="product-detail">
+          <span class="detail-label">Codigo de barras</span>
+          <span class="detail-value">7441001823456</span>
+        </div>
+        <div class="product-detail">
+          <span class="detail-label">Presentacion</span>
+          <span class="detail-value">500g · Tueste oscuro</span>
+        </div>
+        <div class="product-detail">
+          <span class="detail-label">Categoria</span>
+          <span class="detail-value">Cafe y bebidas</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- VERIFY -->
+    <div class="verify-card">
+      <i class="fa-solid fa-eye"></i>
+      <div class="verify-text">
+        <strong>Verifica antes de continuar.</strong> El nombre, marca y presentacion deben coincidir con el producto fisico.
+      </div>
+    </div>
+
+    <div class="btn-primary"><i class="fa-solid fa-check"></i> Si, es este producto</div>
+    <div class="btn-secondary"><i class="fa-solid fa-xmark"></i> No, escanear de nuevo</div>
+
+  </div>
+</div>
+</body>
+</html>

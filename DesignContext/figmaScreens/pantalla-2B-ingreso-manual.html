@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartCart – Ingreso manual</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #e8ede8; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Segoe UI', system-ui, sans-serif; padding: 52px 0 20px; }
+.screen-tag { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: #1a7a58; color: white; font-size: 11px; font-weight: 600; padding: 5px 16px; border-radius: 20px; white-space: nowrap; z-index: 100; }
+.phone { width: 360px; height: 720px; background: #f5f7f5; border-radius: 44px; border: 2px solid #c8d0c8; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,0.13); }
+.statusbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px 2px; font-size: 11px; color: #7a8a7a; }
+.notch { width: 68px; height: 14px; background: #dce4dc; border-radius: 0 0 10px 10px; margin: 0 auto; }
+
+.topbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid #dfe6df; background: #f5f7f5; }
+.back-btn { width: 32px; height: 32px; border-radius: 10px; background: #e4f0ea; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.back-btn i { font-size: 13px; color: #1D9E75; }
+.topbar-title { font-size: 16px; font-weight: 700; color: #1a2a1a; flex: 1; }
+
+.content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 16px; gap: 14px; }
+
+/* HEADER */
+.header-card { background: white; border: 1px solid #dfe6df; border-radius: 16px; padding: 18px 16px; display: flex; gap: 13px; align-items: center; }
+.header-icon { width: 50px; height: 50px; border-radius: 14px; background: #e4f0ea; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.header-icon i { font-size: 22px; color: #1D9E75; }
+.header-info { flex: 1; }
+.header-title { font-size: 15px; font-weight: 800; color: #1a2a1a; }
+.header-sub { font-size: 12px; color: #7a8a7a; margin-top: 3px; line-height: 1.4; }
+
+/* INPUT LABEL */
+.input-label { font-size: 11px; font-weight: 700; color: #7a8a7a; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* INPUT */
+.input-wrap { position: relative; }
+.input-box { width: 100%; background: white; border: 1.5px solid #1D9E75; border-radius: 14px; padding: 16px 14px 16px 46px; font-size: 16px; font-weight: 700; color: #1a2a1a; outline: none; font-family: 'Courier New', monospace; letter-spacing: 2px; }
+.input-icon { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); font-size: 17px; color: #1D9E75; }
+.input-hint { font-size: 11px; color: #7a8a7a; margin-top: 6px; padding-left: 4px; }
+
+/* HELP TIP */
+.help-tip { background: #f0f8f4; border: 1px solid #9fd4b8; border-radius: 12px; padding: 11px 13px; display: flex; gap: 10px; align-items: flex-start; }
+.help-tip i { font-size: 14px; color: #1D9E75; margin-top: 1px; flex-shrink: 0; }
+.help-tip-text { font-size: 11px; color: #0d6e48; line-height: 1.5; }
+.help-tip-text strong { color: #0a4a30; }
+
+/* LOCATION */
+.loc-pill { background: white; border: 1px solid #9fd4b8; border-radius: 12px; padding: 9px 12px; display: flex; align-items: center; gap: 8px; }
+.loc-dot { width: 8px; height: 8px; border-radius: 50%; background: #1D9E75; flex-shrink: 0; }
+.loc-text { flex: 1; font-size: 12px; color: #1a2a1a; }
+.loc-text strong { color: #0d6e48; }
+.loc-icon { font-size: 13px; color: #1D9E75; }
+
+/* KEYPAD */
+.keypad { background: white; border: 1px solid #dfe6df; border-radius: 14px; padding: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
+.key { background: #f5f7f5; border: 1px solid #dfe6df; border-radius: 10px; padding: 14px 0; font-size: 18px; font-weight: 700; color: #1a2a1a; text-align: center; cursor: default; }
+.key-action { background: #e4f0ea; color: #1D9E75; font-size: 15px; }
+.key-action.delete { background: #fdecea; color: #c0392b; }
+
+/* BUTTONS */
+.btn-primary { width: 100%; background: #1D9E75; color: white; border: none; border-radius: 16px; padding: 15px 0; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: default; font-family: inherit; }
+.btn-secondary { width: 100%; background: transparent; color: #1D9E75; border: 1.5px solid #1D9E75; border-radius: 16px; padding: 13px 0; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: default; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="screen-tag">2B — Ingreso manual de codigo</div>
+<div class="phone">
+  <div class="statusbar"><span>9:42</span><div class="notch"></div><span>87%</span></div>
+  <div class="topbar">
+    <div class="back-btn"><i class="fa-solid fa-arrow-left"></i></div>
+    <div class="topbar-title">Ingresar codigo manual</div>
+  </div>
+  <div class="content">
+
+    <!-- HEADER -->
+    <div class="header-card">
+      <div class="header-icon"><i class="fa-solid fa-keyboard"></i></div>
+      <div class="header-info">
+        <div class="header-title">Codigo de barras</div>
+        <div class="header-sub">Ingresa los 13 digitos que aparecen debajo del codigo del producto</div>
+      </div>
+    </div>
+
+    <!-- LOCATION -->
+    <div class="loc-pill">
+      <div class="loc-dot"></div>
+      <div class="loc-text">Estas en <strong>Super Buen Precio — Curridabat</strong></div>
+      <i class="fa-solid fa-location-dot loc-icon"></i>
+    </div>
+
+    <!-- INPUT -->
+    <div>
+      <div class="input-label" style="margin-bottom: 6px;">Codigo de barras (EAN-13)</div>
+      <div class="input-wrap">
+        <i class="fa-solid fa-barcode input-icon"></i>
+        <input class="input-box" type="text" value="7441001823" placeholder="0000000000000" readonly>
+      </div>
+      <div class="input-hint">10 / 13 digitos ingresados</div>
+    </div>
+
+    <!-- HELP -->
+    <div class="help-tip">
+      <i class="fa-solid fa-circle-info"></i>
+      <div class="help-tip-text">
+        <strong>?Donde encuentro el codigo?</strong><br>
+        Es la secuencia de numeros que aparece debajo de las lineas negras del codigo de barras del producto.
+      </div>
+    </div>
+
+    <!-- KEYPAD -->
+    <div class="keypad">
+      <div class="key">1</div>
+      <div class="key">2</div>
+      <div class="key">3</div>
+      <div class="key">4</div>
+      <div class="key">5</div>
+      <div class="key">6</div>
+      <div class="key">7</div>
+      <div class="key">8</div>
+      <div class="key">9</div>
+      <div class="key key-action"><i class="fa-solid fa-camera"></i></div>
+      <div class="key">0</div>
+      <div class="key key-action delete"><i class="fa-solid fa-delete-left"></i></div>
+    </div>
+
+    <div class="btn-primary"><i class="fa-solid fa-check"></i> Verificar producto</div>
+
+  </div>
+</div>
+</body>
+</html>

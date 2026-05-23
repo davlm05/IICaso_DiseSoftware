@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartCart – Mis recompensas</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #e8ede8; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Segoe UI', system-ui, sans-serif; padding: 52px 0 20px; }
+.screen-tag { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: #1a7a58; color: white; font-size: 11px; font-weight: 600; padding: 5px 16px; border-radius: 20px; white-space: nowrap; z-index: 100; }
+.phone { width: 360px; height: 720px; background: #f5f7f5; border-radius: 44px; border: 2px solid #c8d0c8; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,0.13); }
+.statusbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px 2px; font-size: 11px; color: #7a8a7a; }
+.notch { width: 68px; height: 14px; background: #dce4dc; border-radius: 0 0 10px 10px; margin: 0 auto; }
+
+.topbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid #dfe6df; background: #f5f7f5; }
+.back-btn { width: 32px; height: 32px; border-radius: 10px; background: #e4f0ea; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.back-btn i { font-size: 13px; color: #1D9E75; }
+.topbar-title { font-size: 16px; font-weight: 700; color: #1a2a1a; flex: 1; }
+
+.content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 14px 16px; gap: 13px; }
+
+/* BALANCE CARD */
+.balance-card { background: #1D9E75; border-radius: 20px; padding: 18px 20px; color: white; display: flex; justify-content: space-between; align-items: center; }
+.balance-left { display: flex; flex-direction: column; gap: 2px; }
+.balance-label { font-size: 11px; opacity: 0.85; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.balance-num { font-size: 36px; font-weight: 800; line-height: 1; letter-spacing: -1px; }
+.balance-sub { font-size: 11px; opacity: 0.8; margin-top: 4px; }
+.balance-icon { font-size: 38px; opacity: 0.4; }
+
+/* TABS */
+.tabs { display: flex; background: white; border: 1px solid #dfe6df; border-radius: 14px; padding: 4px; gap: 4px; }
+.tab { flex: 1; text-align: center; padding: 9px 0; font-size: 13px; font-weight: 600; color: #7a8a7a; border-radius: 10px; }
+.tab.active { background: #1D9E75; color: white; font-weight: 700; }
+
+/* SECTION */
+.sec-title { font-size: 11px; font-weight: 700; color: #7a8a7a; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* REWARD CARD */
+.reward-card { background: white; border: 1px solid #dfe6df; border-radius: 16px; overflow: hidden; }
+.reward-row { display: flex; gap: 12px; padding: 14px; align-items: center; border-bottom: 1px solid #eff4ef; }
+.reward-row:last-child { border-bottom: none; }
+.reward-icon-wrap { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.reward-icon-wrap i { font-size: 24px; color: white; }
+.icon-coffee { background: linear-gradient(135deg, #8B5A2B, #5C3A1E); }
+.icon-discount { background: linear-gradient(135deg, #1D9E75, #0d6e48); }
+.icon-store { background: linear-gradient(135deg, #4a90c2, #2b5d80); }
+.icon-locked { background: #c8d4c8; }
+
+.reward-info { flex: 1; }
+.reward-name { font-size: 14px; font-weight: 700; color: #1a2a1a; }
+.reward-desc { font-size: 11px; color: #7a8a7a; margin-top: 2px; line-height: 1.4; }
+.reward-meta { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.reward-pts { background: #e4f0ea; color: #0d6e48; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 10px; }
+.reward-validity { font-size: 10px; color: #7a8a7a; }
+
+.btn-redeem { background: #1D9E75; color: white; border: none; border-radius: 10px; padding: 8px 13px; font-size: 12px; font-weight: 700; cursor: default; font-family: inherit; white-space: nowrap; }
+.btn-locked { background: #f0f0ea; color: #a0aaa0; border: 1px solid #dfe6df; border-radius: 10px; padding: 8px 13px; font-size: 12px; font-weight: 600; cursor: default; font-family: inherit; white-space: nowrap; display: flex; align-items: center; gap: 5px; }
+.btn-locked i { font-size: 10px; }
+
+/* FEATURED COUPON */
+.featured-coupon {
+  background: linear-gradient(135deg, #1D9E75, #0d6e48);
+  border-radius: 18px;
+  padding: 16px;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+}
+.featured-coupon::after {
+  content: ''; position: absolute; right: -20px; top: 50%; transform: translateY(-50%);
+  width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.1);
+}
+.featured-icon-big { width: 60px; height: 60px; border-radius: 16px; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; z-index: 1; }
+.featured-icon-big i { font-size: 26px; color: white; }
+.featured-info { flex: 1; z-index: 1; }
+.featured-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85; }
+.featured-title { font-size: 17px; font-weight: 800; margin-top: 2px; }
+.featured-desc { font-size: 11px; opacity: 0.85; margin-top: 3px; }
+.featured-cost { background: rgba(255,255,255,0.25); border-radius: 10px; padding: 4px 10px; font-size: 12px; font-weight: 800; margin-top: 6px; display: inline-block; z-index: 1; }
+</style>
+</head>
+<body>
+<div class="screen-tag">7 — Mis recompensas</div>
+<div class="phone">
+  <div class="statusbar"><span>10:02</span><div class="notch"></div><span>85%</span></div>
+  <div class="topbar">
+    <div class="back-btn"><i class="fa-solid fa-arrow-left"></i></div>
+    <div class="topbar-title">Mis recompensas</div>
+  </div>
+  <div class="content">
+
+    <!-- BALANCE -->
+    <div class="balance-card">
+      <div class="balance-left">
+        <div class="balance-label">Tus puntos disponibles</div>
+        <div class="balance-num">153</div>
+        <div class="balance-sub">Listos para canjear</div>
+      </div>
+      <div class="balance-icon"><i class="fa-solid fa-star"></i></div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs">
+      <div class="tab active">Disponibles</div>
+      <div class="tab">Mis cupones</div>
+    </div>
+
+    <!-- FEATURED -->
+    <div class="sec-title">Recomendado para ti</div>
+    <div class="featured-coupon">
+      <div class="featured-icon-big"><i class="fa-solid fa-percent"></i></div>
+      <div class="featured-info">
+        <div class="featured-tag">Disponible ahora</div>
+        <div class="featured-title">-15% en tu compra</div>
+        <div class="featured-desc">Valido en toda la tienda</div>
+        <div class="featured-cost">100 pts</div>
+      </div>
+    </div>
+
+    <!-- OTHER REWARDS -->
+    <div class="sec-title">Mas recompensas</div>
+    <div class="reward-card">
+      <div class="reward-row">
+        <div class="reward-icon-wrap icon-coffee"><i class="fa-solid fa-mug-hot"></i></div>
+        <div class="reward-info">
+          <div class="reward-name">2x1 en cafe Britt</div>
+          <div class="reward-desc">Lleva 2 paga 1 en cualquier presentacion</div>
+          <div class="reward-meta">
+            <div class="reward-pts">75 pts</div>
+            <div class="reward-validity">Vence en 30 dias</div>
+          </div>
+        </div>
+        <div class="btn-redeem">Canjear</div>
+      </div>
+      <div class="reward-row">
+        <div class="reward-icon-wrap icon-discount"><i class="fa-solid fa-tag"></i></div>
+        <div class="reward-info">
+          <div class="reward-name">-10% en lacteos</div>
+          <div class="reward-desc">Descuento sobre el total en seccion lacteos</div>
+          <div class="reward-meta">
+            <div class="reward-pts">50 pts</div>
+            <div class="reward-validity">Vence en 15 dias</div>
+          </div>
+        </div>
+        <div class="btn-redeem">Canjear</div>
+      </div>
+      <div class="reward-row">
+        <div class="reward-icon-wrap icon-store"><i class="fa-solid fa-gift"></i></div>
+        <div class="reward-info">
+          <div class="reward-name">Bono de 5,000 colones</div>
+          <div class="reward-desc">Para usar en tu siguiente compra</div>
+          <div class="reward-meta">
+            <div class="reward-pts">300 pts</div>
+            <div class="reward-validity">Vence en 60 dias</div>
+          </div>
+        </div>
+        <div class="btn-locked"><i class="fa-solid fa-lock"></i> Faltan 147</div>
+      </div>
+      <div class="reward-row">
+        <div class="reward-icon-wrap icon-locked"><i class="fa-solid fa-crown"></i></div>
+        <div class="reward-info">
+          <div class="reward-name">Compra gratis</div>
+          <div class="reward-desc">Hasta 15,000 colones en cualquier producto</div>
+          <div class="reward-meta">
+            <div class="reward-pts">500 pts</div>
+            <div class="reward-validity">Premium</div>
+          </div>
+        </div>
+        <div class="btn-locked"><i class="fa-solid fa-lock"></i> Faltan 347</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
