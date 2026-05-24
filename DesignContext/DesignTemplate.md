@@ -840,12 +840,4 @@ Table points_transactions {
 | **Encryption in Transit** | [e.g., TLS 1.2+ enforced for all DB connections] |
 | **PII Handling** | [e.g., Email is the only PII stored; no payment data stored in SmartCart DB] |
 | **Password Storage** | [e.g., bcrypt with minimum cost factor 12] |
-<<<<<<< HEAD
 | **Access Control** | [e.g., Application uses a least-privilege DB user; no direct admin access from app] |
-=======
-| **Access Control** | [e.g., Application uses a least-privilege DB user; no direct admin access from app] |
-
----
-
-*End of SmartCart Design Document*
->>>>>>> 32c274d6a348afdd2886adf9ffd1073efe572a94
