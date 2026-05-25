@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartCart – Main 3 productos</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #e8ede8; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Segoe UI', system-ui, sans-serif; padding: 52px 0 20px; }
+.screen-tag { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: #1a7a58; color: white; font-size: 11px; font-weight: 600; padding: 5px 16px; border-radius: 20px; white-space: nowrap; z-index: 100; }
+.phone { width: 360px; height: 720px; background: #f5f7f5; border-radius: 44px; border: 2px solid #c8d0c8; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,0.13); }
+.statusbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px 2px; font-size: 11px; color: #7a8a7a; }
+.notch { width: 68px; height: 14px; background: #dce4dc; border-radius: 0 0 10px 10px; margin: 0 auto; }
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; border-bottom: 1px solid #dfe6df; background: #f5f7f5; }
+.logo { font-size: 18px; font-weight: 800; color: #1a2a1a; letter-spacing: -0.5px; }
+.logo em { color: #1D9E75; font-style: normal; }
+.avatar { width: 34px; height: 34px; border-radius: 50%; background: #c8e8d8; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #0d5c40; }
+.content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 14px 16px; gap: 13px; }
+
+.success-toast { background: #e4f0ea; border: 1px solid #9fd4b8; border-radius: 12px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+.success-toast-icon { width: 28px; height: 28px; border-radius: 50%; background: #1D9E75; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.success-toast-icon i { font-size: 12px; color: white; }
+.success-toast-text { flex: 1; font-size: 12px; color: #0a4a30; }
+.success-toast-text strong { color: #085041; }
+
+.loc-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: white; border: 1px solid #9fd4b8; border-radius: 12px; }
+.loc-dot { width: 8px; height: 8px; border-radius: 50%; background: #1D9E75; flex-shrink: 0; }
+.loc-text { flex: 1; font-size: 12px; color: #1a2a1a; }
+.loc-text strong { color: #0d6e48; }
+.loc-icon { font-size: 13px; color: #1D9E75; }
+
+.pts-card { background: #1D9E75; border-radius: 20px; padding: 18px 20px; color: white; }
+.pts-row { display: flex; justify-content: space-between; align-items: flex-start; }
+.pts-label { font-size: 11px; opacity: 0.85; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.pts-number { font-size: 46px; font-weight: 800; line-height: 1; letter-spacing: -2px; }
+.pts-sub { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+.pts-pending { background: rgba(255,255,255,0.2); border-radius: 12px; padding: 8px 12px; text-align: center; min-width: 65px; }
+.pts-pending-num { font-size: 22px; font-weight: 800; line-height: 1; }
+.pts-pending-lbl { font-size: 9px; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 3px; font-weight: 700; }
+
+/* TWO BUTTONS */
+.btn-row { display: flex; gap: 10px; }
+.btn-scan { flex: 1; background: white; color: #1D9E75; border: 1.5px solid #1D9E75; border-radius: 16px; padding: 14px 0; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 7px; cursor: default; font-family: inherit; }
+.btn-scan i { font-size: 15px; }
+.btn-qr { flex: 1.4; background: #1D9E75; color: white; border: none; border-radius: 16px; padding: 14px 0; font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 7px; cursor: default; font-family: inherit; box-shadow: 0 4px 12px rgba(29,158,117,0.25); }
+.btn-qr i { font-size: 15px; }
+
+.sec-title { font-size: 11px; font-weight: 700; color: #7a8a7a; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; }
+.sec-count { background: #1D9E75; color: white; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 10px; text-transform: none; letter-spacing: 0; }
+
+.scanned-card { background: white; border: 1px solid #dfe6df; border-radius: 14px; overflow: hidden; }
+.scanned-item { display: flex; align-items: center; gap: 11px; padding: 11px 14px; border-bottom: 1px solid #eff4ef; }
+.scanned-item:last-child { border-bottom: none; }
+.scanned-item.new { background: #f0faf5; }
+.item-icon { width: 38px; height: 38px; border-radius: 10px; background: #f0f5f0; display: flex; align-items: center; justify-content: center; font-size: 15px; color: #5a8a6a; flex-shrink: 0; }
+.item-info { flex: 1; }
+.item-name-row { display: flex; align-items: center; gap: 6px; }
+.item-name { font-size: 13px; font-weight: 600; color: #1a2a1a; }
+.new-tag { background: #1D9E75; color: white; font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+.item-meta { font-size: 11px; color: #7a8a7a; margin-top: 2px; }
+.item-pts { background: #fff8e1; color: #7a5800; border: 1px solid #f0c040; font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 10px; white-space: nowrap; }
+.btn-remove { width: 28px; height: 28px; border-radius: 8px; background: #fdecea; display: flex; align-items: center; justify-content: center; border: none; cursor: default; }
+.btn-remove i { font-size: 11px; color: #c0392b; }
+
+.bottomnav { display: flex; justify-content: space-around; padding: 8px 0 14px; border-top: 1px solid #dfe6df; background: #f5f7f5; }
+.nav-it { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.nav-it i { font-size: 19px; color: #b4c0b4; }
+.nav-it span { font-size: 10px; color: #b4c0b4; }
+.nav-it.on i { color: #1D9E75; }
+.nav-it.on span { color: #0d6e48; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="screen-tag">4 — Main con 3 productos (listo para QR)</div>
+<div class="phone">
+  <div class="statusbar"><span>9:48</span><div class="notch"></div><span>86%</span></div>
+  <div class="topbar">
+    <div class="logo">Smart<em>Cart</em></div>
+    <div class="avatar">JC</div>
+  </div>
+  <div class="content">
+
+    <div class="success-toast">
+      <div class="success-toast-icon"><i class="fa-solid fa-check"></i></div>
+      <div class="success-toast-text"><strong>Galletas Pozuelo</strong> agregado · +8 pts pendientes</div>
+    </div>
+
+    <div class="loc-row">
+      <div class="loc-dot"></div>
+      <div class="loc-text">Estas en <strong>Super Buen Precio — Curridabat</strong></div>
+      <i class="fa-solid fa-location-dot loc-icon"></i>
+    </div>
+
+    <div class="pts-card">
+      <div class="pts-row">
+        <div>
+          <div class="pts-label">Tus puntos</div>
+          <div class="pts-number">120</div>
+          <div class="pts-sub">Te faltan 80 para tu descuento</div>
+        </div>
+        <div class="pts-pending">
+          <div class="pts-pending-num">+33</div>
+          <div class="pts-pending-lbl">Pendientes</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <div class="btn-scan"><i class="fa-solid fa-barcode"></i> Escanear otro</div>
+      <div class="btn-qr"><i class="fa-solid fa-qrcode"></i> Generar QR de salida</div>
+    </div>
+
+    <div class="sec-title">
+      <span>Productos escaneados</span>
+      <span class="sec-count">3 productos</span>
+    </div>
+
+    <div class="scanned-card">
+      <div class="scanned-item">
+        <div class="item-icon"><i class="fa-solid fa-mug-hot"></i></div>
+        <div class="item-info">
+          <div class="item-name-row">
+            <div class="item-name">Cafe Britt 500g</div>
+          </div>
+          <div class="item-meta">Cafe Britt · 3,250</div>
+        </div>
+        <div class="item-pts">+15 pts</div>
+        <div class="btn-remove"><i class="fa-solid fa-xmark"></i></div>
+      </div>
+      <div class="scanned-item">
+        <div class="item-icon"><i class="fa-solid fa-droplet"></i></div>
+        <div class="item-info">
+          <div class="item-name-row">
+            <div class="item-name">Aceite Numar 1L</div>
+          </div>
+          <div class="item-meta">Numar · 2,890</div>
+        </div>
+        <div class="item-pts">+10 pts</div>
+        <div class="btn-remove"><i class="fa-solid fa-xmark"></i></div>
+      </div>
+      <div class="scanned-item new">
+        <div class="item-icon"><i class="fa-solid fa-cookie-bite"></i></div>
+        <div class="item-info">
+          <div class="item-name-row">
+            <div class="item-name">Galletas Pozuelo</div>
+            <span class="new-tag">Nuevo</span>
+          </div>
+          <div class="item-meta">Pozuelo · 1,450</div>
+        </div>
+        <div class="item-pts">+8 pts</div>
+        <div class="btn-remove"><i class="fa-solid fa-xmark"></i></div>
+      </div>
+    </div>
+
+  </div>
+  <div class="bottomnav">
+    <div class="nav-it on"><i class="fa-solid fa-house"></i><span>Inicio</span></div>
+    <div class="nav-it"><i class="fa-solid fa-barcode"></i><span>Escanear</span></div>
+    <div class="nav-it"><i class="fa-solid fa-gift"></i><span>Recompensas</span></div>
+    <div class="nav-it"><i class="fa-solid fa-user"></i><span>Perfil</span></div>
+  </div>
+</div>
+</body>
+</html>
