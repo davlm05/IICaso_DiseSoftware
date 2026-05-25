@@ -3,166 +3,157 @@
 
 ## 1. Propósito General de la Aplicación
 
-**SmartCart** es una aplicación móvil diseñada para transformar la experiencia de compra en supermercados. Su objetivo principal es actuar como un asistente de compras inteligente que integra un programa de lealtad basado en puntos con funcionalidades de navegación y optimización de rutas dentro de la tienda.
+**SmartCart** es una aplicación móvil diseñada para transformar la experiencia de compra en supermercados mediante un programa de lealtad basado en puntos. Su objetivo principal es ofrecer un sistema simple y transparente que recompense a los clientes por adquirir productos patrocinados dentro de las cadenas afiliadas, generando valor tanto para el consumidor como para las marcas y supermercados.
+ 
+La aplicación permite a los usuarios descubrir productos en promoción que otorgan puntos de recompensa, escanearlos directamente con la cámara del dispositivo mientras realizan sus compras, y validar dichas compras al salir del supermercado mediante un código QR que la cajera verifica contra el sistema POS. Solo los productos efectivamente comprados acreditan puntos a la cuenta del usuario, garantizando la integridad del sistema y evitando el fraude por escaneo sin compra.
+ 
+Los puntos acumulados pueden canjearse posteriormente por cupones de descuento, cerrando el ciclo de valor del programa de lealtad y motivando al usuario a regresar.
+ 
+El flujo principal se centra en el ciclo: **Descubrir → Escanear → Validar → Acumular → Canjear**.
 
-La aplicación permite a los usuarios descubrir productos en promoción que otorgan puntos de recompensa, escanearlos para llevar un registro, y validar su compra en la caja para acreditar dichos puntos. Adicionalmente, una característica clave es el **asistente de voz**, que guía al usuario a través del supermercado, optimizando su ruta de compra basada en su lista de pendientes y la ubicación de los productos en la tienda.
+# 2. Flujo de la Aplicación y Descripción de Pantallas
 
-El flujo principal se centra en el ciclo: **Descubrir -> Escanear -> Validar -> Acumular -> Canjear**.
+A continuación, se detalla el flujo de navegación principal de la aplicación, describiendo el propósito y las funcionalidades de cada pantalla. Este flujo refleja el enfoque centrado en el sistema de puntos como núcleo del producto, donde el usuario escanea productos patrocinados, los acumula durante su recorrido por el supermercado, y valida la compra al salir mediante un código QR.
 
-## 2. Flujo de la Aplicación y Descripción de Pantallas
+---
 
-A continuación, se detalla el flujo de navegación principal de la aplicación, describiendo el propósito y las funcionalidades de cada pantalla.
+## Pantalla 1: Main / Lobby (estado vacío) — `pantalla-1-main-vacio.html`
 
-### Pantalla 1: Lobby / Inicio (figmaScreen/pantalla-1-lobby.html)
+Es la pantalla principal y el punto de partida del usuario al ingresar al supermercado.
 
-Es la pantalla principal y el punto de partida para el usuario.
+**Propósito:** Ofrecer un resumen del estado del usuario, las promociones activas y el acceso directo a la acción central de escanear productos.
 
-- **Propósito:** Ofrecer un resumen del estado del usuario, las promociones activas y el acceso a las funciones principales.
-- **Componentes Clave:**
-    - **Indicador de Ubicación:** Muestra en qué sucursal del supermercado se encuentra el usuario. Esto es crucial para que la app ofrezca promociones y rutas relevantes. El sistema debería detectar esto automáticamente (vía GPS o balizas de la tienda).
-    - **Tarjeta de Puntos:** Un resumen visual del programa de lealtad.
-        - **Puntos Actuales:** El total de puntos que el usuario puede canjear.
-        - **Puntos Pendientes:** Puntos de productos que han sido escaneados pero aún no validados en caja.
-        - **Barra de Progreso:** Indica cuántos puntos faltan para alcanzar la siguiente recompensa o nivel.
-    - **Botón de Escaneo (`Escanear producto`):** El llamado a la acción principal que inicia el proceso de escaneo de productos.
-    - **Carrusel de "Productos con puntos hoy":** Una lista horizontal de productos patrocinados que otorgan puntos extra si se compran ese día. Cada tarjeta de producto muestra su nombre, marca, precio y los puntos que otorga.
-    - **Lista de Recordatorio ("Mi lista"):** Un widget que muestra una lista de compras simple que el usuario ha creado. Esta lista es fundamental para el asistente de voz.
-    - **Barra de Navegación Inferior:** Contiene accesos directos a las secciones principales: Inicio, Escanear, Mi Lista/Pendientes, y Perfil.
+**Componentes Clave:**
 
-### Pantalla 2: Cámara Escaneando (figmaScreen/pantalla-2-camara-escaneando.html)
+- **Indicador de Ubicación:** Confirma automáticamente la sucursal donde se encuentra el usuario (detectado vía GPS o balizas internas del super). Es crucial porque solo dentro del establecimiento se habilita la acumulación de puntos.
+- **Tarjeta de Puntos:** Resumen visual del programa de lealtad con los puntos actuales acumulados, una barra de progreso hacia la siguiente recompensa, y un subtítulo motivacional ("Te faltan X puntos para tu descuento").
+- **Botón de Escaneo ("Escanear producto"):** Llamada a la acción principal, prominente y destacada. Es la única vía para iniciar el flujo de acumulación de puntos.
+- **Empty State ("Aún no has escaneado nada"):** Tarjeta con borde punteado que comunica claramente al usuario que aún no ha escaneado productos. Incluye un mensaje explicativo invitando a escanear productos patrocinados.
+- **Carrusel "Productos con puntos hoy":** Lista horizontal de productos patrocinados activos del día. Cada tarjeta muestra nombre, marca, precio y los puntos que otorga. Funciona como motivador visual para que el usuario busque y escanee esos productos específicos.
+- **Barra de Navegación Inferior:** Accesos directos a Inicio, Escanear, Recompensas y Perfil.
 
-Se accede a esta pantalla al presionar el botón "Escanear producto".
+---
 
-- **Propósito:** Permitir al usuario escanear el código de barras de un producto.
-- **Componentes Clave:**
-    - **Vista de Cámara:** Muestra el feed de la cámara del dispositivo.
-    - **Marco de Escaneo:** Un recuadro visual que ayuda al usuario a alinear el código de barras.
-    - **Instrucción:** Un texto simple como "Apunta al código de barras".
-    - **Acceso a Ingreso Manual:** Un botón para ir a la `Pantalla 2B` si la cámara no funciona o el código está dañado.
-    - **Guía de Pasos:** Un recordatorio del proceso: 1. Escanea, 2. Compra y valida al salir.
+## Pantalla 2: Cámara Escaneando — `pantalla-2-escanear.html`
 
-### Pantalla 2B: Ingreso Manual de Código (figmaScreen/pantalla-2B-ingreso-manual.html)
+Se accede al presionar el botón "Escanear producto" en el main.
 
-Una ruta alternativa a la cámara.
+**Propósito:** Permitir al usuario escanear el código de barras de un producto patrocinado.
 
-- **Propósito:** Permitir la entrada manual del código de barras (EAN-13).
-- **Componentes Clave:**
-    - **Campo de Entrada:** Un campo de texto para el código numérico.
-    - **Teclado Numérico en Pantalla:** Facilita la entrada de los dígitos.
-    - **Botón de Verificación:** Envía el código ingresado para su validación.
+**Componentes Clave:**
 
-### Pantalla 2C: Confirmar Producto (figmaScreen/pantalla-2C-confirmar-producto.html)
+- **Vista de Cámara:** Feed en vivo de la cámara del dispositivo ocupando la mayor parte de la pantalla.
+- **Marco de Escaneo:** Recuadro con esquinas verdes que guía visualmente al usuario para alinear el código de barras correctamente.
+- **Línea de Escaneo Animada:** Línea horizontal que indica que la cámara está activa y procesando.
+- **Instrucción Superior:** Mensaje breve y claro: "Apunta al código de barras".
+- **Confirmación de Ubicación:** Píldora verde inferior que reafirma que el usuario está dentro del supermercado y que el escaneo es válido.
+- **Acceso a Ingreso Manual:** Botón secundario para casos donde la cámara no funcione o el código de barras esté dañado.
+- **Botones Superiores:** Cerrar (vuelve al main) y Flash (control de luz).
 
-Esta pantalla aparece después de un escaneo exitoso o ingreso manual.
+---
 
-- **Propósito:** Asegurarse de que el producto detectado por el sistema es el correcto. Es un paso de verificación crucial.
-- **Componentes Clave:**
-    - **Pregunta de Confirmación:** "¿Es este el producto?".
-    - **Tarjeta de Producto Detallada:** Muestra la imagen (o icono), nombre, marca, presentación, precio y los puntos que otorga. También incluye el código de barras numérico para una doble verificación.
-    - **Botones de Acción:**
-        - **"Si, es este producto":** Confirma y lleva al usuario a la `Pantalla 3`.
-        - **"No, escanear de nuevo":** Descarta el resultado y vuelve a la `Pantalla 2`.
+## Pantalla 3: Main con productos escaneados (estado con 1 producto) — `pantalla-3-main-1producto.html`
 
-### Pantalla 3: Producto Escaneado (figmaScreen/pantalla-3-producto-escaneado.html)
+Después de un escaneo exitoso, el usuario regresa al main donde se refleja inmediatamente el producto agregado.
 
-Confirma que el producto ha sido añadido a la lista de pendientes.
+**Propósito:** Confirmar visualmente que el escaneo fue exitoso y mostrar el estado actualizado de la sesión de compra, sin sacar al usuario del flujo principal.
 
-- **Propósito:** Informar al usuario que el producto patrocinado fue verificado y ahora está pendiente de compra.
-- **Componentes Clave:**
-    - **Mensaje de Éxito:** "Código de barras leído".
-    - **Tarjeta de Producto:** Un resumen del producto recién escaneado.
-    - **Advertencia de Puntos Pendientes:** Un mensaje claro que indica que los puntos solo se acreditarán después de comprar y validar.
-    - **Pasos a Seguir:** Una guía visual que muestra el progreso:
-        1.  `[Hecho]` Producto escaneado.
-        2.  `[Actual]` Compra el producto.
-        3.  `[Pendiente]` Valida al salir.
-    - **Botones de Acción:**
-        - **"Escanear otro producto":** Vuelve a la `Pantalla 2`.
-        - **"Ver mis pendientes":** Lleva al usuario a la `Pantalla 4`.
+**Componentes Clave:**
 
-### Pantalla 4: Mis Pendientes (figmaScreen/pantalla-4-pendientes.html)
+- **Toast de Confirmación:** Banner verde superior que aparece tras escanear, mostrando el nombre del producto agregado y los puntos pendientes ganados (ej. "Café Britt 500g agregado · +15 pts pendientes").
+- **Tarjeta de Puntos Actualizada:** La cajita lateral ahora muestra los "+15 Pendientes" en una sección destacada dentro de la tarjeta principal de puntos.
+- **Botón "Escanear otro producto":** Reemplaza al botón inicial de "Escanear producto" para indicar continuidad de la sesión.
+- **Sección "Productos escaneados":** Nueva sección que aparece dinámicamente con un contador (ej. "1 producto"). Lista los productos escaneados durante la sesión.
+- **Tarjeta del Producto Escaneado:** Muestra ícono, nombre, marca, precio y tag amarillo con los puntos pendientes. El producto más reciente se destaca con fondo verde claro y etiqueta "Nuevo".
+- **Botón Eliminar (X rojo):** Cada producto tiene un botón para removerlo de la lista en caso de error o cambio de opinión, antes de validar la compra.
 
-Agrupa todos los productos escaneados en la sesión de compra actual.
+---
 
-- **Propósito:** Permitir al usuario revisar los productos que ha escaneado y generar el QR para la validación final.
-- **Componentes Clave:**
-    - **Resumen de Pendientes:** Tarjeta que totaliza los puntos pendientes y la cantidad de productos.
-    - **Instrucción para la Caja:** Explica que debe mostrar el QR al cajero.
-    - **Lista de Productos Escaneados:** Cada ítem en la lista muestra el nombre del producto, su precio y los puntos que otorga, con un estado "Pendiente de comprar".
-    - **Botón "Generar QR para la caja":** La acción principal que lleva a la `Pantalla 5`.
+## Pantalla 4: Main con múltiples productos (listo para validar) — `pantalla-4-main-3productos.html`
 
-### Pantalla 5: QR para Validación (figmaScreen/pantalla-5-qr-validacion.html)
+Estado del main cuando el usuario ha escaneado varios productos y está listo para finalizar.
 
-El paso final de la compra dentro de la app.
+**Propósito:** Permitir al usuario revisar todos los productos escaneados, decidir si seguir agregando o proceder con la validación en caja.
 
-- **Propósito:** Generar un código único que el cajero escaneará para validar la compra.
-- **Componentes Clave:**
-    - **Código QR:** Un código QR grande y visible que contiene la información de los productos pendientes del usuario.
-    - **Instrucciones para el Cajero:** "Muéstrale este código a la cajera".
-    - **Resumen de la Transacción:** Muestra la cantidad de productos y el total de puntos a validar.
-    - **Indicador de Espera:** Un mensaje como "Esperando validación de la cajera..." que se muestra mientras el sistema de la app se comunica con el sistema del supermercado (POS).
+**Componentes Clave:**
 
-### Pantalla 6: Confirmación Final (figmaScreen/pantalla-6-confirmacion.html)
+- **Toast del Último Producto:** Confirma el escaneo más reciente.
+- **Tarjeta de Puntos con Acumulado:** Muestra la suma total de puntos pendientes acumulados durante la sesión (ej. "+33 Pendientes").
+- **Botones Duales:** La acción principal cambia cuando hay productos en la lista:
+  - **"Escanear otro"** (botón secundario, borde verde): para seguir agregando productos.
+  - **"Generar QR de salida"** (botón principal, fondo verde sólido): acción para finalizar y dirigirse a caja. Visualmente más prominente para guiar al usuario.
+- **Lista Completa de Productos Escaneados:** Muestra todos los productos acumulados durante la sesión, cada uno con su precio, puntos pendientes y opción de eliminar individualmente.
+- **Indicador "Nuevo":** El producto más recientemente agregado mantiene la etiqueta y fondo destacado para que el usuario lo identifique fácilmente.
 
-Aparece después de que el cajero escanea el QR y el sistema del supermercado confirma la compra.
+---
 
-- **Propósito:** Notificar al usuario que la compra ha sido validada y los puntos han sido acreditados.
-- **Componentes Clave:**
-    - **Mensaje de Éxito:** "¡Puntos acreditados!".
-    - **Resumen de Puntos Ganados:** Muestra cuántos puntos se ganaron en esa transacción y el nuevo total de puntos del usuario.
-    - **Lista de Productos Validados:** Una lista de los productos que el sistema confirmó como comprados y por los cuales se otorgaron puntos.
-    - **Total Comprado:** El monto total gastado en los productos patrocinados validados.
-    - **Botones de Acción:**
-        - **"Volver al inicio":** Regresa a la `Pantalla 1`.
-        - **"Ver mis recompensas":** Lleva a la `Pantalla 7`.
+## Pantalla 5: QR de Validación — `pantalla-5-qr-validacion.html`
 
-### Pantalla 7: Mis Recompensas (figmaScreen/pantalla-7-recompensas.html)
+Paso final dentro de la app antes de salir del supermercado.
 
-El catálogo donde los usuarios pueden usar sus puntos.
+**Propósito:** Generar un código QR único que el cajero escaneará para validar que los productos pendientes efectivamente se compraron.
 
-- **Propósito:** Permitir a los usuarios canjear sus puntos por premios y gestionar sus cupones.
-- **Componentes Clave:**
-    - **Balance de Puntos:** Muestra el total de puntos disponibles para canjear.
-    - **Pestañas:** "Disponibles" (para canjear) y "Mis cupones" (recompensas ya canjeadas y listas para usar).
-    - **Catálogo de Recompensas:** Una lista de premios disponibles (ej. descuentos, productos gratis, 2x1) con su "costo" en puntos.
-    - **Recompensas Bloqueadas:** Premios que el usuario aún no puede permitirse, mostrando cuántos puntos le faltan.
-    - **Botón "Canjear":** Inicia el proceso para obtener una recompensa, que probablemente la convierte en un cupón en la pestaña "Mis cupones".
+**Componentes Clave:**
 
-## 3. Funcionalidad del Asistente de Voz
+- **Fondo Verde Pleno:** Toda la pantalla cambia a verde corporativo para destacar visualmente la importancia del momento y facilitar que la cajera identifique la pantalla.
+- **Instrucción Principal:** Texto claro: "Muéstrale este código a la cajera".
+- **Código QR Grande y Centrado:** Ocupa la zona central de la pantalla, con código alfanumérico debajo (ej. "SC-2026-AX9K-7283") como respaldo visual.
+- **Validez Temporal:** Indica que el código es válido por 10 minutos para evitar uso fraudulento posterior.
+- **Resumen de Transacción:** Tarjeta inferior dentro del QR mostrando la cantidad de productos pendientes y el total de puntos a validar.
+- **Indicador de Espera:** Mensaje "Esperando validación de la cajera..." mientras la app se comunica con el sistema POS del supermercado.
 
-El asistente de voz es una capa de interacción que se superpone al flujo principal, diseñada para facilitar y optimizar la experiencia de compra "manos libres".
+---
 
-### Activación
+## Pantalla 6: Confirmación Final — `pantalla-6-confirmacion.html`
 
-- El asistente podría activarse mediante un **botón de micrófono** persistente en la interfaz (especialmente en el Lobby y la pantalla de Pendientes) o mediante un **comando de voz** como "Hola, SmartCart".
+Aparece automáticamente cuando el sistema del supermercado confirma la compra de los productos escaneados.
 
-### Funcionamiento y Lógica
+**Propósito:** Notificar al usuario que su compra fue validada y los puntos fueron acreditados oficialmente a su cuenta.
 
-1.  **Acceso a la Lista de Compras:** El asistente utiliza la "Mi lista (recordatorio)" (`Pantalla 1`) como base para la ruta. Al activarse, podría preguntar: *"Veo que tienes 4 artículos en tu lista. ¿Quieres que cree la ruta de compra más eficiente para ti?"*.
+**Componentes Clave:**
 
-2.  **Creación de la Ruta Óptima:**
-    - El sistema necesita un **mapa digital de la tienda**, con la ubicación y categorización de los pasillos (ej. "Pasillo 3: Lácteos", "Pasillo 5: Cereales y Galletas").
-    - Al confirmar el usuario, el asistente procesa la lista de compras y la compara con el mapa de la tienda.
-    - Utilizando un algoritmo de optimización de rutas (similar al problema del viajante), calcula el recorrido más corto para recoger todos los artículos de la lista. También podría considerar la ubicación actual del usuario como punto de partida.
+- **Hero Verde con Check Grande:** Confirmación visual inmediata y celebratoria del éxito de la transacción.
+- **Mensaje Principal:** "Puntos acreditados" con subtítulo "Tu compra fue verificada en caja".
+- **Tarjeta de Puntos Ganados:** Muestra los puntos exactos ganados en esta transacción (ej. "+33"), el nuevo total acumulado (ej. "153 pts"), una barra de progreso actualizada hacia la próxima recompensa, y los puntos restantes para alcanzarla.
+- **Lista de Productos Validados:** Cada producto comprado y validado aparece con un check verde, su ícono, nombre y los puntos otorgados. Esta lista confirma transparentemente qué productos del escaneo se contabilizaron.
+- **Total Comprado:** Monto total gastado únicamente en los productos patrocinados validados.
+- **Botones de Acción:**
+  - **"Volver al inicio":** Regresa al main vacío para iniciar una nueva sesión.
+  - **"Ver mis recompensas":** Lleva al usuario al catálogo de recompensas para canjear los puntos acumulados.
 
-3.  **Guía por Voz Paso a Paso:**
-    - Una vez calculada la ruta, el asistente comienza a dar instrucciones por voz. Por ejemplo:
-        - *"Ok, empecemos. Primero, dirígete al Pasillo 3, a tu derecha, para encontrar la leche."*
-        - Al llegar (detectado por balizas o GPS interior), podría decir: *"Ya estás en el pasillo de lácteos. La leche debería estar a mitad del pasillo."*
+---
 
-4.  **Integración con el Escaneo de Productos:**
-    - Mientras el usuario recoge productos, el asistente puede integrarse con la funcionalidad de escaneo.
-    - Si un artículo de la lista es también un producto patrocinado, el asistente podría decir: *"Recuerda escanear el café. Hoy te da 15 puntos extra."*
-    - El usuario podría usar comandos de voz para escanear: *"SmartCart, escanea este producto."* La app activaría la cámara.
+## Pantalla 7: Mis Recompensas — `pantalla-7-recompensas.html`
 
-5.  **Interacción y Flexibilidad:**
-    - El usuario puede interactuar con el asistente en cualquier momento:
-        - *"SmartCart, ¿dónde encuentro las manzanas?"* -> El asistente consultaría el mapa y respondería: *"Las manzanas están en la sección de Frutas y Verduras, al fondo de la tienda."*
-        - *"SmartCart, añade pan integral a mi lista."* -> El asistente actualizaría la lista y, si es necesario, recalcularía la ruta.
-        - *"SmartCart, ya recogí la leche."* -> El asistente marcaría el artículo como completado y daría la siguiente instrucción: *"Perfecto. Ahora, vamos al Pasillo 5 para buscar el arroz."*
+Catálogo donde el usuario puede convertir sus puntos en beneficios reales.
 
-### Finalización de la Ruta
+**Propósito:** Permitir a los usuarios canjear sus puntos por cupones de descuento y gestionar los cupones ya obtenidos. Esta pantalla es clave para cerrar el ciclo de valor del programa de puntos.
 
-- Cuando todos los artículos de la lista han sido recogidos, el asistente podría concluir: *"¡Genial! Hemos completado tu lista de compras. Ahora puedes dirigirte a la zona de cajas. No olvides generar tu QR para validar los 33 puntos que has acumulado."*
+**Componentes Clave:**
 
-En resumen, el asistente de voz actúa como un "Waze para supermercados", guiando al usuario de manera eficiente, recordándole las oportunidades de ganar puntos y manteniendo la experiencia de compra fluida y sin necesidad de mirar constantemente el teléfono.
+- **Balance de Puntos Destacado:** Tarjeta verde superior con los puntos disponibles para canjear y un mensaje claro de su disponibilidad.
+- **Pestañas:** 
+  - **"Disponibles":** Catálogo de recompensas que pueden canjearse.
+  - **"Mis cupones":** Recompensas ya canjeadas y listas para usar en próximas compras.
+- **Recompensa Destacada:** Tarjeta principal con gradiente verde que muestra la recompensa más relevante para el usuario (ej. "-15% en tu compra · 100 pts").
+- **Catálogo de Recompensas:** Lista de cupones disponibles, cada uno con:
+  - Ícono temático del beneficio.
+  - Nombre y descripción del cupón (ej. "2x1 en café Britt", "-10% en lácteos").
+  - Costo en puntos.
+  - Fecha de vencimiento del cupón.
+  - Botón "Canjear" si el usuario tiene puntos suficientes.
+- **Recompensas Bloqueadas:** Premios que requieren más puntos de los que el usuario tiene, mostrando exactamente cuántos puntos le faltan (ej. "Faltan 147"). Esto motiva al usuario a seguir escaneando productos para alcanzar metas más altas.
+
+---
+
+## Resumen del Flujo Principal
+
+El recorrido del usuario sigue un patrón cíclico simple y centrado en la acumulación de puntos:
+
+1. **Inicio:** El usuario entra al super → ve el main vacío con sus puntos actuales y los productos patrocinados del día.
+2. **Escaneo:** Toca "Escanear producto" → abre la cámara → escanea un código de barras válido.
+3. **Vuelta al main:** Regresa automáticamente al main con el producto reflejado en la lista, un toast de confirmación y los puntos pendientes actualizados.
+4. **Repetición:** Puede repetir el escaneo cuantas veces quiera. Cada escaneo actualiza la lista y los pendientes.
+5. **Validación:** Cuando termina su recorrido, toca "Generar QR de salida" → muestra el QR a la cajera.
+6. **Confirmación:** El sistema valida la compra → muestra la pantalla de éxito con los puntos acreditados.
+7. **Canje (opcional):** El usuario puede ir a Mis Recompensas para canjear sus puntos por cupones de descuento.
