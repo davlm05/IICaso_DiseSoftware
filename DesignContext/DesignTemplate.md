@@ -8,10 +8,10 @@
 ---
 
 **Problem Statement:**
-Shoppers in supermarkets often have an inefficient and disconnected experience. They struggle to find items, miss out on relevant promotions, and find loyalty programs cumbersome. The process of creating a shopping list, navigating the store to find the items, discovering promotions, and earning rewards is fragmented and lacks a central, intelligent tool to optimize the journey.
+Shoppers and regional supermarkets lack intelligent tools that transform shopping activity into meaningful insights and optimized retail experiences. Current supermarket apps mainly focus on loyalty programs or self-checkout features, but they fail to provide predictive analytics, personalized consumer understanding, and real-time market intelligence. As a result, supermarkets struggle with limited customer insights and missed opportunities for targeted marketing and regional demand prediction.
 
 **Proposed Solution:**
-SmartCart is a mobile application that acts as an intelligent shopping assistant. It integrates a points-based loyalty program with real-time, in-store navigation and a voice-activated assistant. Users can create shopping lists, and the app will generate the most efficient route through the store to collect them. While shopping, users scan sponsored products to add them to a pending list for rewards. At checkout, a single QR code validation credits the points earned. The voice assistant provides hands-free guidance, making the shopping trip faster, more efficient, and more rewarding.
+SmartCart is an AI-powered retail intelligence platform that combines digital shopping tools with predictive consumer analytics. Through the mobile app, users can scan products, manage purchases, and interact with the store digitally, while the AI analyzes shopping behavior, product combinations, frequency, and in-store activity to generate valuable consumer insights. The platform helps supermarkets predict demand and deliver hyperlocalized promotions, while also providing brands with anonymized behavioral analytics and regional market trends through a SaaS-based dashboard.
 
 ---
 
