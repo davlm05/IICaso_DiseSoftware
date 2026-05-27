@@ -1,5 +1,22 @@
 # Diseño y Especificación de Integraciones (Ficha de Integración)
 
+## Integraciones del Sistema SmartCart
+
+SmartCart depende de las siguientes integraciones externas. Cada una debe ser documentada y diseñada usando la Ficha de Integración definida en este archivo.
+
+| Integración | Rol en el sistema | Criticidad |
+|---|---|---|
+| **POS del Supermercado** | Valida que los productos escaneados fueron efectivamente comprados; confirma la acreditación de puntos | Alta — sin esta validación no se acreditan puntos |
+| **Catálogo de Productos / Base de Barcode** | Resuelve el barcode escaneado: determina si el producto es patrocinado, qué puntos otorga, nombre y marca | Alta — bloquea el flujo de escaneo si no responde |
+| **Servicios de Ubicación (GPS / BLE Beacons)** | Confirma que el usuario está dentro de una tienda afiliada; habilita o bloquea la acumulación de puntos | Media — falla degradada: pedir confirmación manual al usuario |
+| **Plataforma B2B de Analytics** | Recibe datos agregados de compras para su venta a marcas y supermercados; es el modelo de ingreso principal | Media — asíncrona; no bloquea el flujo del usuario |
+| **Motor de IA / LLM (Analytics)** | Procesa datos de compra agregados para generar insights: patrones de consumo, segmentación de clientes, predicción de demanda y reportes para marcas y supermercados; consume datos de la Plataforma B2B | Media — procesamiento batch; no bloquea flujo del usuario |
+| **Servicio de Notificaciones Push** | Envía alertas sobre promociones activas, cupones próximos a vencer y confirmaciones de acreditación | Baja — complementario; falla silenciosa aceptable |
+
+> **Regla**: Toda nueva integración que se incorpore al sistema debe documentarse con la Ficha de Integración antes de su implementación.
+
+---
+
 ## [Contexto y Activación]
 Cuando el usuario solicite diseñar, documentar, analizar o proponer una integración con un sistema de terceros, o cuando el flujo arquitectónico lo requiera, el agente DEBE generar una "Ficha de Integración".
 

@@ -11,9 +11,10 @@ Your goal is to assist in completing the **`DesignTemplate.md`**. You will recei
 You must base all your responses on the information contained within the following documents:
 
 1.  **`DesignTemplate.md`**: This is the master document you are helping to fill. You must follow its structure precisely.
-2.  **`appContext.md`**: This document contains the detailed functional requirements, user flows, and screen descriptions for the "SmartCart" application. **All design choices must align with this context.**
-3.  **`contextGuide.md`**: This document provides the foundational principles for software design, including classic design patterns, architectural quality tests, and guidelines for frontend/backend architecture. It also includes the C4 model for documentation.
-4.  **`designGuidelines.md`**: This document specifies how to design and document integrations with third-party systems using a mandatory "Integration Sheet" format.
+2.  **`appContext.md`**: This document contains the detailed functional requirements, user flows, and screen-by-screen descriptions for the "SmartCart" application. **All design choices must align with this context.**
+3.  **`designGuidelines.md`**: This document lists the six external integrations that SmartCart depends on (POS, Product Catalog/Barcode DB, Location Services, B2B Analytics Platform, AI/LLM Engine, Push Notifications) and defines the mandatory "Integration Sheet" format that must be used to document every integration.
+4.  **`architectureGuide.md`**: This document covers frontend and backend architecture principles, including technology stack decision frameworks, authentication/authorization patterns, layered frontend design, service architecture (monolith vs. microservices), security, observability, the AI pipeline for B2B analytics, availability/scalability patterns, and the full C4 model documentation guide.
+5.  **`designPatterns.md`**: This document contains the SmartCart-specific GoF pattern applications. For each pattern it specifies the exact functionality it solves, the concrete actors involved (class names, interfaces), and the justification tied to SmartCart's screens and flows.
 
 ## General Rules
 
@@ -35,7 +36,7 @@ You must base all your responses on the information contained within the followi
 -   When the template requires a diagram (e.g., System Context, Container, Component), you MUST generate it using **MermaidJS syntax** (`C4Context`, `C4Container`, `C4Component`).
 -   The diagrams must accurately represent the "SmartCart" application as described in `appContext.md`.
 -   **System Context Diagram (Level 1)**: Should show the "SmartCart User", the "SmartCart System", and external systems like a "Supermarket POS System", "Push Notification Service", and a "B2B Analytics Dashboard" for brands and supermarkets.
--   **Container Diagram (Level 2)**: Should break down the "SmartCart System" into its deployable units, such as a "Mobile App (React Native)", "Backend API (Node.js/Express)", "Database (PostgreSQL)", and any other services like a "Route Calculation Service (Worker)".
+-   **Container Diagram (Level 2)**: Should break down the "SmartCart System" into its deployable units, such as a "Mobile App (React Native)", "Backend API (Node.js/Express)", "Database (PostgreSQL)", a "Message Queue" for async decoupling, and a "B2B Analytics Worker" that processes validated purchase data for the AI/LLM pipeline.
 -   **Component Diagram (Level 3)**: Should zoom into a specific container (e.g., the Backend API) and show its internal components like "Authentication Controller", "Session Service", "Product Repository", etc.
 
 ### 3. Database Design
