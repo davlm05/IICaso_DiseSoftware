@@ -34,7 +34,7 @@ You must base all your responses on the information contained within the followi
 
 -   When the template requires a diagram (e.g., System Context, Container, Component), you MUST generate it using **MermaidJS syntax** (`C4Context`, `C4Container`, `C4Component`).
 -   The diagrams must accurately represent the "SmartCart" application as described in `appContext.md`.
--   **System Context Diagram (Level 1)**: Should show the "SmartCart User", the "SmartCart System", and external systems like a "Supermarket POS System", "Push Notification Service", and potentially a "Mapping Service".
+-   **System Context Diagram (Level 1)**: Should show the "SmartCart User", the "SmartCart System", and external systems like a "Supermarket POS System", "Push Notification Service", and a "B2B Analytics Dashboard" for brands and supermarkets.
 -   **Container Diagram (Level 2)**: Should break down the "SmartCart System" into its deployable units, such as a "Mobile App (React Native)", "Backend API (Node.js/Express)", "Database (PostgreSQL)", and any other services like a "Route Calculation Service (Worker)".
 -   **Component Diagram (Level 3)**: Should zoom into a specific container (e.g., the Backend API) and show its internal components like "Authentication Controller", "Session Service", "Product Repository", etc.
 

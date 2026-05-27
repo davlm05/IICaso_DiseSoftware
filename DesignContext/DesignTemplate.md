@@ -467,7 +467,7 @@ SmartCart is an AI-powered retail intelligence platform that combines digital sh
 | **Repository** | [e.g., Abstracts DB access; domain layer depends on interface, not ORM] | [e.g., `/repositories/`] |
 | **Service Layer** | [e.g., Encapsulates use cases and orchestrates entities] | [e.g., `/services/`] |
 | **Factory** | [e.g., Creates complex domain objects like sessions or QR codes] | [e.g., `/domain/factories/`] |
-| **Strategy** | [e.g., Pluggable route-calculation algorithms (TSP variants)] | [e.g., `/domain/routing/`] |
+| **Strategy** | [e.g., Pluggable points-accrual algorithms (fixed points per unit, spend-based multiplier, volume tiers)] | [e.g., `/domain/points/`] |
 | **Observer / Event** | [e.g., Domain events for points credited, triggering push notification] | [e.g., `/events/`] |
 | **DTO (Data Transfer Object)** | [e.g., Separate request/response models from domain entities] | [e.g., `/dto/`] |
 
@@ -475,7 +475,7 @@ SmartCart is an AI-powered retail intelligence platform that combines digital sh
 
 | Logic | Description |
 |-------|-------------|
-| **Route Calculation** | [e.g., TSP-based algorithm using store map waypoints — describe inputs, outputs, algorithm choice] |
+| **Consumer Profiling Pipeline** | [e.g., Async aggregation of scan/purchase events over a rolling 90-day window → behavioral feature extraction (category frequency, avg ticket, purchase hour) → AI segment classification → B2B data export] |
 | **QR Generation & Validation** | [e.g., Signed, time-sensitive token embedding session items — describe encoding, expiry, validation steps] |
 | **Points Calculation** | [e.g., Rules for awarding points per product, bonuses, multipliers] |
 | **Session Management** | [e.g., Shopping session lifecycle — creation, item accumulation, expiry, checkout finalization] |
@@ -504,8 +504,8 @@ SmartCart is an AI-powered retail intelligence platform that combines digital sh
 | POST | `/sessions/:id/validate` | Validate QR and credit points (called by POS) | POS API Key |
 | GET | `/rewards` | List available rewards | Yes |
 | POST | `/rewards/:id/redeem` | Redeem a reward | Yes |
-| GET | `/stores/:id/map` | Get store map for navigation | Yes |
-| POST | `/navigation/route` | Calculate optimal shopping route | Yes |
+| GET | `/analytics/segments` | Get consumer segments for a store | B2B API Key |
+| GET | `/analytics/products/:id/insights` | Get product performance insights | B2B API Key |
 
 ### Data Contracts (DTOs)
 
@@ -539,7 +539,7 @@ SmartCart is an AI-powered retail intelligence platform that combines digital sh
 | Mechanism | Use Case | Queue / Topic Name |
 |-----------|----------|--------------------|
 | [e.g., RabbitMQ / SQS] | [e.g., Push notification after points credited] | [e.g., `notifications.points-credited`] |
-| [e.g., RabbitMQ / SQS] | [e.g., Route calculation job offloaded to worker] | [e.g., `routing.calculate`] |
+| [e.g., RabbitMQ / SQS] | [e.g., Consumer profiling job triggered after checkout validation] | [e.g., `analytics.profile-update`] |
 | [e.g., WebSocket] | [e.g., Real-time QR validation status push to mobile client] | [e.g., WS room: `session:{id}`] |
 
 ---
@@ -603,11 +603,12 @@ SmartCart is an AI-powered retail intelligence platform that combines digital sh
 5. The total points are added to the user's account in the database.
 6. A success message is sent back to the POS and a push notification is triggered to the user's device confirming the points have been credited.
 
-### Route Calculation Flow (Voice Assistant)
-1. The backend receives a request with the user's shopping list and current location (e.g., store entrance).
-2. It loads the digital map for the specified supermarket, which contains the coordinates/locations of all product categories and aisles.
-3. Using an algorithm (e.g., a solution to the Traveling Salesperson Problem), it calculates the most efficient route to visit all required locations.
-4. It returns an ordered list of waypoints/instructions for the frontend to consume and relay via voice.
+### Consumer Data Pipeline (B2B Analytics)
+1. After each validated checkout, the backend enqueues a behavioral event containing the user ID, store ID, list of purchased sponsored products, and transaction timestamp.
+2. A background worker picks up the event and aggregates it into the user's rolling behavioral profile (last 90 days): category frequency, average ticket, average purchase hour, weekly frequency, and organic product ratio.
+3. If the user has at least 5 historical transactions, the profile is sent to the AI inference service for consumer segment classification (e.g., budget_conscious, organic_premium, impulse_buyer, brand_loyal).
+4. The classified profile is upserted in the consumer_profiles table and the Redis cache for that user is invalidated.
+5. Aggregated and anonymized segment data becomes available to B2B clients (supermarkets and brands) via the analytics API, enabling targeted campaign planning and regional demand prediction.
 
 ---
 
