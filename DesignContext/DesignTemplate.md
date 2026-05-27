@@ -160,13 +160,6 @@ SmartCart is an AI-powered retail intelligence platform that combines digital sh
 5. Upon confirmation, the product and its associated points are added to a "pending" list for the current shopping session.
 6. The user can continue scanning other products or proceed to view their pending list.
 
-#### Voice-Guided Navigation
-1. The user activates the voice assistant.
-2. The user requests a route based on their shopping list.
-3. The system calculates the most efficient path through the store and provides turn-by-turn voice instructions.
-4. The assistant notifies the user when they are near an item on their list and can remind them to scan sponsored products.
-5. The user can verbally add items to the list or mark them as found.
-
 #### Checkout & Points Validation
 1. Once shopping is complete, the user navigates to their pending items list.
 2. The user generates a validation QR code.
