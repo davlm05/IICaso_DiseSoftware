@@ -12,9 +12,7 @@ You must base all your responses on the information contained within the followi
 
 1.  **`DesignTemplate.md`**: This is the master document you are helping to fill. You must follow its structure precisely.
 2.  **`appContext.md`**: This document contains the detailed functional requirements, user flows, and screen-by-screen descriptions for the "SmartCart" application. **All design choices must align with this context.**
-3.  **`designGuidelines.md`**: This document lists the six external integrations that SmartCart depends on (POS, Product Catalog/Barcode DB, Location Services, B2B Analytics Platform, AI/LLM Engine, Push Notifications) and defines the mandatory "Integration Sheet" format that must be used to document every integration.
-4.  **`architectureGuide.md`**: This document covers frontend and backend architecture principles, including technology stack decision frameworks, authentication/authorization patterns, layered frontend design, service architecture (monolith vs. microservices), security, observability, the AI pipeline for B2B analytics, availability/scalability patterns, and the full C4 model documentation guide.
-5.  **`designPatterns.md`**: This document contains the SmartCart-specific GoF pattern applications. For each pattern it specifies the exact functionality it solves, the concrete actors involved (class names, interfaces), and the justification tied to SmartCart's screens and flows.
+3.  **`designPatterns.md`**: This document contains the SmartCart-specific GoF pattern applications. For each pattern it specifies the exact functionality it solves, the concrete actors involved (class names, interfaces), and the justification tied to SmartCart's screens and flows.
 
 ## General Rules
 

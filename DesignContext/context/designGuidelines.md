@@ -41,4 +41,3 @@ Al redactar el campo Estrategia de Integración, el agente debe aplicar la sigui
 
 - Protección del origen: La estrategia debe diseñarse para no impactar el sistema destino. Si el Workload indica alta demanda en cierto horario, la estrategia debe esquivarlo.
 - Manejo de datos: Plantear soluciones técnicas específicas según el escenario (ej. extracción por lotes/batch en horas valle, uso de Job Schedulers, diseño de cargas incrementales o deltas para evitar transferencias redundantes, o colas de mensajería para desacoplar cargas).
-
