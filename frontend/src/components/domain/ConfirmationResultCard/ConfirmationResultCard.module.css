@@ -8,8 +8,9 @@
 
 /* Número grande de puntos acreditados. */
 .big {
-  font-size: 50px;
-  font-weight: var(--sc-fw-heavy);
+  font-family: var(--sc-font-display);
+  font-size: 52px;
+  font-weight: var(--sc-fw-bold);
   color: var(--sc-color-primary);
   line-height: 1;
   letter-spacing: -2px;
@@ -48,6 +49,7 @@
 
 /* Estrella dorada a la derecha. */
 .star {
-  font-size: 28px;
+  font-size: 30px;
   color: var(--sc-color-star);
+  filter: drop-shadow(0 4px 8px rgba(232, 169, 60, 0.4));
 }

@@ -2,7 +2,8 @@
 .card {
   background: var(--sc-color-surface);
   border: 1px solid var(--sc-color-border);
-  border-radius: var(--sc-radius-sm);
+  border-radius: var(--sc-radius-lg);
+  box-shadow: var(--sc-shadow-card);
   overflow: hidden;
 }
 
@@ -10,21 +11,22 @@
 .emptyCard {
   background: var(--sc-color-surface);
   border: 1.5px dashed var(--sc-color-border-dashed);
-  border-radius: var(--sc-radius-md);
+  border-radius: var(--sc-radius-lg);
   padding: var(--sc-sp-10) var(--sc-sp-7);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--sc-sp-2);
   text-align: center;
+  box-shadow: var(--sc-shadow-soft);
 }
 
 /* Círculo del ícono barcode (.empty-icon-wrap). */
 .emptyIconWrap {
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
   border-radius: var(--sc-radius-round);
-  background: var(--sc-color-surface-soft);
+  background: linear-gradient(145deg, #eef5f0, #e0ede7);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -1,55 +1,76 @@
-/* Tarjeta verde de puntos (.pts-card de pantalla-1 / pantalla-3) */
+/* Tarjeta de puntos — héroe esmeralda con gradiente, halo y número display. */
 .card {
-  background: var(--sc-color-primary);
+  position: relative;
+  overflow: hidden;
+  background: var(--sc-grad-primary);
   border-radius: var(--sc-radius-xl);
-  padding: var(--sc-sp-6) var(--sc-sp-7);
+  padding: 20px var(--sc-sp-7) 22px;
   color: var(--sc-color-text-on-primary);
+  box-shadow: var(--sc-shadow-primary);
 }
 
-/* Fila superior: bloque de texto + pill de pendientes (.pts-row) */
+/* Halo de luz decorativo. */
+.card::before {
+  content: '';
+  position: absolute;
+  top: -45%;
+  right: -18%;
+  width: 230px;
+  height: 230px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22), transparent 70%);
+  pointer-events: none;
+}
+
+/* Fila superior: bloque de texto + pill de pendientes. */
 .row {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
 }
 
-/* Etiqueta "TUS PUNTOS" (.pts-label) */
+/* Etiqueta "TUS PUNTOS". */
 .label {
   font-size: var(--sc-fs-xs);
   opacity: 0.85;
-  font-weight: var(--sc-fw-medium);
+  font-weight: var(--sc-fw-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
 }
 
-/* Número grande de balance (.pts-number) */
+/* Número grande del balance. */
 .number {
+  font-family: var(--sc-font-display);
   font-size: var(--sc-fs-display);
-  font-weight: var(--sc-fw-heavy);
+  font-weight: var(--sc-fw-bold);
   line-height: 1;
-  letter-spacing: -2px;
-}
-
-/* Subtítulo (.pts-sub) */
-.sub {
-  font-size: var(--sc-fs-sm);
-  opacity: 0.8;
+  letter-spacing: -1.5px;
   margin-top: 2px;
 }
 
-/* Contenedor de la pill de pendientes, arriba a la derecha */
+/* Subtítulo. */
+.sub {
+  font-size: var(--sc-fs-sm);
+  opacity: 0.85;
+  margin-top: 4px;
+}
+
+/* Pill de pendientes, arriba a la derecha. */
 .pending {
+  position: relative;
   flex-shrink: 0;
 }
 
-/* Envoltura de la barra de progreso (.pts-bar-wrap) */
+/* Envoltura de la barra de progreso. */
 .barWrap {
-  margin-top: var(--sc-sp-3);
+  position: relative;
+  margin-top: var(--sc-sp-4);
 }
 
-/* Etiqueta bajo la barra "balance / threshold pts para canjear" (.pts-bar-label) */
+/* Etiqueta bajo la barra. */
 .barLabel {
   font-size: var(--sc-fs-2xs);
-  opacity: 0.75;
-  margin-top: var(--sc-sp-1);
+  opacity: 0.8;
+  margin-top: 6px;
+  letter-spacing: 0.2px;
 }

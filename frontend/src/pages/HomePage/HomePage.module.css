@@ -4,10 +4,10 @@
  * Aquí solo la fila de CTAs del estado ">=2 productos" (.btn-row del mockup 4).
  */
 
-/* Fila de acciones: "Escanear otro" (flex 1) + "Generar QR" (flex 1.4). */
+/* Fila de acciones: "Escanear otro" (flex 1) + "Generar QR" (flex 1.5). */
 .ctaRow {
   display: flex;
-  gap: var(--sc-sp-3);
+  gap: var(--sc-sp-2);
 }
 
 .ctaRow > :first-child {
@@ -15,5 +15,12 @@
 }
 
 .ctaRow > :last-child {
-  flex: 1.4;
+  flex: 1.5;
+}
+
+/* Compactar los botones para que la fila no desborde el ancho del marco. */
+.ctaRow button {
+  min-width: 0;
+  padding: 14px var(--sc-sp-4);
+  font-size: var(--sc-fs-body);
 }

@@ -24,9 +24,10 @@
 /* Código del ticket en monospace. */
 .code {
   font-family: var(--sc-font-mono);
-  font-size: var(--sc-fs-xs);
-  color: var(--sc-color-text-muted);
-  letter-spacing: 1px;
+  font-size: var(--sc-fs-sm);
+  font-weight: var(--sc-fw-semibold);
+  color: var(--sc-color-text);
+  letter-spacing: 2px;
 }
 
 /* "Válido por 10 minutos" con icono de reloj. */
@@ -46,10 +47,10 @@
   justify-content: space-between;
   align-items: center;
   gap: var(--sc-sp-3);
-  padding: var(--sc-sp-2) var(--sc-sp-4);
+  padding: var(--sc-sp-3) var(--sc-sp-4);
   background: var(--sc-color-tip-bg);
   border: 1px solid var(--sc-color-border-tint);
-  border-radius: var(--sc-radius-xs);
+  border-radius: var(--sc-radius-md);
 }
 
 /* Texto del resumen (productos pendientes). */

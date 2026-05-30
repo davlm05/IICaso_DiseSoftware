@@ -2,9 +2,10 @@
 .bottomnav {
   display: flex;
   justify-content: space-around;
-  padding: 8px 0 14px;
+  align-items: center;
+  padding: 10px 8px 16px;
   border-top: 1px solid var(--sc-color-border);
-  background: var(--sc-color-bg-app);
+  background: var(--sc-color-surface);
   flex-shrink: 0;
 }
 
@@ -13,19 +14,31 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  padding: 6px 16px;
+  border-radius: var(--sc-radius-md);
   color: var(--sc-color-nav-idle);
+  transition: var(--sc-transition);
+}
+.item:hover {
+  color: var(--sc-color-primary-dark);
 }
 .item i {
-  font-size: 19px;
-  color: var(--sc-color-nav-idle);
+  font-size: 18px;
+  color: inherit;
+  transition: var(--sc-transition);
 }
 .label {
   font-size: var(--sc-fs-2xs);
-  color: var(--sc-color-nav-idle);
+  font-weight: var(--sc-fw-semibold);
+  color: inherit;
 }
 
-/* Ítem activo (clase active de NavLink): verde. */
+/* Ítem activo (clase active de NavLink): pill esmeralda suave. */
+.active {
+  background: var(--sc-color-surface-tint);
+  color: var(--sc-color-primary-dark);
+}
 .active i {
   color: var(--sc-color-primary);
 }

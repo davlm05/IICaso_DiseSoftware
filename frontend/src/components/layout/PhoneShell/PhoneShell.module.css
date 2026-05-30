@@ -1,14 +1,18 @@
-/* Marco del teléfono — reproduce .phone de los mockups. */
+/* Marco del teléfono — dispositivo premium con bisel y dynamic island. */
 .phone {
   position: relative;
   width: var(--sc-phone-w);
   height: var(--sc-phone-h);
   border-radius: var(--sc-radius-phone);
-  border: 2px solid var(--sc-color-border-strong);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--sc-shadow-phone);
+  /* Bisel del dispositivo (anillos) + sombra ambiental. */
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.55),
+    0 0 0 9px #0e1b15,
+    0 0 0 10px rgba(255, 255, 255, 0.04),
+    var(--sc-shadow-phone);
 }
 
 /* Fondos según prop background. */
@@ -16,7 +20,9 @@
   background: var(--sc-color-bg-app);
 }
 .bgPrimary {
-  background: var(--sc-color-primary);
+  background:
+    radial-gradient(130% 90% at 50% -10%, rgba(255, 255, 255, 0.18), transparent 55%),
+    var(--sc-grad-primary);
   color: var(--sc-color-text-on-primary);
 }
 .bgDark {
@@ -24,31 +30,34 @@
   color: var(--sc-color-text-on-primary);
 }
 
-/* Barra de estado (9:41 / notch / 87%). */
+/* Barra de estado (hora / dynamic island / batería). */
 .statusbar {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 24px 2px;
+  padding: 12px 26px 4px;
   font-size: var(--sc-fs-xs);
-  color: var(--sc-color-text-muted);
+  font-weight: var(--sc-fw-semibold);
+  letter-spacing: 0.2px;
+  color: var(--sc-color-text);
   flex-shrink: 0;
 }
 /* Variante clara para fondos verdes. */
 .statusbarDark {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.92);
 }
 
+/* Dynamic island. */
 .notch {
-  width: 68px;
-  height: 14px;
+  width: 86px;
+  height: 22px;
   background: var(--sc-color-notch);
-  border-radius: 0 0 var(--sc-radius-pill) var(--sc-radius-pill);
+  border-radius: var(--sc-radius-pill);
   margin: 0 auto;
 }
-/* Notch sobre fondo verde. */
 .notchDark {
-  background: var(--sc-color-primary-deep);
+  background: rgba(6, 30, 20, 0.55);
 }
 
 /* Contenedor de contenido scrollable. */
@@ -59,10 +68,14 @@
   flex-direction: column;
   min-height: 0;
 }
-/* Padding por defecto del contenido (con separación entre bloques, como en los mockups). */
+/* Padding por defecto del contenido (con separación entre bloques). */
 .contentPadded {
-  padding: 14px 16px;
-  gap: 13px;
+  padding: 16px 16px 22px;
+  gap: 14px;
+}
+/* Los bloques conservan su altura natural; el contenedor hace scroll. */
+.contentPadded > * {
+  flex-shrink: 0;
 }
 
 /* En móvil real el marco ocupa toda la pantalla. */
@@ -72,6 +85,6 @@
     height: 100vh;
     height: 100dvh;
     border-radius: 0;
-    border: none;
+    box-shadow: none;
   }
 }

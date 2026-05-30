@@ -2,9 +2,9 @@
 .item {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 11px var(--sc-sp-4);
-  border-bottom: 1px solid #eff4ef;
+  gap: 12px;
+  padding: 12px var(--sc-sp-4);
+  border-bottom: 1px solid var(--sc-color-border);
 }
 
 /* La última fila no lleva separador. */
@@ -14,15 +14,15 @@
 
 /* Resaltado de la fila recién escaneada (.scanned-item.new). */
 .itemNew {
-  background: #f0faf5;
+  background: var(--sc-color-tip-bg);
 }
 
 /* Contenedor del ícono (.item-icon). */
 .iconWrap {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--sc-radius-pill);
-  background: var(--sc-color-surface-soft);
+  width: 42px;
+  height: 42px;
+  border-radius: var(--sc-radius-md);
+  background: linear-gradient(145deg, #eef5f0, #dfece6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -47,7 +47,7 @@
 /* Nombre del producto (.item-name). */
 .name {
   font-size: var(--sc-fs-body);
-  font-weight: var(--sc-fw-medium);
+  font-weight: var(--sc-fw-semibold);
   color: var(--sc-color-text);
 }
 
@@ -85,9 +85,9 @@
 
 /* Botón eliminar, variante peligro (.btn-remove). */
 .remove {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--sc-sp-2);
+  width: 30px;
+  height: 30px;
+  border-radius: var(--sc-radius-sm);
   background: var(--sc-color-danger-bg);
   display: flex;
   align-items: center;
@@ -96,6 +96,10 @@
   cursor: pointer;
   flex-shrink: 0;
   font-family: inherit;
+  transition: var(--sc-transition);
+}
+.remove:hover {
+  filter: brightness(0.96);
 }
 
 .remove i {

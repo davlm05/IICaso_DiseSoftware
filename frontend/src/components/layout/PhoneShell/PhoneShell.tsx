@@ -47,7 +47,7 @@ export function PhoneShell({
     : styles.statusbar
   const notchClass = useDarkStatus ? `${styles.notch} ${styles.notchDark}` : styles.notch
   const contentClass = contentPadding
-    ? `${styles.content} ${styles.contentPadded} sc-scroll`
+    ? `${styles.content} ${styles.contentPadded} sc-scroll sc-stagger`
     : `${styles.content} sc-scroll`
 
   return (

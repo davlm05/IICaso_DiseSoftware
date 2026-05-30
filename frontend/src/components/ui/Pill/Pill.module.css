@@ -19,11 +19,13 @@
 
 /* location — blanco con borde verde claro (.loc-row). */
 .location {
-  padding: var(--sc-sp-2) var(--sc-sp-3);
+  padding: 7px var(--sc-sp-4);
   background: var(--sc-color-surface);
   border: 1px solid var(--sc-color-border-tint);
-  border-radius: var(--sc-radius-xs);
+  border-radius: var(--sc-radius-pill);
   color: var(--sc-color-text);
+  font-weight: var(--sc-fw-medium);
+  box-shadow: var(--sc-shadow-soft);
 }
 
 .location i {

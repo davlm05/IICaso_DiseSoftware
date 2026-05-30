@@ -1,16 +1,31 @@
-/* Tarjeta verde de balance de puntos (.balance-card). */
+/* Tarjeta de balance — héroe esmeralda con halo y número display. */
 .card {
+  position: relative;
+  overflow: hidden;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--sc-color-primary);
+  background: var(--sc-grad-primary);
   border-radius: var(--sc-radius-xl);
-  padding: var(--sc-sp-6) var(--sc-sp-7);
+  padding: 20px var(--sc-sp-7);
   color: var(--sc-color-text-on-primary);
+  box-shadow: var(--sc-shadow-primary);
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -8%;
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.2), transparent 70%);
+  pointer-events: none;
 }
 
 /* Columna izquierda con label / número / subtítulo. */
 .left {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -18,27 +33,30 @@
 
 .label {
   font-size: var(--sc-fs-xs);
-  font-weight: var(--sc-fw-medium);
+  font-weight: var(--sc-fw-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
   opacity: 0.85;
 }
 
 .num {
-  font-size: 36px;
-  font-weight: var(--sc-fw-heavy);
+  font-family: var(--sc-font-display);
+  font-size: 42px;
+  font-weight: var(--sc-fw-bold);
   line-height: 1;
-  letter-spacing: -1px;
+  letter-spacing: -1.5px;
+  margin-top: 2px;
 }
 
 .sub {
   margin-top: var(--sc-sp-1);
   font-size: var(--sc-fs-xs);
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 /* Estrella decorativa grande y translúcida. */
 .icon {
-  font-size: 38px;
-  opacity: 0.4;
+  position: relative;
+  font-size: 44px;
+  opacity: 0.5;
 }

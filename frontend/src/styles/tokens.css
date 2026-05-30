@@ -1,76 +1,89 @@
 /**
  * SmartCart — Design Tokens
- * Extraídos 1:1 de los mockups de Figma (DesignContext/figmaScreens/*.html).
- * Toda la UI debe consumir estas variables; no hardcodear colores/medidas.
+ *
+ * Dirección estética: "Esmeralda premium + oro de lealtad".
+ * Superficies cálidas off-white, verde esmeralda con profundidad, acento dorado
+ * para puntos/recompensas, sombras por capas y tipografía con carácter
+ * (Bricolage Grotesque para display, Plus Jakarta Sans para UI).
+ * Toda la UI consume estas variables; no se hardcodean colores ni medidas.
  */
 :root {
-  /* ---- Color: marca ---- */
+  /* ---- Color: marca (escala esmeralda) ---- */
   --sc-color-primary: #1d9e75;
-  --sc-color-primary-dark: #0d6e48;
-  --sc-color-primary-deep: #0d5c40;
-  --sc-color-primary-700: #1a7a58;
-  --sc-color-primary-soft: #c8e8d8;
+  --sc-color-primary-dark: #0e7a56; /* acentos / texto enfático */
+  --sc-color-primary-deep: #0a4d35; /* fondos oscuros / notch sobre verde */
+  --sc-color-primary-700: #0c5e40; /* gradientes profundos */
+  --sc-color-primary-soft: #c8e8d8; /* avatar / fondos suaves */
+
+  /* ---- Color: acento dorado (lealtad / puntos / recompensas) ---- */
+  --sc-color-gold: #e8a93c;
+  --sc-color-gold-deep: #8a5a12;
+  --sc-color-gold-soft: #fbf1da;
 
   /* ---- Color: superficies y fondos ---- */
-  --sc-color-bg-canvas: #e8ede8; /* fuera del marco del teléfono */
-  --sc-color-bg-app: #f5f7f5; /* fondo dentro del teléfono */
+  --sc-color-bg-canvas: #e6ede5; /* fuera del marco (ver gradiente en global) */
+  --sc-color-bg-app: #fafbf8; /* fondo dentro del teléfono (off-white cálido) */
   --sc-color-surface: #ffffff;
-  --sc-color-surface-soft: #f0f5f0; /* icon wraps */
-  --sc-color-surface-tint: #e4f0ea; /* botones suaves / chips */
-  --sc-color-tip-bg: #f0f8f4; /* help / summary boxes */
-  --sc-color-notch: #dce4dc;
+  --sc-color-surface-soft: #eef5f0; /* icon wraps */
+  --sc-color-surface-tint: #e6f3ec; /* chips / botones suaves */
+  --sc-color-tip-bg: #eff8f2; /* help / summary boxes */
+  --sc-color-notch: #15241b; /* notch oscuro sobre marco claro */
 
   /* ---- Color: bordes ---- */
-  --sc-color-border: #dfe6df;
-  --sc-color-border-strong: #c8d0c8;
-  --sc-color-border-tint: #9fd4b8; /* borde verde claro (location) */
-  --sc-color-border-dashed: #c8d4c8;
+  --sc-color-border: #e7ede7;
+  --sc-color-border-strong: #dbe3db; /* bisel del teléfono */
+  --sc-color-border-tint: #b7dec9; /* borde verde claro (location) */
+  --sc-color-border-dashed: #cdd8cd;
 
   /* ---- Color: texto ---- */
-  --sc-color-text: #1a2a1a;
-  --sc-color-text-muted: #7a8a7a;
-  --sc-color-text-faint: #a0aaa0;
+  --sc-color-text: #14241b;
+  --sc-color-text-muted: #69786e;
+  --sc-color-text-faint: #9ba89e;
   --sc-color-text-on-primary: #ffffff;
-  --sc-color-nav-idle: #b4c0b4;
-  --sc-color-spons-icon: #5a8a6a;
+  --sc-color-nav-idle: #aebab0;
+  --sc-color-spons-icon: #4e8a6a;
 
   /* ---- Color: estados semánticos ---- */
-  --sc-color-pending-bg: #fff8e1;
-  --sc-color-pending-text: #7a5800;
-  --sc-color-pending-border: #f0c040;
-  --sc-color-danger-bg: #fdecea;
-  --sc-color-danger-text: #c0392b;
-  --sc-color-star: #e6ac00;
+  --sc-color-pending-bg: #fbf1da;
+  --sc-color-pending-text: #8a5a12;
+  --sc-color-pending-border: #e8c879;
+  --sc-color-danger-bg: #fceae7;
+  --sc-color-danger-text: #c5392b;
+  --sc-color-star: #e8a93c;
 
-  /* ---- Gradientes (recompensas / íconos) ---- */
-  --sc-grad-discount: linear-gradient(135deg, #1d9e75, #0d6e48);
-  --sc-grad-coffee: linear-gradient(135deg, #8b5a2b, #5c3a1e);
-  --sc-grad-store: linear-gradient(135deg, #4a90c2, #2b5d80);
-  --sc-grad-premium: linear-gradient(135deg, #9aa0a6, #6b7178);
+  /* ---- Gradientes ---- */
+  --sc-grad-primary: linear-gradient(145deg, #24a87c 0%, #128a63 52%, #0c6b4c 100%);
+  --sc-grad-discount: linear-gradient(135deg, #22a97d 0%, #0c5e40 100%);
+  --sc-grad-coffee: linear-gradient(135deg, #a6713c, #5c3a1e);
+  --sc-grad-store: linear-gradient(135deg, #4e97c9, #295e84);
+  --sc-grad-premium: linear-gradient(135deg, #4a5a52, #232e28);
+  --sc-grad-gold: linear-gradient(135deg, #f0c068, #d28f1e);
 
   /* ---- Tipografía ---- */
-  --sc-font-base: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --sc-font-mono: 'Courier New', ui-monospace, monospace;
-  --sc-fs-display: 46px;
-  --sc-fs-h1: 18px;
+  --sc-font-base: 'Plus Jakarta Sans Variable', system-ui, -apple-system, sans-serif;
+  --sc-font-display: 'Bricolage Grotesque Variable', 'Plus Jakarta Sans Variable', sans-serif;
+  --sc-font-mono: 'JetBrains Mono', 'Courier New', ui-monospace, monospace;
+  --sc-fs-display: 50px;
+  --sc-fs-h1: 19px;
   --sc-fs-h2: 16px;
   --sc-fs-h3: 15px;
   --sc-fs-body: 13px;
   --sc-fs-sm: 12px;
   --sc-fs-xs: 11px;
   --sc-fs-2xs: 10px;
-  --sc-fw-medium: 600;
+  --sc-fw-medium: 500;
+  --sc-fw-semibold: 600;
   --sc-fw-bold: 700;
   --sc-fw-heavy: 800;
 
   /* ---- Radios ---- */
-  --sc-radius-phone: 44px;
-  --sc-radius-xl: 20px;
+  --sc-radius-phone: 46px;
+  --sc-radius-xl: 24px;
   --sc-radius-lg: 18px;
   --sc-radius-md: 16px;
   --sc-radius-sm: 14px;
   --sc-radius-xs: 12px;
-  --sc-radius-pill: 10px;
+  --sc-radius-pill: 999px;
   --sc-radius-round: 50%;
 
   /* ---- Espaciado (escala base 2px) ---- */
@@ -84,12 +97,20 @@
   --sc-sp-8: 24px;
   --sc-sp-10: 32px;
 
-  /* ---- Sombras ---- */
-  --sc-shadow-card: 0 6px 16px rgba(29, 158, 117, 0.25);
-  --sc-shadow-phone: 0 16px 48px rgba(0, 0, 0, 0.13);
-  --sc-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.06);
+  /* ---- Sombras (por capas, suaves y con tinte) ---- */
+  --sc-shadow-card: 0 1px 2px rgba(15, 45, 32, 0.05), 0 10px 30px -14px rgba(15, 45, 32, 0.16);
+  --sc-shadow-card-hover: 0 2px 4px rgba(15, 45, 32, 0.06), 0 18px 40px -16px rgba(15, 45, 32, 0.22);
+  --sc-shadow-soft: 0 2px 10px rgba(15, 45, 32, 0.05);
+  --sc-shadow-primary: 0 14px 32px -12px rgba(18, 138, 99, 0.55);
+  --sc-shadow-gold: 0 12px 28px -12px rgba(210, 143, 30, 0.5);
+  --sc-shadow-phone: 0 40px 90px -34px rgba(8, 50, 34, 0.5), 0 14px 34px -16px rgba(0, 0, 0, 0.14);
+
+  /* ---- Movimiento ---- */
+  --sc-transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  --sc-transition-slow: 320ms cubic-bezier(0.4, 0, 0.2, 1);
+  --sc-ring: 0 0 0 3px rgba(29, 158, 117, 0.2);
 
   /* ---- Layout del marco ---- */
-  --sc-phone-w: 360px;
-  --sc-phone-h: 720px;
+  --sc-phone-w: 372px;
+  --sc-phone-h: 760px;
 }

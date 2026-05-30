@@ -1,7 +1,8 @@
-/* Contenedor blanco con borde — superficie estándar. */
+/* Contenedor blanco — superficie estándar con sombra suave. */
 .card {
   background: var(--sc-color-surface);
   border: 1px solid var(--sc-color-border);
-  border-radius: var(--sc-radius-md);
+  border-radius: var(--sc-radius-lg);
   padding: var(--sc-sp-5);
+  box-shadow: var(--sc-shadow-card);
 }

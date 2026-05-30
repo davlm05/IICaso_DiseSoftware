@@ -1,11 +1,11 @@
-/* Contenedor de pestañas (.tabs). */
+/* Contenedor de pestañas tipo toggle (.tabs). */
 .tabs {
   display: flex;
   gap: var(--sc-sp-1);
-  padding: var(--sc-sp-1);
-  background: var(--sc-color-surface);
+  padding: 5px;
+  background: var(--sc-color-surface-soft);
   border: 1px solid var(--sc-color-border);
-  border-radius: var(--sc-radius-sm);
+  border-radius: var(--sc-radius-pill);
 }
 
 /* Pestaña inactiva (.tab). */
@@ -18,23 +18,24 @@
   color: var(--sc-color-text-muted);
   font-family: inherit;
   font-size: var(--sc-fs-body);
-  font-weight: var(--sc-fw-medium);
+  font-weight: var(--sc-fw-semibold);
   text-align: center;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: var(--sc-transition);
 }
 
 .tab:hover {
-  background: var(--sc-color-surface-tint);
+  color: var(--sc-color-primary-dark);
 }
 
-/* Pestaña activa — verde lleno (.tab.active). */
+/* Pestaña activa — esmeralda con gradiente y sombra (.tab.active). */
 .active {
-  background: var(--sc-color-primary);
+  background: var(--sc-grad-primary);
   color: var(--sc-color-text-on-primary);
   font-weight: var(--sc-fw-bold);
+  box-shadow: 0 6px 14px -6px rgba(18, 138, 99, 0.5);
 }
 
 .active:hover {
-  background: var(--sc-color-primary);
+  color: var(--sc-color-text-on-primary);
 }

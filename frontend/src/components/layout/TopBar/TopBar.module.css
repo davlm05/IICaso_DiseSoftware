@@ -2,7 +2,7 @@
 .topbar {
   display: flex;
   align-items: center;
-  padding: 10px 18px;
+  padding: 8px 18px 12px;
   flex-shrink: 0;
 }
 
@@ -18,12 +18,13 @@
   gap: 10px;
 }
 
-/* Logo "SmartCart". */
+/* Logo "SmartCart" en fuente display. */
 .logo {
-  font-size: var(--sc-fs-h1);
-  font-weight: var(--sc-fw-heavy);
+  font-family: var(--sc-font-display);
+  font-size: 21px;
+  font-weight: var(--sc-fw-bold);
   color: var(--sc-color-text);
-  letter-spacing: -0.5px;
+  letter-spacing: -0.6px;
 }
 .logo em {
   color: var(--sc-color-primary);
@@ -32,8 +33,8 @@
 
 /* Avatar circular con iniciales. */
 .avatar {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--sc-radius-round);
   background: var(--sc-color-primary-soft);
   display: flex;
@@ -43,21 +44,32 @@
   font-weight: var(--sc-fw-bold);
   color: var(--sc-color-primary-deep);
   border: none;
+  box-shadow:
+    0 0 0 2px var(--sc-color-bg-app),
+    0 4px 10px -4px rgba(15, 45, 32, 0.3);
+  transition: var(--sc-transition);
+}
+.avatar:hover {
+  transform: scale(1.06);
 }
 
 /* Botón de retroceso. */
 .backBtn {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--sc-radius-pill);
+  width: 34px;
+  height: 34px;
+  border-radius: var(--sc-radius-round);
   background: var(--sc-color-surface-tint);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   border: none;
-  color: var(--sc-color-text);
+  color: var(--sc-color-primary-dark);
   font-size: var(--sc-fs-body);
+  transition: var(--sc-transition);
+}
+.backBtn:hover {
+  background: var(--sc-color-primary-soft);
 }
 
 /* Título de la variante back. */
@@ -66,6 +78,7 @@
   font-weight: var(--sc-fw-bold);
   color: var(--sc-color-text);
   flex: 1;
+  letter-spacing: -0.2px;
 }
 
 /* Slot derecho opcional. */
@@ -87,8 +100,11 @@
   color: var(--sc-color-text-on-primary);
 }
 .onPrimary .backBtn {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.18);
   color: var(--sc-color-text-on-primary);
+}
+.onPrimary .backBtn:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 .onPrimary .title {
   color: var(--sc-color-text-on-primary);
@@ -96,4 +112,5 @@
 .onPrimary .avatar {
   background: rgba(255, 255, 255, 0.2);
   color: var(--sc-color-text-on-primary);
+  box-shadow: none;
 }

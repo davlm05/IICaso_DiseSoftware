@@ -1,40 +1,61 @@
-/* Hero verde centrado con círculo de check (.hero del mockup). */
+/* Hero esmeralda centrado con círculo de check. */
 .hero {
-  background: var(--sc-color-primary);
+  position: relative;
+  overflow: hidden;
+  background: var(--sc-grad-primary);
   border-radius: var(--sc-radius-xl);
-  padding: var(--sc-sp-8) var(--sc-sp-7);
+  padding: var(--sc-sp-10) var(--sc-sp-7) var(--sc-sp-8);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--sc-sp-2);
   text-align: center;
   color: var(--sc-color-text-on-primary);
+  box-shadow: var(--sc-shadow-primary);
+}
+
+/* Halo de luz decorativo. */
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  left: 50%;
+  width: 280px;
+  height: 280px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22), transparent 65%);
+  pointer-events: none;
 }
 
 /* Círculo translúcido que contiene el check. */
 .iconWrap {
-  width: 64px;
-  height: 64px;
+  position: relative;
+  width: 68px;
+  height: 68px;
   border-radius: var(--sc-radius-round);
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: var(--sc-sp-1);
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.35);
 }
 
 .icon {
-  font-size: 30px;
+  font-size: 32px;
   color: var(--sc-color-text-on-primary);
 }
 
 .title {
-  font-size: 21px;
-  font-weight: var(--sc-fw-heavy);
+  position: relative;
+  font-family: var(--sc-font-display);
+  font-size: 23px;
+  font-weight: var(--sc-fw-bold);
   letter-spacing: -0.5px;
 }
 
 .subtitle {
+  position: relative;
   font-size: var(--sc-fs-sm);
-  opacity: 0.85;
+  opacity: 0.88;
 }

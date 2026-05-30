@@ -3,7 +3,12 @@
   display: flex;
   align-items: center;
   gap: var(--sc-sp-3);
-  padding: var(--sc-sp-4);
+  padding: var(--sc-sp-3) var(--sc-sp-4);
+  border-radius: var(--sc-radius-md);
+  transition: var(--sc-transition);
+}
+.row:hover {
+  background: var(--sc-color-surface-soft);
 }
 
 /* Contenedor del icono con fondo gradiente (.reward-icon-wrap). */
@@ -12,9 +17,10 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--sc-radius-sm);
+  width: 52px;
+  height: 52px;
+  border-radius: var(--sc-radius-md);
+  box-shadow: 0 6px 14px -6px rgba(15, 45, 32, 0.32);
 }
 
 .icon {
