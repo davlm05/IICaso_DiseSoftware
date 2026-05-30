@@ -1,0 +1,36 @@
+/* Barra de ubicación (.loc-row de pantalla-1 / pantalla-3) */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-sp-2);
+  padding: var(--sc-sp-2) var(--sc-sp-3);
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border-tint);
+  border-radius: var(--sc-radius-xs);
+}
+
+/* Punto verde a la izquierda (.loc-dot) */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--sc-radius-round);
+  background: var(--sc-color-primary);
+  flex-shrink: 0;
+}
+
+/* Texto de la tienda (.loc-text); strong en verde oscuro */
+.text {
+  flex: 1;
+  font-size: var(--sc-fs-sm);
+  color: var(--sc-color-text);
+}
+
+.text strong {
+  color: var(--sc-color-primary-dark);
+}
+
+/* Ícono location-dot a la derecha (.loc-icon) */
+.icon {
+  font-size: var(--sc-fs-body);
+  color: var(--sc-color-primary);
+}

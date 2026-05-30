@@ -1,0 +1,57 @@
+/* Etiqueta base inline. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sc-sp-2);
+  font-size: var(--sc-fs-sm);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Punto verde de la variante location (.loc-dot). */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--sc-radius-round);
+  background: var(--sc-color-primary);
+  flex-shrink: 0;
+}
+
+/* location — blanco con borde verde claro (.loc-row). */
+.location {
+  padding: var(--sc-sp-2) var(--sc-sp-3);
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border-tint);
+  border-radius: var(--sc-radius-xs);
+  color: var(--sc-color-text);
+}
+
+.location i {
+  color: var(--sc-color-primary);
+}
+
+/* pending — amarillo (estado pendiente). */
+.pending {
+  padding: var(--sc-sp-1) var(--sc-sp-2);
+  background: var(--sc-color-pending-bg);
+  border: 1px solid var(--sc-color-pending-border);
+  border-radius: var(--sc-radius-pill);
+  color: var(--sc-color-pending-text);
+  font-weight: var(--sc-fw-bold);
+}
+
+/* points — verde tinte, texto verde oscuro (.reward-pts). */
+.points {
+  padding: 3px var(--sc-sp-2);
+  background: var(--sc-color-surface-tint);
+  border-radius: var(--sc-radius-pill);
+  color: var(--sc-color-primary-dark);
+  font-size: var(--sc-fs-xs);
+  font-weight: var(--sc-fw-heavy);
+}
+
+/* meta — texto gris sin fondo (.item-meta / .reward-meta). */
+.meta {
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-fs-xs);
+}

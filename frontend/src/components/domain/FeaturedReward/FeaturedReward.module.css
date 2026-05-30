@@ -1,0 +1,81 @@
+/* Tarjeta destacada con gradiente (.featured-coupon). */
+.card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sc-sp-4);
+  padding: var(--sc-sp-5);
+  border-radius: var(--sc-radius-lg);
+  color: var(--sc-color-text-on-primary);
+  overflow: hidden;
+}
+
+/* Círculo decorativo translúcido a la derecha (::after del mockup). */
+.card::after {
+  content: '';
+  position: absolute;
+  right: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 60px;
+  height: 60px;
+  border-radius: var(--sc-radius-round);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Contenedor del icono grande (.featured-icon-big). */
+.iconWrap {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 60px;
+  height: 60px;
+  border-radius: var(--sc-radius-md);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.icon {
+  font-size: 26px;
+  color: var(--sc-color-text-on-primary);
+}
+
+/* Bloque de texto (.featured-info). */
+.info {
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.tag {
+  font-size: var(--sc-fs-2xs);
+  font-weight: var(--sc-fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.85;
+}
+
+.title {
+  margin-top: 2px;
+  font-size: 17px;
+  font-weight: var(--sc-fw-heavy);
+}
+
+.desc {
+  margin-top: 3px;
+  font-size: var(--sc-fs-xs);
+  opacity: 0.85;
+}
+
+/* Chip de costo translúcido (.featured-cost). */
+.cost {
+  align-self: flex-start;
+  margin-top: var(--sc-sp-2);
+  padding: var(--sc-sp-1) var(--sc-sp-3);
+  border-radius: var(--sc-radius-pill);
+  background: rgba(255, 255, 255, 0.25);
+  font-size: var(--sc-fs-sm);
+  font-weight: var(--sc-fw-heavy);
+}

@@ -1,0 +1,21 @@
+/* Fila del título: título a la izquierda, contenido opcional a la derecha. */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sc-sp-2);
+}
+
+/* .sec-title — 11px, mayúsculas, atenuado. */
+.title {
+  font-size: var(--sc-fs-xs);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.right {
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-text-muted);
+}

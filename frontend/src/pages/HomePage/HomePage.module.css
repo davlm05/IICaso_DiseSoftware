@@ -1,0 +1,19 @@
+/**
+ * HomePage — estilos locales.
+ * El layout vertical (gap/padding del contenido) lo aporta PhoneShell.
+ * Aquí solo la fila de CTAs del estado ">=2 productos" (.btn-row del mockup 4).
+ */
+
+/* Fila de acciones: "Escanear otro" (flex 1) + "Generar QR" (flex 1.4). */
+.ctaRow {
+  display: flex;
+  gap: var(--sc-sp-3);
+}
+
+.ctaRow > :first-child {
+  flex: 1;
+}
+
+.ctaRow > :last-child {
+  flex: 1.4;
+}

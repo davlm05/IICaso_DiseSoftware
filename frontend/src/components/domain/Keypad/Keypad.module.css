@@ -1,0 +1,49 @@
+/* Teclado numérico — contenedor grid 3x4 (.keypad del mockup 2B). */
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sc-sp-2);
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border);
+  border-radius: var(--sc-radius-sm);
+  padding: var(--sc-sp-3);
+  margin-top: var(--sc-sp-1);
+}
+
+/* Tecla base — dígitos numéricos. */
+.key {
+  background: var(--sc-color-bg-app);
+  border: 1px solid var(--sc-color-border);
+  border-radius: var(--sc-radius-pill);
+  padding: var(--sc-sp-4) 0;
+  font-family: inherit;
+  font-size: var(--sc-fs-h1);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    filter 0.15s ease,
+    transform 0.1s ease;
+}
+
+.key:hover {
+  filter: brightness(0.97);
+}
+
+.key:active {
+  transform: scale(0.97);
+}
+
+/* Tecla de acción (cámara) — verde. */
+.action {
+  background: var(--sc-color-surface-tint);
+  color: var(--sc-color-primary);
+  font-size: var(--sc-fs-h3);
+}
+
+/* Tecla de borrado — roja. */
+.delete {
+  background: var(--sc-color-danger-bg);
+  color: var(--sc-color-danger-text);
+}

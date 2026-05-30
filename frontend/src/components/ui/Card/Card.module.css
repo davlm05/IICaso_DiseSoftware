@@ -1,0 +1,7 @@
+/* Contenedor blanco con borde — superficie estándar. */
+.card {
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border);
+  border-radius: var(--sc-radius-md);
+  padding: var(--sc-sp-5);
+}

@@ -1,0 +1,68 @@
+/* Toast de feedback (basado en .success-toast de pantalla-3-main-1producto) */
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-sp-3);
+  padding: var(--sc-sp-2) var(--sc-sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--sc-radius-xs);
+  animation: sc-toast-in 0.25s ease-out;
+}
+
+/* Círculo del ícono */
+.iconWrap {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--sc-radius-round);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.iconWrap i {
+  font-size: var(--sc-fs-sm);
+  color: var(--sc-color-text-on-primary);
+}
+
+/* Texto del mensaje */
+.text {
+  flex: 1;
+  font-size: var(--sc-fs-sm);
+  line-height: 1.3;
+}
+
+/* ---- success: verde claro (mockup) ---- */
+.success {
+  background: var(--sc-color-surface-tint);
+  border-color: var(--sc-color-border-tint);
+}
+.success .iconWrap {
+  background: var(--sc-color-primary);
+}
+.success .text {
+  color: var(--sc-color-primary-dark);
+}
+
+/* ---- pending: amarillo ---- */
+.pending {
+  background: var(--sc-color-pending-bg);
+  border-color: var(--sc-color-pending-border);
+}
+.pending .iconWrap {
+  background: var(--sc-color-pending-border);
+}
+.pending .text {
+  color: var(--sc-color-pending-text);
+}
+
+/* ---- error: rojo ---- */
+.error {
+  background: var(--sc-color-danger-bg);
+  border-color: var(--sc-color-danger-text);
+}
+.error .iconWrap {
+  background: var(--sc-color-danger-text);
+}
+.error .text {
+  color: var(--sc-color-danger-text);
+}

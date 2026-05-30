@@ -1,0 +1,95 @@
+/**
+ * SmartCart — Design Tokens
+ * Extraídos 1:1 de los mockups de Figma (DesignContext/figmaScreens/*.html).
+ * Toda la UI debe consumir estas variables; no hardcodear colores/medidas.
+ */
+:root {
+  /* ---- Color: marca ---- */
+  --sc-color-primary: #1d9e75;
+  --sc-color-primary-dark: #0d6e48;
+  --sc-color-primary-deep: #0d5c40;
+  --sc-color-primary-700: #1a7a58;
+  --sc-color-primary-soft: #c8e8d8;
+
+  /* ---- Color: superficies y fondos ---- */
+  --sc-color-bg-canvas: #e8ede8; /* fuera del marco del teléfono */
+  --sc-color-bg-app: #f5f7f5; /* fondo dentro del teléfono */
+  --sc-color-surface: #ffffff;
+  --sc-color-surface-soft: #f0f5f0; /* icon wraps */
+  --sc-color-surface-tint: #e4f0ea; /* botones suaves / chips */
+  --sc-color-tip-bg: #f0f8f4; /* help / summary boxes */
+  --sc-color-notch: #dce4dc;
+
+  /* ---- Color: bordes ---- */
+  --sc-color-border: #dfe6df;
+  --sc-color-border-strong: #c8d0c8;
+  --sc-color-border-tint: #9fd4b8; /* borde verde claro (location) */
+  --sc-color-border-dashed: #c8d4c8;
+
+  /* ---- Color: texto ---- */
+  --sc-color-text: #1a2a1a;
+  --sc-color-text-muted: #7a8a7a;
+  --sc-color-text-faint: #a0aaa0;
+  --sc-color-text-on-primary: #ffffff;
+  --sc-color-nav-idle: #b4c0b4;
+  --sc-color-spons-icon: #5a8a6a;
+
+  /* ---- Color: estados semánticos ---- */
+  --sc-color-pending-bg: #fff8e1;
+  --sc-color-pending-text: #7a5800;
+  --sc-color-pending-border: #f0c040;
+  --sc-color-danger-bg: #fdecea;
+  --sc-color-danger-text: #c0392b;
+  --sc-color-star: #e6ac00;
+
+  /* ---- Gradientes (recompensas / íconos) ---- */
+  --sc-grad-discount: linear-gradient(135deg, #1d9e75, #0d6e48);
+  --sc-grad-coffee: linear-gradient(135deg, #8b5a2b, #5c3a1e);
+  --sc-grad-store: linear-gradient(135deg, #4a90c2, #2b5d80);
+  --sc-grad-premium: linear-gradient(135deg, #9aa0a6, #6b7178);
+
+  /* ---- Tipografía ---- */
+  --sc-font-base: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --sc-font-mono: 'Courier New', ui-monospace, monospace;
+  --sc-fs-display: 46px;
+  --sc-fs-h1: 18px;
+  --sc-fs-h2: 16px;
+  --sc-fs-h3: 15px;
+  --sc-fs-body: 13px;
+  --sc-fs-sm: 12px;
+  --sc-fs-xs: 11px;
+  --sc-fs-2xs: 10px;
+  --sc-fw-medium: 600;
+  --sc-fw-bold: 700;
+  --sc-fw-heavy: 800;
+
+  /* ---- Radios ---- */
+  --sc-radius-phone: 44px;
+  --sc-radius-xl: 20px;
+  --sc-radius-lg: 18px;
+  --sc-radius-md: 16px;
+  --sc-radius-sm: 14px;
+  --sc-radius-xs: 12px;
+  --sc-radius-pill: 10px;
+  --sc-radius-round: 50%;
+
+  /* ---- Espaciado (escala base 2px) ---- */
+  --sc-sp-1: 4px;
+  --sc-sp-2: 8px;
+  --sc-sp-3: 12px;
+  --sc-sp-4: 14px;
+  --sc-sp-5: 16px;
+  --sc-sp-6: 18px;
+  --sc-sp-7: 20px;
+  --sc-sp-8: 24px;
+  --sc-sp-10: 32px;
+
+  /* ---- Sombras ---- */
+  --sc-shadow-card: 0 6px 16px rgba(29, 158, 117, 0.25);
+  --sc-shadow-phone: 0 16px 48px rgba(0, 0, 0, 0.13);
+  --sc-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  /* ---- Layout del marco ---- */
+  --sc-phone-w: 360px;
+  --sc-phone-h: 720px;
+}

@@ -1,0 +1,108 @@
+/* ProfilePage — placeholder de la pestaña Perfil. */
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-sp-6);
+}
+
+/* Bloque de identidad: avatar grande + nombre + correo. */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sc-sp-2);
+  padding-top: var(--sc-sp-4);
+}
+
+.avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: var(--sc-radius-round);
+  background: var(--sc-color-primary-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--sc-fs-display);
+  font-weight: var(--sc-fw-heavy);
+  color: var(--sc-color-primary-deep);
+  letter-spacing: -1px;
+  box-shadow: var(--sc-shadow-soft);
+}
+
+.name {
+  margin: var(--sc-sp-2) 0 0;
+  font-size: var(--sc-fs-h1);
+  font-weight: var(--sc-fw-heavy);
+  color: var(--sc-color-text);
+  letter-spacing: -0.3px;
+}
+
+.email {
+  margin: 0;
+  font-size: var(--sc-fs-body);
+  color: var(--sc-color-text-muted);
+}
+
+/* Tarjeta de datos básicos. */
+.infoCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-sp-3);
+}
+
+.infoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-sp-3);
+}
+
+.infoIcon {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: var(--sc-radius-xs);
+  background: var(--sc-color-surface-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sc-color-primary);
+  font-size: var(--sc-fs-h2);
+}
+
+.infoText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.infoLabel {
+  font-size: var(--sc-fs-xs);
+  font-weight: var(--sc-fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--sc-color-text-muted);
+}
+
+.infoValue {
+  font-size: var(--sc-fs-h3);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.divider {
+  height: 1px;
+  background: var(--sc-color-border);
+}
+
+/* Nota discreta de placeholder. */
+.note {
+  margin: var(--sc-sp-1) 0 0;
+  text-align: center;
+  font-size: var(--sc-fs-sm);
+  color: var(--sc-color-text-faint);
+}

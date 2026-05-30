@@ -1,0 +1,40 @@
+/* Hero verde centrado con círculo de check (.hero del mockup). */
+.hero {
+  background: var(--sc-color-primary);
+  border-radius: var(--sc-radius-xl);
+  padding: var(--sc-sp-8) var(--sc-sp-7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sc-sp-2);
+  text-align: center;
+  color: var(--sc-color-text-on-primary);
+}
+
+/* Círculo translúcido que contiene el check. */
+.iconWrap {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--sc-radius-round);
+  background: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--sc-sp-1);
+}
+
+.icon {
+  font-size: 30px;
+  color: var(--sc-color-text-on-primary);
+}
+
+.title {
+  font-size: 21px;
+  font-weight: var(--sc-fw-heavy);
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  font-size: var(--sc-fs-sm);
+  opacity: 0.85;
+}

@@ -1,0 +1,69 @@
+/* Contenedor de las recompensas (.reward-card): tarjeta blanca con divisores. */
+.rewardCard {
+  overflow: hidden;
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border);
+  border-radius: var(--sc-radius-md);
+}
+
+/* Divisor entre filas; la última fila no lleva borde inferior. */
+.rewardCard > * + * {
+  border-top: 1px solid #eff4ef;
+}
+
+/* Lista de cupones canjeados. */
+.couponList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-sp-3);
+}
+
+/* Fila de cupón canjeado. */
+.couponRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sc-sp-3);
+  padding: var(--sc-sp-4);
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border);
+  border-radius: var(--sc-radius-md);
+}
+
+.couponInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.couponName {
+  font-size: var(--sc-fs-body);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text);
+}
+
+.couponCode {
+  font-family: var(--sc-font-mono);
+  font-size: var(--sc-fs-xs);
+  font-weight: var(--sc-fw-bold);
+  letter-spacing: 0.5px;
+  color: var(--sc-color-primary-dark);
+}
+
+.couponExpiry {
+  flex-shrink: 0;
+  font-size: var(--sc-fs-2xs);
+  color: var(--sc-color-text-muted);
+}
+
+/* Estado vacío de la pestaña "Mis cupones". */
+.empty {
+  padding: var(--sc-sp-10) var(--sc-sp-5);
+  font-size: var(--sc-fs-body);
+  color: var(--sc-color-text-muted);
+  text-align: center;
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border);
+  border-radius: var(--sc-radius-md);
+}

@@ -1,0 +1,51 @@
+/* Fila de recompensa (.reward-row). */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-sp-3);
+  padding: var(--sc-sp-4);
+}
+
+/* Contenedor del icono con fondo gradiente (.reward-icon-wrap). */
+.iconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--sc-radius-sm);
+}
+
+.icon {
+  font-size: 24px;
+  color: var(--sc-color-text-on-primary);
+}
+
+/* Bloque de texto (.reward-info). */
+.info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  font-size: var(--sc-fs-body);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text);
+}
+
+.desc {
+  margin-top: 2px;
+  font-size: var(--sc-fs-xs);
+  line-height: 1.4;
+  color: var(--sc-color-text-muted);
+}
+
+/* Meta — costo y vigencia (.reward-meta). */
+.meta {
+  margin-top: var(--sc-sp-1);
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-text-muted);
+}

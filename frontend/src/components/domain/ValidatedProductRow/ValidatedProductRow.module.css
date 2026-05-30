@@ -1,0 +1,52 @@
+/* Fila de la lista de productos validados (.list-row del mockup). */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px var(--sc-sp-4);
+  border-bottom: 1px solid #eff4ef;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/* Círculo verde con check de validación. */
+.check {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--sc-radius-round);
+  background: var(--sc-color-surface-tint);
+  border: 1.5px solid var(--sc-color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.checkIcon {
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-primary);
+}
+
+/* Ícono del producto en chip suave. */
+.icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--sc-radius-pill);
+  background: var(--sc-color-surface-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--sc-fs-body);
+  color: var(--sc-color-spons-icon);
+  flex-shrink: 0;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--sc-fs-body);
+  font-weight: var(--sc-fw-medium);
+  color: var(--sc-color-text);
+}

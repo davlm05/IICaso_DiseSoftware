@@ -18,3 +18,13 @@ Discover → Scan → Validate → Earn → Redeem. Purchase validation happens 
 ensuring only products actually purchased generate points. On the business side, the platform aggregates anonymized purchase and
 behavioral data from every transaction and sells these insights — as a SaaS analytics product — to supermarket chains and consumer brands
 seeking to understand regional demand patterns, product performance, and consumer segments.
+
+## Frontend (Phase 2)
+
+The frontend MVP lives in [`frontend/`](frontend/) — a React + Vite + TypeScript web app
+(mobile-first) that implements the full loyalty flow against mock services. See
+[`frontend/README.md`](frontend/README.md) for the Phase 2 design documentation: stack
+and justification, layered architecture, design tokens, the GoF design patterns mapped to
+real code in `frontend/src/`, security, performance, testing strategy, and CI/CD.
+
+Run it with: `cd frontend && npm install && npm run dev`.

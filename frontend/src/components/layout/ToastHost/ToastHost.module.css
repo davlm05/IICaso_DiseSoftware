@@ -1,0 +1,11 @@
+/* Capa flotante para el toast, dentro del marco del teléfono. */
+.host {
+  position: absolute;
+  top: 60px;
+  left: var(--sc-sp-4);
+  right: var(--sc-sp-4);
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}

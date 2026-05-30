@@ -1,0 +1,52 @@
+/* Contenedor blanco de la lista (.scanned-card). */
+.card {
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border);
+  border-radius: var(--sc-radius-sm);
+  overflow: hidden;
+}
+
+/* Tarjeta de estado vacío con borde punteado (.empty-card). */
+.emptyCard {
+  background: var(--sc-color-surface);
+  border: 1.5px dashed var(--sc-color-border-dashed);
+  border-radius: var(--sc-radius-md);
+  padding: var(--sc-sp-10) var(--sc-sp-7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sc-sp-2);
+  text-align: center;
+}
+
+/* Círculo del ícono barcode (.empty-icon-wrap). */
+.emptyIconWrap {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--sc-radius-round);
+  background: var(--sc-color-surface-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--sc-sp-1);
+}
+
+.emptyIconWrap i {
+  font-size: var(--sc-fs-h2);
+  color: var(--sc-color-text-faint);
+}
+
+/* Título del estado vacío (.empty-title). */
+.emptyTitle {
+  font-size: var(--sc-fs-body);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text);
+}
+
+/* Subtítulo del estado vacío (.empty-sub). */
+.emptySub {
+  font-size: var(--sc-fs-sm);
+  color: var(--sc-color-text-muted);
+  line-height: 1.5;
+  max-width: 240px;
+}

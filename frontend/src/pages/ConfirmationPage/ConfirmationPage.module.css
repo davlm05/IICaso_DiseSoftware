@@ -1,0 +1,26 @@
+/* ConfirmationPage — pantalla 6 (confirmación).
+   El contenido replica .content del mockup (padding 14px 16px, gap 13px).
+   Como PhoneShell usa contentPadding={false}, la página aplica ese espaciado:
+   el hero queda flush arriba y el resto de bloques debajo con la misma separación. */
+
+/* Envoltura del hero: replica el padding superior/lateral de .content (14px 16px). */
+.heroWrap {
+  padding: var(--sc-sp-4) var(--sc-sp-5) 0;
+}
+
+/* Cuerpo bajo el hero: separación de 13px entre bloques, mismo padding lateral.
+   13px de margen superior reproduce el gap de .content entre hero y resto. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 13px var(--sc-sp-5) var(--sc-sp-4);
+}
+
+/* Tarjeta-lista de productos validados (.list-card del mockup). */
+.list {
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border);
+  border-radius: var(--sc-radius-sm);
+  overflow: hidden;
+}

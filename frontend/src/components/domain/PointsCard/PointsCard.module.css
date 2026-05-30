@@ -1,0 +1,55 @@
+/* Tarjeta verde de puntos (.pts-card de pantalla-1 / pantalla-3) */
+.card {
+  background: var(--sc-color-primary);
+  border-radius: var(--sc-radius-xl);
+  padding: var(--sc-sp-6) var(--sc-sp-7);
+  color: var(--sc-color-text-on-primary);
+}
+
+/* Fila superior: bloque de texto + pill de pendientes (.pts-row) */
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+/* Etiqueta "TUS PUNTOS" (.pts-label) */
+.label {
+  font-size: var(--sc-fs-xs);
+  opacity: 0.85;
+  font-weight: var(--sc-fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Número grande de balance (.pts-number) */
+.number {
+  font-size: var(--sc-fs-display);
+  font-weight: var(--sc-fw-heavy);
+  line-height: 1;
+  letter-spacing: -2px;
+}
+
+/* Subtítulo (.pts-sub) */
+.sub {
+  font-size: var(--sc-fs-sm);
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+/* Contenedor de la pill de pendientes, arriba a la derecha */
+.pending {
+  flex-shrink: 0;
+}
+
+/* Envoltura de la barra de progreso (.pts-bar-wrap) */
+.barWrap {
+  margin-top: var(--sc-sp-3);
+}
+
+/* Etiqueta bajo la barra "balance / threshold pts para canjear" (.pts-bar-label) */
+.barLabel {
+  font-size: var(--sc-fs-2xs);
+  opacity: 0.75;
+  margin-top: var(--sc-sp-1);
+}

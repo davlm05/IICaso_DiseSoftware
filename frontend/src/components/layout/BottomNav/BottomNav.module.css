@@ -1,0 +1,35 @@
+/* BottomNav — barra de navegación inferior. */
+.bottomnav {
+  display: flex;
+  justify-content: space-around;
+  padding: 8px 0 14px;
+  border-top: 1px solid var(--sc-color-border);
+  background: var(--sc-color-bg-app);
+  flex-shrink: 0;
+}
+
+/* Ítem de navegación (idle). */
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  color: var(--sc-color-nav-idle);
+}
+.item i {
+  font-size: 19px;
+  color: var(--sc-color-nav-idle);
+}
+.label {
+  font-size: var(--sc-fs-2xs);
+  color: var(--sc-color-nav-idle);
+}
+
+/* Ítem activo (clase active de NavLink): verde. */
+.active i {
+  color: var(--sc-color-primary);
+}
+.active .label {
+  color: var(--sc-color-primary-dark);
+  font-weight: var(--sc-fw-bold);
+}

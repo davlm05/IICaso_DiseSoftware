@@ -1,0 +1,71 @@
+/**
+ * SmartCart — Reset + estilos base globales.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--sc-color-bg-canvas);
+  font-family: var(--sc-font-base);
+  color: var(--sc-color-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 20px 0;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul {
+  list-style: none;
+}
+
+/* Scrollbars discretos dentro del marco. */
+.sc-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Accesibilidad: respeta preferencia de menos movimiento. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* En móvil real el marco ocupa toda la pantalla. */
+@media (max-width: 420px) {
+  #root {
+    padding: 0;
+  }
+}

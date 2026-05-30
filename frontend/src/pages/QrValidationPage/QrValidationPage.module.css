@@ -1,0 +1,66 @@
+/* QrValidationPage — Mockup 5: contenido verde centrado con el QR de validación. */
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-sp-4);
+  padding: var(--sc-sp-3) var(--sc-sp-5) var(--sc-sp-5);
+}
+
+/* ---- Mensaje de cabecera (texto blanco sobre verde) ---- */
+.headerMsg {
+  text-align: center;
+  color: var(--sc-color-text-on-primary);
+}
+
+.headerTitle {
+  margin: 0 0 var(--sc-sp-1);
+  font-size: var(--sc-fs-h1);
+  font-weight: var(--sc-fw-heavy);
+}
+
+.headerSub {
+  margin: 0;
+  font-size: var(--sc-fs-sm);
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+/* ---- Línea de estado: punto pulsante + texto de espera ---- */
+.waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sc-sp-2);
+  padding: var(--sc-sp-2);
+  color: var(--sc-color-text-on-primary);
+  font-size: var(--sc-fs-body);
+  font-weight: var(--sc-fw-medium);
+}
+
+.dotPulse {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--sc-radius-round);
+  background: var(--sc-color-text-on-primary);
+  opacity: 0.85;
+  animation: sc-dot-pulse 1.2s ease-in-out infinite;
+}
+
+/* ---- Acciones (botones, empujados al fondo del contenido) ---- */
+.actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-sp-3);
+}
+
+/* Atajo de demo: se diferencia del flujo real con un estilo sutil (borde
+   discontinuo + menor opacidad) para no confundirlo con la acción del usuario. */
+.demoHint {
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+  border-radius: var(--sc-radius-md);
+  padding: var(--sc-sp-1);
+  opacity: 0.8;
+}

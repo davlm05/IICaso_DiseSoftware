@@ -1,0 +1,104 @@
+/* Fila de producto escaneado (.scanned-item). */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px var(--sc-sp-4);
+  border-bottom: 1px solid #eff4ef;
+}
+
+/* La última fila no lleva separador. */
+.item:last-child {
+  border-bottom: none;
+}
+
+/* Resaltado de la fila recién escaneada (.scanned-item.new). */
+.itemNew {
+  background: #f0faf5;
+}
+
+/* Contenedor del ícono (.item-icon). */
+.iconWrap {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--sc-radius-pill);
+  background: var(--sc-color-surface-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--sc-fs-h3);
+  color: var(--sc-color-spons-icon);
+  flex-shrink: 0;
+}
+
+/* Bloque de texto, ocupa el espacio disponible (.item-info). */
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Nombre + badge "Nuevo" en línea (.item-name-row). */
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-sp-2);
+}
+
+/* Nombre del producto (.item-name). */
+.name {
+  font-size: var(--sc-fs-body);
+  font-weight: var(--sc-fw-medium);
+  color: var(--sc-color-text);
+}
+
+/* Badge "Nuevo" verde (.new-tag). */
+.newTag {
+  background: var(--sc-color-primary);
+  color: var(--sc-color-text-on-primary);
+  font-size: 9px;
+  font-weight: var(--sc-fw-bold);
+  padding: 2px 7px;
+  border-radius: var(--sc-radius-pill);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Marca · precio (.item-meta). */
+.meta {
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-text-muted);
+  margin-top: 2px;
+}
+
+/* Tag de puntos pendientes, estilo amarillo (.item-pts). */
+.pts {
+  background: var(--sc-color-pending-bg);
+  color: var(--sc-color-pending-text);
+  border: 1px solid var(--sc-color-pending-border);
+  font-size: var(--sc-fs-xs);
+  font-weight: var(--sc-fw-heavy);
+  padding: var(--sc-sp-1) 9px;
+  border-radius: var(--sc-radius-pill);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Botón eliminar, variante peligro (.btn-remove). */
+.remove {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--sc-sp-2);
+  background: var(--sc-color-danger-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+
+.remove i {
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-danger-text);
+}

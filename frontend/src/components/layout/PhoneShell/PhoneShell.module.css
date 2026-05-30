@@ -1,0 +1,77 @@
+/* Marco del teléfono — reproduce .phone de los mockups. */
+.phone {
+  position: relative;
+  width: var(--sc-phone-w);
+  height: var(--sc-phone-h);
+  border-radius: var(--sc-radius-phone);
+  border: 2px solid var(--sc-color-border-strong);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--sc-shadow-phone);
+}
+
+/* Fondos según prop background. */
+.bgApp {
+  background: var(--sc-color-bg-app);
+}
+.bgPrimary {
+  background: var(--sc-color-primary);
+  color: var(--sc-color-text-on-primary);
+}
+.bgDark {
+  background: var(--sc-color-primary-deep);
+  color: var(--sc-color-text-on-primary);
+}
+
+/* Barra de estado (9:41 / notch / 87%). */
+.statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 24px 2px;
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-text-muted);
+  flex-shrink: 0;
+}
+/* Variante clara para fondos verdes. */
+.statusbarDark {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.notch {
+  width: 68px;
+  height: 14px;
+  background: var(--sc-color-notch);
+  border-radius: 0 0 var(--sc-radius-pill) var(--sc-radius-pill);
+  margin: 0 auto;
+}
+/* Notch sobre fondo verde. */
+.notchDark {
+  background: var(--sc-color-primary-deep);
+}
+
+/* Contenedor de contenido scrollable. */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* Padding por defecto del contenido (con separación entre bloques, como en los mockups). */
+.contentPadded {
+  padding: 14px 16px;
+  gap: 13px;
+}
+
+/* En móvil real el marco ocupa toda la pantalla. */
+@media (max-width: 420px) {
+  .phone {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+    border: none;
+  }
+}

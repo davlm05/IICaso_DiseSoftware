@@ -1,0 +1,18 @@
+/* Fila de total del ticket (.ticket-total del mockup). */
+.card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: var(--sc-radius-sm);
+}
+
+.label {
+  font-size: var(--sc-fs-sm);
+  color: var(--sc-color-text-muted);
+}
+
+.amount {
+  font-size: var(--sc-fs-h2);
+  font-weight: var(--sc-fw-heavy);
+  color: var(--sc-color-text);
+}

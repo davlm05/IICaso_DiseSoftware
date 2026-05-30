@@ -1,0 +1,9 @@
+/* Scroll horizontal de tarjetas patrocinadas (.sponsored-scroll). */
+.scroll {
+  display: flex;
+  gap: var(--sc-sp-2);
+  overflow-x: auto;
+  /* Sangrado a los bordes del marco para el efecto edge-to-edge del mockup */
+  margin: 0 calc(var(--sc-sp-5) * -1);
+  padding: 0 var(--sc-sp-5) var(--sc-sp-1);
+}

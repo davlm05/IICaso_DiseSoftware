@@ -1,0 +1,164 @@
+/* ManualEntryPanel — ingreso manual del código (mockup 2B). */
+
+/* Cabecera. */
+.headerCard {
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border);
+  border-radius: var(--sc-radius-md);
+  padding: 18px 16px;
+  display: flex;
+  gap: 13px;
+  align-items: center;
+}
+
+.headerIcon {
+  width: 50px;
+  height: 50px;
+  border-radius: var(--sc-radius-sm);
+  background: var(--sc-color-surface-tint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 22px;
+  color: var(--sc-color-primary);
+}
+
+.headerInfo {
+  flex: 1;
+}
+
+.headerTitle {
+  font-size: var(--sc-fs-h3);
+  font-weight: var(--sc-fw-heavy);
+  color: var(--sc-color-text);
+}
+
+.headerSub {
+  font-size: var(--sc-fs-sm);
+  color: var(--sc-color-text-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+/* Ubicación actual. */
+.locPill {
+  background: var(--sc-color-surface);
+  border: 1px solid var(--sc-color-border-tint);
+  border-radius: var(--sc-radius-xs);
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.locDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--sc-radius-round);
+  background: var(--sc-color-primary);
+  flex-shrink: 0;
+}
+
+.locText {
+  flex: 1;
+  font-size: var(--sc-fs-sm);
+  color: var(--sc-color-text);
+}
+.locText strong {
+  color: var(--sc-color-primary-dark);
+  font-weight: var(--sc-fw-bold);
+}
+
+.locIcon {
+  font-size: var(--sc-fs-body);
+  color: var(--sc-color-primary);
+}
+
+/* Display del código. */
+.inputLabel {
+  font-size: var(--sc-fs-xs);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.inputWrap {
+  position: relative;
+}
+
+.inputBox {
+  width: 100%;
+  min-height: 54px;
+  background: var(--sc-color-surface);
+  border: 1.5px solid var(--sc-color-primary);
+  border-radius: var(--sc-radius-sm);
+  padding: 16px 14px 16px 46px;
+  font-size: var(--sc-fs-h2);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text);
+  font-family: var(--sc-font-mono);
+  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.placeholder {
+  color: var(--sc-color-text-faint);
+}
+
+.inputIcon {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 17px;
+  color: var(--sc-color-primary);
+  z-index: 1;
+}
+
+.inputHint {
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-text-muted);
+  margin-top: 6px;
+  padding-left: 4px;
+}
+
+.inputError {
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-danger-text);
+  font-weight: var(--sc-fw-medium);
+  margin-top: 6px;
+  padding-left: 4px;
+}
+
+/* Ayuda. */
+.helpTip {
+  background: var(--sc-color-tip-bg);
+  border: 1px solid var(--sc-color-border-tint);
+  border-radius: var(--sc-radius-xs);
+  padding: 11px 13px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.helpIcon {
+  font-size: var(--sc-fs-body);
+  color: var(--sc-color-primary);
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.helpText {
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-primary-dark);
+  line-height: 1.5;
+}
+.helpText strong {
+  color: var(--sc-color-primary-deep);
+  font-weight: var(--sc-fw-bold);
+}

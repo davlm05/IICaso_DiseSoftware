@@ -1,0 +1,53 @@
+/* Tarjeta horizontal: número grande + info + estrella (.pts-result del mockup). */
+.card {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-sp-4);
+  border-radius: var(--sc-radius-lg);
+}
+
+/* Número grande de puntos acreditados. */
+.big {
+  font-size: 50px;
+  font-weight: var(--sc-fw-heavy);
+  color: var(--sc-color-primary);
+  line-height: 1;
+  letter-spacing: -2px;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.label {
+  font-size: var(--sc-fs-2xs);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.total {
+  font-size: var(--sc-fs-h3);
+  font-weight: var(--sc-fw-bold);
+  color: var(--sc-color-text);
+  margin-top: var(--sc-sp-1);
+}
+
+/* Espacio sobre la barra de progreso (3.er hijo de .info). */
+.info > :nth-child(3) {
+  margin-top: var(--sc-sp-2);
+}
+
+.next {
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-text-muted);
+  margin-top: var(--sc-sp-1);
+}
+
+/* Estrella dorada a la derecha. */
+.star {
+  font-size: 28px;
+  color: var(--sc-color-star);
+}

@@ -1,0 +1,63 @@
+/* Tarjeta blanca del QR: contenido centrado en columna. */
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sc-sp-3);
+  border-radius: var(--sc-radius-xl);
+}
+
+/* SVG del QR (decorativo, tamaño fijo del mockup). */
+.qr {
+  width: 200px;
+  height: 200px;
+}
+
+/* Bloque de código + vigencia. */
+.info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sc-sp-1);
+}
+
+/* Código del ticket en monospace. */
+.code {
+  font-family: var(--sc-font-mono);
+  font-size: var(--sc-fs-xs);
+  color: var(--sc-color-text-muted);
+  letter-spacing: 1px;
+}
+
+/* "Válido por 10 minutos" con icono de reloj. */
+.expires {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-sp-1);
+  font-size: var(--sc-fs-xs);
+  font-weight: var(--sc-fw-medium);
+  color: var(--sc-color-primary);
+}
+
+/* Caja de resumen verde tinte. */
+.summary {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sc-sp-3);
+  padding: var(--sc-sp-2) var(--sc-sp-4);
+  background: var(--sc-color-tip-bg);
+  border: 1px solid var(--sc-color-border-tint);
+  border-radius: var(--sc-radius-xs);
+}
+
+/* Texto del resumen (productos pendientes). */
+.summaryLeft {
+  font-size: var(--sc-fs-sm);
+  color: var(--sc-color-text);
+}
+
+.summaryLeft strong {
+  color: var(--sc-color-primary-dark);
+}
