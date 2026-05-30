@@ -13,8 +13,8 @@
 .body {
   display: flex;
   flex-direction: column;
-  gap: 13px;
-  padding: 13px var(--sc-sp-5) var(--sc-sp-4);
+  gap: 11px;
+  padding: 12px var(--sc-sp-5) var(--sc-sp-6);
 }
 
 /* Tarjeta-lista de productos validados (.list-card del mockup). */

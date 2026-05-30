@@ -3,6 +3,8 @@
   position: relative;
   width: var(--sc-phone-w);
   height: var(--sc-phone-h);
+  /* Nunca excede el alto de la ventana: el contenido hace scroll interno. */
+  max-height: calc(100dvh - 36px);
   border-radius: var(--sc-radius-phone);
   overflow: hidden;
   display: flex;

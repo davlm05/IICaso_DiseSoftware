@@ -35,7 +35,7 @@ body {
   justify-content: center;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 24px 0;
+  padding: 10px 0;
 }
 
 button {
