@@ -30,20 +30,14 @@
 
 ## Heatmaps
 
-### Lobby
-![MazeLobby](media/mazeLobby.jpg)
 
-### Scanning Flow
-![MazeScanning](media/mazeScanning.jpg)
-
-### Pending Items / QR Generation
-![MazePendingItems](media/mazePendingItems.jpg)
-
-### QR Validation
-![MazeQRValidation](media/mazeQRValidation.jpg)
-
-### Rewards
-![MazeRewards](media/mazeRewards.jpg)
+| Screen | Heatmap |
+|--------|----------------|
+|Lobby (empty) | ![MazeLobby](media/mazeLobby.jpg) |
+|Camera Scanning | ![MazeScanning](media/mazeScanning.jpg) |
+|Pending Items / QR Generation | ![MazePendingItems](media/mazePendingItems.jpg) |
+|QR Validation | ![MazeQRValidation](media/mazeQRValidation.jpg) |
+| Rewards | ![MazeRewards](media/mazeRewards.jpg) |
 
 ---
 
@@ -192,15 +186,15 @@ SmartCart's visual identity is **green-forward** — green communicates "valid s
 
 The interactive HTML prototypes referenced in `appContext.md` map to these screens:
 
-| Screen | Prototype file | Purpose |
+| Screen | Prototype | Purpose |
 |--------|----------------|---------|
 | 1 — Lobby (empty) | ![1](media/wireframes/1.png) | Overview of points, sponsored products, primary scan CTA, location pill. |
-| 2 — Camera Scanning | `pantalla-2-escanear.html` | Capture barcode via camera with manual-entry fallback and in-store confirmation. |
-| 3 — Lobby (1 product) | `pantalla-3-main-1producto.html` | First scanned product with toast, pending-points subsection, delete option. |
-| 4 — Lobby (multiple) | `pantalla-4-main-3productos.html` | Full pending list with dual CTAs (scan more / generate QR). |
-| 5 — QR Validation | `pantalla-5-qr-validacion.html` | Full-green QR + alphanumeric fallback, 10-min validity, polling status. |
-| 6 — Confirmation | `pantalla-6-confirmacion.html` | Points-credited hero, validated products, new total, paths to home or rewards. |
-| 7 — My Rewards | `pantalla-7-recompensas.html` | Available rewards + redeemed coupons tabs; locked rewards show point deficit. |
+| 2 — Camera Scanning | ![2](media/wireframes/2.png) | Capture barcode via camera with manual-entry fallback and in-store confirmation. |
+| 3 — Lobby (1 product) | ![3](media/wireframes/3.png) | First scanned product with toast, pending-points subsection, delete option. |
+| 4 — Lobby (multiple) | ![4](media/wireframes/4.png) | Full pending list with dual CTAs (scan more / generate QR). |
+| 5 — QR Validation | ![5](media/wireframes/5.png) | Full-green QR + alphanumeric fallback, 10-min validity, polling status. |
+| 6 — Confirmation | ![6](media/wireframes/6.png) | Points-credited hero, validated products, new total, paths to home or rewards. |
+| 7 — My Rewards | ![7](media/wireframes/7.png) | Available rewards + redeemed coupons tabs; locked rewards show point deficit. |
 
 ### UX Test Results
 
