@@ -355,8 +355,6 @@ classDiagram
 
 ### Authentication
 
-> **Implemented by** `AuthService` + the `ApiClient` Axios **Facade** (see the class diagram above). Concrete code: the Axios Singleton in [`/frontend/src/api/client.ts`](/frontend/src/api/client.ts), auth endpoints in [`/frontend/src/api/endpoints/auth.ts`](/frontend/src/api/endpoints/auth.ts), and the [`useAuth`](/frontend/src/hooks/useAuth.ts) hook.
-
 - **Provider / Method:** JWT (access + refresh) issued by the SmartCart backend.
 - **Flow:**
   1. User submits email + password (validated client-side with Zod).
@@ -367,7 +365,7 @@ classDiagram
 
 ### Authorization (RBAC)
 
-> **Maps to the `Role` enum in the class diagram above.** RBAC is enforced **server-side** in the API middleware (per `designPatterns.md` guideline #6 — "el `ReviewController` requiere autenticación con rol `BACKOFFICE_OPERATOR` o superior"). The mobile client trusts the `role` claim **only to hide/show UI**, never to grant access.
+> **Maps to the `Role` enum in the class diagram above.** RBAC is enforced **server-side** in the API middleware. The mobile client trusts the `role` claim **only to hide/show UI**, never to grant access.
 
 This **consumer mobile app only ever authenticates `USER`-scoped accounts** — it never issues a privileged token. The back office is a **separate web tool** and, importantly, is **not staffed only by admins**: it has several distinct non-admin operational roles. All roles are documented here because RBAC is a shared, server-enforced concern.
 
@@ -379,7 +377,7 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 | `STORE_ADMIN` | Back-office | Per-store analytics, rewards-catalog configuration, monitor validations for their store(s). No global user management. |
 | `SUPER_ADMIN` | Back-office | User & role management, cross-store administration, configure fraud-risk thresholds. Full back-office authority. |
 
-> The high-stakes **AI Fraud Detection** human-review flow (`designPatterns.md`) is operated by `BACKOFFICE_OPERATOR` (and escalated to `SUPER_ADMIN`) **in the back-office tool, not in this consumer app**.
+> The high-stakes **AI Fraud Detection** human-review flow is operated by `BACKOFFICE_OPERATOR` (and escalated to `SUPER_ADMIN`) **in the back-office tool, not in this consumer app**.
 
 ### Session Management
 
@@ -397,8 +395,6 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 
 ### OWASP Compliance
 
-We follow the **OWASP Mobile Application Security** project — **MASVS v2.1** (verification standard) backed by the **MASTG** testing guide — because SmartCart is a native React Native app, where mobile-specific threats (insecure on-device storage, reverse engineering, platform IPC) matter far more than the web-only OWASP Top 10. The table states the **concrete control the team will implement** for each MASVS group:
-
 | MASVS control group | What we will do |
 |---------------------|-----------------|
 | **MASVS-STORAGE** (data storage) | Store access/refresh tokens **only** in Keychain/Keystore via `SecureTokenStore`; never in `AsyncStorage`; no PII written to logs or analytics |
@@ -409,7 +405,6 @@ We follow the **OWASP Mobile Application Security** project — **MASVS v2.1** (
 | **MASVS-CODE** (code quality) | Pinned dependencies + `npm audit` / SCA gate in CI; Zod runtime guards on every API DTO; IDOR prevented by server-side per-token authorization (client never trusts raw IDs) |
 | **MASVS-RESILIENCE** (anti-tampering) | Production builds strip `console.*`; release builds use **Hermes bytecode**; Sentry monitors anomalies; optional jailbreak/root detection signal |
 
-> **On web XSS:** the rubric (`Caso2.md` §3.2.3) cites XSS as an OWASP example. Classic DOM-based XSS does **not** apply to React Native (there is no HTML DOM / `innerHTML`); the equivalent injection risk — untrusted barcode/form input reaching the API — is covered under **MASVS-PLATFORM** and **MASVS-CODE** via Zod validation.
 ---
 
 ## 1.5. Layered Architecture
