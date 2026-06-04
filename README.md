@@ -265,7 +265,97 @@ Screens are **containers**: they own data/state (hooks + stores), compose organi
 
 ## 1.4. Security
 
+The authentication, session, and authorization classes are modeled below; the
+`Authentication`, `Session Management`, and `Authorization (RBAC)` subsections
+each reference it.
+
+```mermaid
+classDiagram
+    class AuthService {
+        -api: ApiClient
+        -tokens: ITokenStore
+        -session: AuthSessionStore
+        +login(email: string, pwd: string) AuthUser
+        +logout() void
+        +refresh() string
+    }
+
+    class ITokenStore {
+        <<interface>>
+        +getAccess() string
+        +getRefresh() string
+        +setTokens(access: string, refresh: string) void
+        +clear() void
+    }
+
+    class SecureTokenStore {
+        -store: SecureStore
+        +getAccess() string
+        +getRefresh() string
+        +setTokens(access: string, refresh: string) void
+        +clear() void
+    }
+
+    class ApiClient {
+        -instance: AxiosInstance
+        -refreshQueue: RefreshQueue
+        +request(config) Response
+        -attachBearer(config) config
+        -onUnauthorized(error) Response
+    }
+
+    class RefreshQueue {
+        -inFlight: Promise~string~
+        -waiters: Request[]
+        +enqueue(req: Request) Response
+        +runRefresh() string
+    }
+
+    class AuthSessionStore {
+        +user: AuthUser
+        +role: Role
+        +status: SessionStatus
+        +setSession(user: AuthUser) void
+        +reset() void
+    }
+
+    class AuthUser {
+        +id: string
+        +email: string
+        +role: Role
+    }
+
+    class Role {
+        <<enumeration>>
+        USER
+        BACKOFFICE_OPERATOR
+        CATALOG_MANAGER
+        STORE_ADMIN
+        SUPER_ADMIN
+    }
+
+    class SessionStatus {
+        <<enumeration>>
+        ANONYMOUS
+        AUTHENTICATED
+        REFRESHING
+        EXPIRED
+    }
+
+    SecureTokenStore ..|> ITokenStore
+    AuthService --> ITokenStore : reads/writes tokens
+    AuthService --> ApiClient : sends requests
+    AuthService --> AuthSessionStore : updates session
+    ApiClient --> RefreshQueue : single-flight refresh
+    ApiClient --> ITokenStore : attaches Bearer
+    AuthSessionStore --> AuthUser
+    AuthSessionStore --> SessionStatus
+    AuthUser --> Role
+```
+
 ### Authentication
+
+> **Implemented by** `AuthService` + the `ApiClient` Axios **Facade** (see the class diagram above). Concrete code: the Axios Singleton in [`/frontend/src/api/client.ts`](/frontend/src/api/client.ts), auth endpoints in [`/frontend/src/api/endpoints/auth.ts`](/frontend/src/api/endpoints/auth.ts), and the [`useAuth`](/frontend/src/hooks/useAuth.ts) hook.
 
 - **Provider / Method:** JWT (access + refresh) issued by the SmartCart backend.
 - **Flow:**
@@ -277,33 +367,49 @@ Screens are **containers**: they own data/state (hooks + stores), compose organi
 
 ### Authorization (RBAC)
 
-| Role | Description | Permissions |
-|------|-------------|-------------|
-| `user` | Registered shopper | Scan products, manage pending session, generate checkout QR, browse/redeem rewards, view own points history |
-| `admin` | Store administrator | All `user` permissions + manage product catalog & sponsored list, manage rewards, view store analytics |
+> **Maps to the `Role` enum in the class diagram above.** RBAC is enforced **server-side** in the API middleware (per `designPatterns.md` guideline #6 — "el `ReviewController` requiere autenticación con rol `BACKOFFICE_OPERATOR` o superior"). The mobile client trusts the `role` claim **only to hide/show UI**, never to grant access.
 
-> The high-stakes **AI Fraud Detection** human-review flow (`designPatterns.md`) is operated by a separate `BACKOFFICE_OPERATOR` role in a back-office tool, **not** in this consumer app.
+This **consumer mobile app only ever authenticates `USER`-scoped accounts** — it never issues a privileged token. The back office is a **separate web tool** and, importantly, is **not staffed only by admins**: it has several distinct non-admin operational roles. All roles are documented here because RBAC is a shared, server-enforced concern.
+
+| Role | Surface | Key permissions |
+|------|---------|-----------------|
+| `USER` | **This mobile app** | Scan products, manage pending session, generate checkout QR, browse/redeem rewards, view own points history |
+| `BACKOFFICE_OPERATOR` | Back-office fraud dashboard | Review the HITL queue: approve/reject high-risk `ReviewItem`s coming from the `FraudDetectionAgent`. **Cannot** review a session they are party to (segregation of duties). No catalog or user-management rights. |
+| `CATALOG_MANAGER` | Back-office | Manage the product catalog & sponsored list, edit daily promotions, trigger `ProductCacheService.invalidateAllPromotions()`. No fraud-review or user-management rights. |
+| `STORE_ADMIN` | Back-office | Per-store analytics, rewards-catalog configuration, monitor validations for their store(s). No global user management. |
+| `SUPER_ADMIN` | Back-office | User & role management, cross-store administration, configure fraud-risk thresholds. Full back-office authority. |
+
+> The high-stakes **AI Fraud Detection** human-review flow (`designPatterns.md`) is operated by `BACKOFFICE_OPERATOR` (and escalated to `SUPER_ADMIN`) **in the back-office tool, not in this consumer app**.
 
 ### Session Management
 
-- **Token Expiry:** Access token 15 min / Refresh token 7 days.
-- **Refresh Strategy:** Silent refresh via the Axios interceptor on `401`, with a single in-flight refresh and a request queue.
-- **Storage Decision:** `expo-secure-store` (hardware-backed) instead of `AsyncStorage`/`localStorage`, because tokens are sensitive and `AsyncStorage` is unencrypted on device.
-- **Logout Behavior:** Tokens cleared from secure store; refresh token revoked server-side; Zustand session store reset; React Query cache cleared.
+> **See the class diagram at the top of §1.4** — session state lives in `AuthSessionStore` (`SessionStatus`: `ANONYMOUS → AUTHENTICATED → REFRESHING → EXPIRED`); tokens live in `SecureTokenStore`; refresh is orchestrated by `ApiClient` + `RefreshQueue`.
+
+- **Token Expiry:** Access token **15 min** / Refresh token **7 days**. On access-token expiry the `ApiClient` response interceptor transitions `AuthSessionStore.status` to `REFRESHING`.
+- **Refresh Strategy:** Silent refresh handled by `ApiClient.onUnauthorized()` on `401`. `RefreshQueue` guarantees a **single in-flight refresh** (`runRefresh()`): concurrent requests are queued behind one promise and replayed once a new access token arrives. If the **refresh request itself returns `401`** (refresh token expired/revoked), the queue rejects all waiters and triggers a **hard logout** (`status → EXPIRED`).
+- **Storage Decision:** `SecureTokenStore` wraps `expo-secure-store` (hardware-backed Keychain/Keystore) instead of `AsyncStorage`/`localStorage`, because tokens are sensitive and `AsyncStorage` is unencrypted on device. `ITokenStore` is the injected interface, so the store is mockable in tests.
+- **Logout Behavior:** `SecureTokenStore.clear()` wipes both tokens; the refresh token is revoked **server-side**; `AuthSessionStore.reset()` returns status to `ANONYMOUS`; the React Query cache is cleared to drop any user-scoped data.
 
 ### Secure Configuration
 
 - **Environment Variables:** Managed per environment via `app.config.ts` `extra` + EAS environment variables; only non-secret, public config (API base URL) is bundled. No secrets committed to VCS.
 - **Secret Management Platform:** EAS Secrets for build-time values; the mobile client holds **no** server secrets (POS/B2B API keys live exclusively in the backend).
-- **OWASP Mobile (MASVS) Applied:**
-  | Threat | Mitigation |
-  |--------|-----------|
-  | Insecure data storage | Tokens in Keychain/Keystore via secure-store; no PII in plain storage |
-  | Insecure communication | HTTPS/TLS 1.2+ enforced; optional certificate pinning for the API host |
-  | Injection (manual barcode/form input) | Zod schema validation + sanitization before any request |
-  | Insecure Direct Object Reference | All resource access is authorized server-side per token; client never trusts IDs alone |
-  | Reverse engineering / tampering | Production builds strip console logs; release builds use Hermes bytecode; Sentry monitors anomalies |
 
+### OWASP Compliance
+
+We follow the **OWASP Mobile Application Security** project — **MASVS v2.1** (verification standard) backed by the **MASTG** testing guide — because SmartCart is a native React Native app, where mobile-specific threats (insecure on-device storage, reverse engineering, platform IPC) matter far more than the web-only OWASP Top 10. The table states the **concrete control the team will implement** for each MASVS group:
+
+| MASVS control group | What we will do |
+|---------------------|-----------------|
+| **MASVS-STORAGE** (data storage) | Store access/refresh tokens **only** in Keychain/Keystore via `SecureTokenStore`; never in `AsyncStorage`; no PII written to logs or analytics |
+| **MASVS-CRYPTO** (cryptography) | Rely on platform-provided crypto (secure-store, TLS); **no hand-rolled crypto**; no secrets shipped in the bundle (EAS Secrets only) |
+| **MASVS-NETWORK** (network comms) | HTTPS-only with TLS 1.2+; iOS ATS / Android cleartext **disabled**; optional certificate pinning on the API host |
+| **MASVS-AUTH** (authentication) | Short-lived JWT + server-side refresh revocation; server-enforced **RBAC** (see Authorization above); biometric re-auth as a future option |
+| **MASVS-PLATFORM** (platform interaction) | Validate **all** input with Zod (manual barcode + auth forms) to block injection; request **least-privilege** native permissions (camera/location) only when needed; no sensitive data in screenshots/`pasteboard` |
+| **MASVS-CODE** (code quality) | Pinned dependencies + `npm audit` / SCA gate in CI; Zod runtime guards on every API DTO; IDOR prevented by server-side per-token authorization (client never trusts raw IDs) |
+| **MASVS-RESILIENCE** (anti-tampering) | Production builds strip `console.*`; release builds use **Hermes bytecode**; Sentry monitors anomalies; optional jailbreak/root detection signal |
+
+> **On web XSS:** the rubric (`Caso2.md` §3.2.3) cites XSS as an OWASP example. Classic DOM-based XSS does **not** apply to React Native (there is no HTML DOM / `innerHTML`); the equivalent injection risk — untrusted barcode/form input reaching the API — is covered under **MASVS-PLATFORM** and **MASVS-CODE** via Zod validation.
 ---
 
 ## 1.5. Layered Architecture
