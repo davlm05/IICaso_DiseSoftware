@@ -1,15 +1,5 @@
 # SmartCart — Frontend Design
 
-**Authors:** SmartCart Team
-**Version:** 1.1.0
-**Date:** 03/06/2026
-**Repository:** https://github.com/davlm05/IICaso_DiseSoftware
-
-> This document fills **Section 1 (Frontend Design)** of `DesignTemplate.md` for the SmartCart application.
-> All choices are derived from [`appContext.md`](../DesignContext/context/appContext.md) (screens & flows) and [`designPatterns.md`](../DesignContext/context/designPatterns.md) (GoF pattern applications).
-> UX testing evidence and applied corrections live in the repository [`README.md`](../README.md) (UX Analysis).
-> Every technology lists a recent stable version, and version compatibility is stated explicitly.
-
 ---
 
 ## 1.1. Technology Stack
@@ -34,8 +24,6 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 | **Forms & Validation** | React Hook Form + Zod | RHF **7.53.0** / Zod **3.23.8** | Validates the manual-barcode-entry fallback and auth forms. Zod schemas double as the runtime guard for API DTOs. Both compatible with React 18.3.1 / TS 5.3.3. |
 | **Styling / Design Tokens** | NativeWind (Tailwind CSS) | NativeWind **4.1.x** / Tailwind **3.4.x** | Utility-first styling enforces the design tokens (color/spacing/typography) consistently across all 7 screens. NativeWind 4 requires RN ≥ 0.76 — aligned with our framework. |
 | **Secure Storage** | expo-secure-store | **14.0.x** | Stores JWT access/refresh tokens in the iOS Keychain / Android Keystore (never `AsyncStorage`). Shipped with Expo SDK 52. |
-| **Internationalization** | i18next + react-i18next + expo-localization | i18next **23.x** / react-i18next **15.x** | String catalogs per locale (`es-CR` default, `en` fallback) with device-locale detection. Compatible with React 18.3.1. |
-| **List Virtualization** | @shopify/flash-list | **1.7.x** | High-performance virtualized lists for the pending-items list and rewards catalog. Supports RN 0.76 New Architecture. |
 | **Linting** | ESLint | **9.12.0** | Enforces code quality via flat config with the Expo/React Native preset. |
 | **Formatting** | Prettier | **3.3.3** | Deterministic formatting; integrated with ESLint to avoid rule conflicts. |
 | **Unit Testing** | Jest (jest-expo) | Jest **29.7.0** / jest-expo **52.0.x** | jest-expo 52 is the preset matched to Expo SDK 52 / RN 0.76.6. Covers utils, stores, commands, and validation handlers. |
@@ -45,7 +33,7 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 | **CI/CD** | GitHub Actions + EAS Build | — | GitHub Actions runs lint/test/build; EAS Build produces signed iOS/Android binaries and EAS Submit ships to the stores. |
 | **Distribution / Hosting** | Expo EAS → Apple App Store + Google Play | — | Native app distribution channel; EAS Update delivers OTA JS patches between store releases. |
 
-> **Compatibility statement:** The entire stack is anchored on **Expo SDK 52**, which pins React 18.3.1, React Native 0.76.6, react-native-svg 15.8.0, expo-camera 16, expo-notifications 0.29, and TypeScript 5.3.3 as a validated, mutually compatible set. Third-party libraries (Zustand 4.5.5, TanStack Query 5.59, Axios 1.7.7, NativeWind 4.1, RHF 7.53, Zod 3.23.8, ble-plx 3.2.1, socket.io-client 4.8, FlashList 1.7, i18next 23) all declare support for React 18.3.1 and RN 0.76 New Architecture.
+> **Compatibility statement:** The entire stack is anchored on **Expo SDK 52**, which pins React 18.3.1, React Native 0.76.6, react-native-svg 15.8.0, expo-camera 16, expo-notifications 0.29, and TypeScript 5.3.3 as a validated, mutually compatible set. Third-party libraries (Zustand 4.5.5, TanStack Query 5.59, Axios 1.7.7, NativeWind 4.1, RHF 7.53, Zod 3.23.8, ble-plx 3.2.1, socket.io-client 4.8) all declare support for React 18.3.1 and RN 0.76 New Architecture.
 
 ### Environments
 
@@ -148,116 +136,37 @@ Described as user **actions** and their results (no visual components), per the 
 
 ### Wireframes
 
-The interactive HTML prototypes (final versions, post-UX-test corrections) are in [`DesignContext/figmaScreens/`](../DesignContext/figmaScreens/):
+The interactive HTML prototypes referenced in `appContext.md` map to these screens:
 
 | Screen | Prototype file | Purpose |
 |--------|----------------|---------|
-| 1 — Lobby (empty) | [`pantalla-1-main-vacio.html`](../DesignContext/figmaScreens/pantalla-1-main-vacio.html) | Overview of points, sponsored products, primary scan CTA, location pill. |
-| 2 — Camera Scanning | [`pantalla-2-escanear.html`](../DesignContext/figmaScreens/pantalla-2-escanear.html) | Capture barcode via camera with manual-entry fallback and in-store confirmation. |
-| 2B — Manual Entry | [`pantalla-2B-ingreso-manual.html`](../DesignContext/figmaScreens/pantalla-2B-ingreso-manual.html) | Fallback barcode entry when the printed code is damaged (**ManualEntryStrategy**). |
-| 3 — Lobby (1 product) | [`pantalla-3-main-1producto.html`](../DesignContext/figmaScreens/pantalla-3-main-1producto.html) | First scanned product with toast, pending-points subsection, delete option. |
-| 4 — Lobby (multiple) | [`pantalla-4-main-3productos.html`](../DesignContext/figmaScreens/pantalla-4-main-3productos.html) | Full pending list with dual CTAs (scan more / generate QR). |
-| 5 — QR Validation | [`pantalla-5-qr-validacion.html`](../DesignContext/figmaScreens/pantalla-5-qr-validacion.html) | Full-green QR + alphanumeric fallback, 10-min validity, polling status. |
-| 6 — Confirmation | [`pantalla-6-confirmacion.html`](../DesignContext/figmaScreens/pantalla-6-confirmacion.html) | Points-credited hero, validated products, new total, paths to home or rewards. |
-| 7 — My Rewards | [`pantalla-7-recompensas.html`](../DesignContext/figmaScreens/pantalla-7-recompensas.html) | Available rewards + redeemed coupons tabs; locked rewards show point deficit. |
-
-**Corrections reflected in the final wireframes** (traced from the UX test below):
-
-| UX Finding | Wireframe change | Screens affected |
-|------------|------------------|------------------|
-| Secondary actions competed with the primary CTA (F1) | Primary CTA given dominant size/contrast; secondary controls demoted to outline style | 3, 4 (dual-CTA lobby) |
-| Users lacked sense of progress (F2) | Lightweight step/context micro-copy added on the main flow | 2, 4, 5 |
-| Visual overwhelm / density (F3) | Progressive disclosure: non-essential elements hidden by default on dense screens | 1, 4 |
-| Typography rated clear (F4 — positive) | Typographic system retained unchanged | all |
+| 1 — Lobby (empty) | `pantalla-1-main-vacio.html` | Overview of points, sponsored products, primary scan CTA, location pill. |
+| 2 — Camera Scanning | `pantalla-2-escanear.html` | Capture barcode via camera with manual-entry fallback and in-store confirmation. |
+| 3 — Lobby (1 product) | `pantalla-3-main-1producto.html` | First scanned product with toast, pending-points subsection, delete option. |
+| 4 — Lobby (multiple) | `pantalla-4-main-3productos.html` | Full pending list with dual CTAs (scan more / generate QR). |
+| 5 — QR Validation | `pantalla-5-qr-validacion.html` | Full-green QR + alphanumeric fallback, 10-min validity, polling status. |
+| 6 — Confirmation | `pantalla-6-confirmacion.html` | Points-credited hero, validated products, new total, paths to home or rewards. |
+| 7 — My Rewards | `pantalla-7-recompensas.html` | Available rewards + redeemed coupons tabs; locked rewards show point deficit. |
 
 ### UX Test Results
 
-Full evidence (test setup, heatmaps, raw outcomes, and the findings/corrections matrix) is documented in the repository [`README.md`](../README.md). Summary:
-
-- **Platform:** Maze (unmoderated remote) — prototype: `https://t.maze.co/542525865`.
-- **Participants:** 5 external design students (≥ 4 required by `Caso #2.md`).
-- **Task & success criteria:** *Follow the normal flow of the application* → scan and complete the pending list and reach the rewards screen.
-
-**Recorded outcomes (time-on-task & success rate):**
-
-| Participant | Outcome | Duration |
-|-------------|---------|----------|
-| 542985010 | Success | 00:02:13 |
-| 542830539 | Success | 00:05:20 |
-| 542990056 | Success | 00:02:57 |
-| 542985511 | Fail | 00:01:52 |
-
-**Heatmaps:** [Lobby](../media/mazeLobby.jpg) · [Scanning](../media/mazeScanning.jpg) · [Pending Items / QR](../media/mazePendingItems.jpg) · [QR Validation](../media/mazeQRValidation.jpg) · [Rewards](../media/mazeRewards.jpg).
-
-**Key Findings & Applied Corrections** (justified):
-
-| # | Finding | Dimension | Correction Applied | Justification |
-|---|---------|-----------|--------------------|---------------|
-| 1 | Some screens give greater visual prominence to secondary actions than to the intended primary action; correlates with the fastest-but-failed participant (flow confusion, not readability). | Learnability / Visual Hierarchy | Increase size and color contrast of the primary CTA per screen; reduce secondary-control prominence. | A clearly differentiated primary CTA removes action ambiguity and guides the user through the loop without exploration. |
-| 2 | Users lack context about which step they are on and what is expected next. | Learnability / Feedback | Add a lightweight progress indicator and contextual micro-copy on key main-flow screens. | Progress feedback aligns expectations, reduces navigation anxiety, and lowers intermediate drop-off. |
-| 3 | Too many elements visible at once → sense of overwhelm (highest completion time confirms efficiency impact). | Efficiency / Cognitive Load | Apply progressive disclosure; reduce default-visible elements on dense screens (lobby, product list). | Lower information density reduces cognitive load and speeds decision-making. |
-| 4 | Text legibility rated clear (positive validation). | N/A (positive) | No change — retain the current typographic system. | Confirms font/size/contrast decisions are appropriate; the one failure traces to hierarchy (F1), not typography. |
+- **Platform Used:** Maze (unmoderated remote) + in-person sessions with external design students.
+- **Results Summary:** See the Phase 1 metrics table in `DesignTemplate.md` (≥ 4 participants × 4 tasks: register, scan, generate QR, redeem).
+- **Key Findings (expected focus areas):** discoverability of the manual-entry fallback on the scan screen; clarity of the "pending vs credited" points distinction; one-tap QR generation satisfaction.
+- **Corrections Integrated:** track each finding in the Phase 1 "Key Findings & Applied Corrections" table and reflect the applied fix in the final NativeWind component styles.
 
 ---
 
 ## 1.3. Component Design Strategy
 
 - **Strategy Name:** **Atomic Design** layered on top of a **Feature-Sliced** folder structure (atoms/molecules/organisms for shared UI; feature folders for screen logic).
-- **Component Hierarchy** (each component links to its location in the [scaffold](#110-project-scaffold)):
-
-  - **Atoms** (`/src/components/atoms/`): `Button.tsx`, `Input.tsx`, `Icon.tsx`, `Badge.tsx`, `PointsTag.tsx`, `LocationPill.tsx`, `Toast.tsx`.
-  - **Molecules** (`/src/components/molecules/`): `ProductCard.tsx`, `PointsCard.tsx`, `ScanConfirmationModal.tsx`, `RewardCard.tsx`, `QRCodeView.tsx`.
-  - **Organisms** (`/src/components/organisms/`): `BottomNav.tsx`, `PendingItemsList.tsx`, `SponsoredCarousel.tsx`, `RewardsCatalog.tsx`, `CouponsList.tsx`.
-  - **Templates / Screens** (`/app/`): `index.tsx` (Lobby), `scan.tsx`, `checkout.tsx`, `confirmation.tsx`, `rewards.tsx`.
-
-#### How to build a component (developer recipe)
-
-Every shared UI component follows the same structure so the team builds them uniformly:
-
-1. **One component per file**, `PascalCase` name matching the filename. Co-locate its test as `Component.test.tsx`.
-2. **Typed props contract first.** Declare a `Props` interface; no `any`. Presentational components receive data only via props — no store/network access.
-3. **Container / Presentational split.** Stateless UI lives in `/src/components/**`; the logic+state wrapper lives in `/src/features/<feature>/` and passes plain props down.
-4. **Styling via NativeWind tokens only** — use `className` with the design tokens from `/src/styles`; never hard-code hex values.
-5. **Accessibility is mandatory** — set `accessibilityRole` and `accessibilityLabel`; convey status with icon + text, never color alone.
-6. **i18n for all copy** — wrap user-visible strings in `t('...')`; no literal Spanish in JSX.
-
-```tsx
-// /src/components/molecules/ProductCard.tsx
-import { View, Text, Pressable } from 'react-native';
-import { useTranslation } from 'react-i18next';
-import { PointsTag } from '../atoms/PointsTag';
-import type { ProductDTO } from '@/types/ProductDTO';
-
-interface ProductCardProps {
-  product: ProductDTO;
-  isNew?: boolean;
-  onDelete?: (barcode: string) => void; // undo-capable RemoveProductCommand
-}
-
-export function ProductCard({ product, isNew = false, onDelete }: ProductCardProps) {
-  const { t } = useTranslation();
-  return (
-    <View
-      className={`flex-row items-center rounded-xl bg-surface p-md ${isNew ? 'border border-primary' : ''}`}
-      accessibilityRole="summary"
-      accessibilityLabel={t('product.card.label', { name: product.name, points: product.points })}
-    >
-      <Text className="font-body text-text-primary flex-1">{product.name}</Text>
-      <PointsTag points={product.points} pending />
-      {onDelete && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('product.card.delete', { name: product.name })}
-          onPress={() => onDelete(product.barcode)}
-        />
-      )}
-    </View>
-  );
-}
-```
-
-- **Reusability:** Shared, stateless UI lives in `/src/components` and receives data via props (Container/Presentational split). Feature-specific logic and state live in `/src/features/<feature>`. Naming: `PascalCase` components, `camelCase` hooks prefixed `use`, one component per file.
-- **Internationalization (i18n):** `i18next` 23.x + `react-i18next` 15.x with `expo-localization` for locale detection. Strings live in `/src/lib/i18n/<locale>.json`; default `es-CR` (primary market is Costa Rican supermarkets), with `en` fallback.
+- **Component Hierarchy:**
+  - **Atoms:** `Button`, `Input`, `Icon`, `Badge`, `PointsTag`, `LocationPill`, `Toast`.
+  - **Molecules:** `ProductCard`, `PointsCard`, `ScanConfirmationModal`, `RewardCard`, `QRCodeView`.
+  - **Organisms:** `BottomNav`, `PendingItemsList`, `SponsoredCarousel`, `RewardsCatalog`, `CouponsList`.
+  - **Templates / Screens:** `LobbyScreen`, `ScanScreen`, `QRValidationScreen`, `ConfirmationScreen`, `RewardsScreen`.
+- **Reusability:** Shared, stateless UI lives in `/components` and receives data via props (Container/Presentational split). Feature-specific logic and state live in `/features/<feature>`. Naming: `PascalCase` components, `camelCase` hooks prefixed `use`, one component per file.
+- **Internationalization (i18n):** `i18next` 23.x + `react-i18next` 15.x with `expo-localization` for locale detection. Strings live in `/lib/i18n/<locale>.json`; default `es-CR` (primary market is Costa Rican supermarkets), with `en` fallback.
 - **Responsiveness:** Mobile-first single-column layouts; NativeWind responsive prefixes adapt spacing at the `md`/`lg` breakpoints for large phones and tablets. Safe-area insets handled via `react-native-safe-area-context`.
 - **Accessibility:** Every interactive element sets `accessibilityRole` and `accessibilityLabel`; status is conveyed by icon + text (not color alone); focus order follows visual order; dynamic type respected.
 
@@ -268,84 +177,59 @@ export function ProductCard({ product, isNew = false, onDelete }: ProductCardPro
 ### Authentication
 
 - **Provider / Method:** JWT (access + refresh) issued by the SmartCart backend.
-- **Implementing classes / files:**
-  - `/src/api/client.ts` — Axios instance; **request interceptor** attaches `Authorization: Bearer <access>`, **response interceptor** handles the `401` silent-refresh.
-  - `/src/api/endpoints/auth.ts` — `login()`, `refresh()`, `logout()` endpoint functions.
-  - `/src/hooks/useAuth.ts` — exposes `login`/`logout`/`session` to screens.
-  - `/src/store/sessionStore.ts` — Zustand **Singleton** holding auth/session state.
-  - `/src/lib/secureStore.ts` — `expo-secure-store` wrapper for token persistence in Keychain/Keystore.
 - **Flow:**
-  1. User submits email + password (validated client-side with Zod in the auth form).
+  1. User submits email + password (validated client-side with Zod).
   2. Backend validates credentials and returns an access token (short-lived) and a refresh token.
-  3. `useAuth` stores both tokens in **expo-secure-store** (Keychain/Keystore) — never in `AsyncStorage`.
-  4. The Axios request interceptor (`client.ts`) attaches `Authorization: Bearer <access>` to every protected request.
-  5. On a `401`, the response interceptor uses the refresh token to obtain a new access token once, then retries the original request; concurrent requests queue behind a single in-flight refresh.
+  3. Frontend stores both tokens in **expo-secure-store** (Keychain/Keystore) — never in `AsyncStorage`.
+  4. The Axios request interceptor attaches `Authorization: Bearer <access>` to every protected request.
+  5. On a `401`, the response interceptor uses the refresh token to obtain a new access token once, then retries the original request; concurrent requests queue behind a single refresh.
 
 ### Authorization (RBAC)
 
-SmartCart spans **two surfaces**: the consumer mobile app (this document) and a separate **back-office tool** for the fraud-review Human-in-the-Loop flow (`designPatterns.md`). The back office is **not admin-only** — it has its own role hierarchy.
+| Role | Description | Permissions |
+|------|-------------|-------------|
+| `user` | Registered shopper | Scan products, manage pending session, generate checkout QR, browse/redeem rewards, view own points history |
+| `admin` | Store administrator | All `user` permissions + manage product catalog & sponsored list, manage rewards, view store analytics |
 
-| Role | Surface | Description | Permissions |
-|------|---------|-------------|-------------|
-| `user` | Mobile app | Registered shopper | Scan products, manage pending session, generate checkout QR, browse/redeem rewards, view own points history |
-| `admin` | Mobile app / web | Store administrator | All `user` permissions + manage product catalog & sponsored list, manage rewards, view store analytics |
-| `BACKOFFICE_OPERATOR` | Back office | Fraud-review operator | View the human-review queue, approve/reject flagged QR-validation sessions (`ReviewController`); **cannot approve a session they originated** |
-| `BACKOFFICE_SUPERVISOR` *(assumption)* | Back office | Operator's superior | All `BACKOFFICE_OPERATOR` permissions + reassign/escalate items, view audit logs, adjust per-environment risk thresholds |
-| `SECURITY_ADMIN` *(assumption)* | Back office | Fraud/security team | Manage backoffice roles, immutable audit-log access, override timeouts |
-
-> **Assumptions explicitly stated:** `designPatterns.md` defines `BACKOFFICE_OPERATOR` and requires "operator **or superior**" on the `ReviewController`, which implies the supervisor/security tiers above. These are documented so the backend RBAC middleware and the backoffice tool are designed for more than a single admin role. The consumer app ships only `user`/`admin` permission checks; the `BACKOFFICE_*` roles are enforced server-side and never surface in the mobile bundle.
-
-**Enforcement:** Role checks live server-side per token (the client never trusts IDs alone). The mobile app gates `admin`-only UI behind the role claim in the JWT; the backoffice `ReviewController` requires `BACKOFFICE_OPERATOR` or higher via auth middleware, and logs every decision with `reviewerId`, `sessionId`, `timestamp`, and `signals` (append-only).
+> The high-stakes **AI Fraud Detection** human-review flow (`designPatterns.md`) is operated by a separate `BACKOFFICE_OPERATOR` role in a back-office tool, **not** in this consumer app.
 
 ### Session Management
 
 - **Token Expiry:** Access token 15 min / Refresh token 7 days.
-- **Refresh Strategy (specific):** Silent refresh implemented in the Axios response interceptor at `/src/api/client.ts`. A module-level `isRefreshing` flag plus a `pendingQueue` ensures a **single in-flight refresh**; concurrent `401`s subscribe to the queue and replay once the new access token arrives.
-- **Session State Machine:** The shopping session's lifecycle (`Empty → Scanning → WithProducts → Validating → Confirmed`) lives in `/src/features/session/states/` (**State** pattern) and is backed by the Singleton `/src/store/sessionStore.ts`.
-- **Storage Decision:** `expo-secure-store` (hardware-backed Keychain/Keystore) instead of `AsyncStorage`/`localStorage`, because tokens are sensitive and `AsyncStorage` is unencrypted on device.
-- **Logout Behavior:** `useAuth.logout()` clears tokens from secure store, calls `auth.logout()` to revoke the refresh token server-side, resets the Zustand session store, and clears the React Query cache.
+- **Refresh Strategy:** Silent refresh via the Axios interceptor on `401`, with a single in-flight refresh and a request queue.
+- **Storage Decision:** `expo-secure-store` (hardware-backed) instead of `AsyncStorage`/`localStorage`, because tokens are sensitive and `AsyncStorage` is unencrypted on device.
+- **Logout Behavior:** Tokens cleared from secure store; refresh token revoked server-side; Zustand session store reset; React Query cache cleared.
 
 ### Secure Configuration
 
 - **Environment Variables:** Managed per environment via `app.config.ts` `extra` + EAS environment variables; only non-secret, public config (API base URL) is bundled. No secrets committed to VCS.
 - **Secret Management Platform:** EAS Secrets for build-time values; the mobile client holds **no** server secrets (POS/B2B API keys live exclusively in the backend).
-
-### OWASP Mobile — What the team will implement
-
-Mapped to the **OWASP Mobile Top 10 (2024) / MASVS**, each row states the concrete action, the library/config used, and where it is enforced:
-
-| OWASP / MASVS item | What the team will do | Library / Config | Where enforced |
-|--------------------|-----------------------|------------------|----------------|
-| M9 Insecure Data Storage | Persist tokens only in hardware-backed storage; keep no PII in plain storage | `expo-secure-store` | `/src/lib/secureStore.ts`, used by `useAuth` |
-| M5 Insecure Communication | Force HTTPS/TLS 1.2+; enable certificate pinning for the API host in production | Axios `baseURL` (https only) + `react-native-ssl-pinning` config | `/src/api/client.ts`, `app.config.ts` |
-| M4 Insufficient Input Validation / Injection | Validate & sanitize all manual-barcode and auth input before any request | Zod schemas | `/src/lib/validation/*.ts`, RHF resolvers |
-| M3 Insecure Authentication/Authorization (IDOR) | Never trust client-side IDs; all resource access authorized server-side per token | JWT claims + backend RBAC | server-side; client sends Bearer token only |
-| M8 Security Misconfiguration / secrets | No secrets in the bundle; public config only via EAS env | EAS Secrets, `app.config.ts extra` | build pipeline |
-| M7 Insufficient Binary Protection (reverse engineering/tampering) | Strip `console.*` in production, ship Hermes bytecode, monitor anomalies | `babel-plugin-transform-remove-console`, Hermes, Sentry | `babel.config.js`, EAS production profile |
-| Observability for abuse detection | Tag crashes/traces with screen + session state for incident response | Sentry (`sentry-expo`) | `/app/_layout.tsx` init |
+- **OWASP Mobile (MASVS) Applied:**
+  | Threat | Mitigation |
+  |--------|-----------|
+  | Insecure data storage | Tokens in Keychain/Keystore via secure-store; no PII in plain storage |
+  | Insecure communication | HTTPS/TLS 1.2+ enforced; optional certificate pinning for the API host |
+  | Injection (manual barcode/form input) | Zod schema validation + sanitization before any request |
+  | Insecure Direct Object Reference | All resource access is authorized server-side per token; client never trusts IDs alone |
+  | Reverse engineering / tampering | Production builds strip console logs; release builds use Hermes bytecode; Sentry monitors anomalies |
 
 ---
 
 ## 1.5. Layered Architecture
 
-- **Architectural Pattern:** **Layered (Ports & Adapters) with a Feature-Sliced layout.** Dependencies point **inward**: Presentation depends on Application, Application depends on the Domain and on **Infrastructure abstractions (interfaces/ports)** that it declares; concrete Infrastructure implementations (adapters) are **injected at the composition root** (`/app/_layout.tsx` providers). This dependency inversion is what keeps the Domain pure and the data/device layer swappable.
-
+- **Architectural Pattern:** **Clean Architecture adapted to React Native** with a Feature-Sliced layout — the UI depends inward on use-cases, which depend on the domain; infrastructure is injected behind interfaces.
 - **Layer Responsibilities:**
 
 | Layer | Responsibility | Examples |
 |-------|---------------|----------|
-| Presentation | Render UI, handle gestures/events; no business logic | Screens (`/app`), atoms/molecules/organisms |
-| Application / Use Cases | Orchestrate business logic; define ports for infrastructure | Custom hooks, Zustand stores, **Command** objects, session **State** machine |
-| Domain | Core business rules & entities; framework-free | `Product`/`ProductDTO`, session states, scan-validation handlers, points rules |
-| Infrastructure | Implement ports — external communication & device APIs | Axios client (**Facade**), socket.io client, secure-store, camera/BLE adapters, React Query cache |
+| Presentation | Render UI, handle gestures/events | Screens, atoms/molecules/organisms |
+| Application / Use Cases | Orchestrate business logic | Custom hooks, Zustand stores, **Command** objects, session **State** machine |
+| Domain | Core business rules & entities | `Product`/`ProductDTO`, session states, scan-validation handlers, points rules |
+| Infrastructure | External communication & device APIs | Axios client (**Facade**), socket.io client, secure-store, camera/BLE adapters |
 
-- **Layer Access Rules (consistent with the diagram):**
-  - Presentation may call **only** the Application layer (hooks/stores).
-  - Application may use the Domain directly, and may use Infrastructure **only through the interfaces it declares** — concrete adapters are injected, not imported.
-  - **Domain must not import Infrastructure or React** — it stays pure and unit-testable.
-  - Infrastructure depends inward on Domain types (DTOs); the Domain never depends on Infrastructure.
+- **Layer Access Rules:** Presentation may call only the Application layer (hooks/stores). Application may call Domain and Infrastructure (the latter only through interfaces). **Domain must not import Infrastructure or React** — it stays pure and unit-testable.
 
-- **Diagram** (solid arrow = depends on; the Application→Infrastructure dependency is on an interface, realized by an injected adapter):
+- **Diagram:**
 
 ```mermaid
 flowchart TD
@@ -362,7 +246,6 @@ flowchart TD
         ST[Zustand Session Store · Singleton]
         CMD[Command Objects · Add/Remove/GenerateQR/Redeem]
         SM[Session State Machine]
-        PORTS[[Infrastructure Ports / Interfaces]]
     end
 
     subgraph Domain
@@ -371,7 +254,7 @@ flowchart TD
         RULES[Points Rules]
     end
 
-    subgraph Infrastructure["Infrastructure · Adapters"]
+    subgraph Infrastructure
         API[Axios API Facade]
         WS[socket.io Client]
         CAM[Camera / BLE Adapters · Strategy]
@@ -381,9 +264,7 @@ flowchart TD
 
     Presentation --> Application
     Application --> Domain
-    Application -->|depends on| PORTS
-    PORTS -. implemented by .-> Infrastructure
-    Infrastructure --> Domain
+    Application --> Infrastructure
     Domain -.no dependency.-> Infrastructure
     API --> Backend[(SmartCart Backend API)]
     WS --> Backend
@@ -393,121 +274,96 @@ flowchart TD
 
 ## 1.6. Design Patterns
 
-Each pattern below is implemented from its detailed **ficha** (functionality, actors, class diagram, `/src` location, developer restrictions, and exception handling) in [`designPatterns.md`](../DesignContext/context/designPatterns.md). The table maps each pattern to its frontend location; follow the linked ficha for the class-level design.
-
-| Pattern | Application in SmartCart | Frontend location | Ficha |
-|---------|--------------------------|-------------------|-------|
-| **Singleton** | Exactly one active `ShoppingSession` per authenticated user — backed by a single Zustand store, the single source of truth. | `/src/store/sessionStore.ts` | [Singleton](../DesignContext/context/designPatterns.md) |
-| **Observer** | A successful scan notifies the points card, product list, toast, and session state independently via store subscriptions. | `/src/store/sessionStore.ts`, `/src/features/scan/scannerService.ts` | [Observer](../DesignContext/context/designPatterns.md) |
-| **State** | The session moves through `Empty → Scanning → WithProducts → Validating → Confirmed`; each state defines valid actions/UI. | `/src/features/session/states/` | [State](../DesignContext/context/designPatterns.md) |
-| **Command** | `AddProductCommand`, `RemoveProductCommand` (with **undo**), `GenerateQRCommand`, `RedeemCouponCommand`. | `/src/features/session/commands/` | [Command](../DesignContext/context/designPatterns.md) |
-| **Strategy** | Barcode capture: `CameraStrategy` (expo-camera) and `ManualEntryStrategy`, same result shape. | `/src/features/scan/strategies/` | [Strategy](../DesignContext/context/designPatterns.md) |
-| **Chain of Responsibility** | Client-side pre-validation: `LocationHandler → BarcodeFormatHandler → SponsoredProductHandler → DuplicateScanHandler → SessionAddHandler`. | `/src/features/scan/validation/` | [CoR](../DesignContext/context/designPatterns.md) |
-| **Decorator** | Composable product states: `SponsoredProductDecorator`, `NewlyScannedDecorator`, `ValidatedProductDecorator`, `LockedRewardDecorator`. | `/src/components/product/decorators/` | [Decorator](../DesignContext/context/designPatterns.md) |
-| **Factory Method** | `RewardFactory` creates `DiscountCoupon`, `TwoForOneCoupon`, `CategoryCoupon`. | `/src/features/rewards/factories/` | [Factory Method](../DesignContext/context/designPatterns.md) |
-| **Facade** | A single API module hides all HTTP details (base URL, interceptors, error mapping) from components. | `/src/api/client.ts`, `/src/api/endpoints/` | — |
-| **Cache-Aside** | Barcode → product lookups check the React Query cache first; on a miss, fetch and cache — mirrors the backend `ProductCacheService` contract. | `/src/api/endpoints/products.ts` | [Cache-Aside](../DesignContext/context/designPatterns.md) |
-| **Container / Presentational** | Feature containers own logic/state and pass plain props to stateless UI. | `/src/features/` vs `/src/components/` | — |
-
-> **Backend-side patterns referenced by the app:** the **Adapter** (multi-chain POS), **Proxy** (secure QR validation), and the **Human-in-the-Loop** fraud-review classes are designed in `designPatterns.md` and run server-side. The frontend only consumes their results (QR validation status via socket/polling, and the "Verificando…" state during human review) — see Asynchronous Operations below.
+Mapped directly from `designPatterns.md` to their frontend implementation locations.
 
 ### Asynchronous Operations
 
-The app has **several distinct** async operations, each with its own mechanism, loading state, retry policy, and failure behavior:
+- **Approach:** `async/await` with Axios, wrapped by TanStack Query for caching/retries/de-duplication.
+- **Loading States:** Skeleton placeholders for the sponsored carousel and rewards catalog; an animated scan line signals active barcode processing.
+- **Error Boundaries:** A React Error Boundary per feature (`scan`, `checkout`, `rewards`) prevents a single failure from crashing the app.
+- **Retry Logic:** Automatic retry on network/5xx with exponential backoff (max 3 attempts) for idempotent reads; **non-idempotent** actions (QR generation, redemption) are **not** auto-retried.
+- **WebSocket Usage:** While in `ValidatingState`, the client joins socket.io room `session:{id}` to receive the POS validation result and auto-transition to the Confirmation screen; if the socket drops, it falls back to polling `GET /sessions/:id` every 3 s until the 10-minute QR expiry.
+- **Long-Running Processes:** Checkout validation may pause for AI fraud review (human-in-the-loop, ≤ 2 min). The screen shows a "Verificando…" status and never blocks indefinitely — it resolves on push/socket or on the expiry/timeout signal.
 
-| Async operation | Mechanism | Loading state | Retry / idempotency | Failure behavior |
-|-----------------|-----------|---------------|---------------------|------------------|
-| **Barcode → product lookup** | TanStack Query + Axios (**Cache-Aside**) | Scan-line animation while resolving | Auto-retry on network/5xx, exp. backoff, max 3 (idempotent read) | Toast "Producto no disponible"; offer manual retry |
-| **Sponsored carousel / rewards catalog fetch** | TanStack Query | Skeleton placeholders | Auto-retry (idempotent read) | Cached data shown if available; error banner otherwise |
-| **QR generation** | Axios POST (`GenerateQRCommand`) | Button spinner | **No** auto-retry (non-idempotent) | Surface error; user re-taps explicitly |
-| **POS validation status** | socket.io room `session:{id}`, **fallback** polling `GET /sessions/:id` every 3 s | "Esperando validación…" on `ValidatingState` | Socket reconnect; polling until 10-min QR expiry | On expiry → "El código expiró, genéralo de nuevo" |
-| **Reward redemption** | Axios POST (`RedeemCouponCommand`) | Button spinner | **No** auto-retry (non-idempotent) | Error toast; points untouched until server confirms |
-| **Long-running fraud review (HITL)** | Server-side; app shows status pushed via socket/push | "Verificando…" status, never blocks indefinitely | n/a (resolves on push/socket or expiry/timeout, ≤ 2 min) | Resolves to confirm/reject or timeout message |
-| **Push notification ("Puntos acreditados")** | expo-notifications (FCM/APNs) | n/a (background) | Delivered by OS service | Silent if undelivered; in-app confirmation still shown |
+### Error Handling & Observability
 
-### Error Handling & Observability (implementation design)
-
-- **Global error handler:** The Axios response interceptor in `/src/api/client.ts` catches every API error, maps the HTTP status to friendly Spanish copy, and dispatches it to a global notification slice in `/src/store/notificationStore.ts`:
-
-```ts
-// /src/store/notificationStore.ts
-interface Notification { id: string; type: 'error' | 'warning' | 'success'; message: string }
-interface NotificationState {
-  queue: Notification[];
-  push: (n: Omit<Notification, 'id'>) => void;
-  dismiss: (id: string) => void;
-}
-```
-
-- **HTTP → user-facing copy map** (extended):
-
-| Condition | Copy (es-CR) |
-|-----------|--------------|
-| Expired QR (`410`) | "El código expiró, genéralo de nuevo" |
-| Out-of-store scan (`403 LOCATION`) | "Acércate a una tienda afiliada para sumar puntos" |
-| Product not found (`404`) | "No encontramos ese producto" |
-| Network/timeout | "Sin conexión. Revisa tu internet e intenta de nuevo" |
-| Server error (`5xx`) | "Servicio temporalmente no disponible" |
-
-- **Error Boundaries:** One React `ErrorBoundary` per feature (`scan`, `checkout`, `rewards`), defined in `/src/components/ErrorBoundary.tsx` and mounted in `/app/_layout.tsx`, so a single feature failure cannot crash the app; it renders a retry fallback and reports to Sentry.
-- **Retry logic:** Centralized TanStack Query defaults — retry idempotent reads up to 3× with exponential backoff; **non-idempotent** actions (QR generation, redemption) are configured with `retry: false`.
-- **Monitoring:** Sentry captures uncaught exceptions and performance traces, tagged with screen and session state.
-- **Logging:** `console.*` stripped from production via Babel plugin; errors forwarded to Sentry only.
+- **Global Error Handler:** The Axios response interceptor catches all API errors and dispatches user-friendly messages to a global notification slice.
+- **User-Facing Error Messages:** HTTP codes are mapped to friendly Spanish copy (e.g., expired QR → "El código expiró, genéralo de nuevo"; out-of-store scan → "Acércate a una tienda afiliada para sumar puntos").
+- **Frontend Monitoring:** Sentry captures uncaught exceptions and performance traces, tagged with screen and session state.
+- **Logging:** `console.*` stripped from production via Babel plugin; errors are forwarded to Sentry only.
 
 ---
 
 ## 1.7. Performance
 
-Each strategy states **where** it is applied and **how** (developer instruction):
-
-| Strategy | Where | How |
-|----------|-------|-----|
-| **Lazy Loading** | `/app/scan.tsx` | Mount the `expo-camera` module only when the Scan route is active; Expo Router lazy-loads route screens by default. |
-| **Code Splitting** | Metro config + heavy modules (camera, QR/SVG) | Use Metro inline requires + route-level splitting so camera/QR/SVG load on demand, not at startup. |
-| **Bundle Optimization** | EAS production profile (`eas.json`) | Hermes bytecode precompilation, tree-shaking, dead-code elimination in production builds. |
-| **Image Optimization** | `SponsoredCarousel.tsx`, `RewardCard.tsx` | Use `expo-image` with disk/memory cache and `contentFit`; serve sponsored images as WebP at device resolution. |
-| **Memoization** | `ProductCard.tsx`, `RewardCard.tsx`, `PendingItemsList.tsx` | Wrap cards in `React.memo`; compute pending-points totals with `useMemo`/`useCallback`; subscribe to Zustand with selective selectors to avoid over-render. |
-| **Virtualization** | `/src/components/organisms/PendingItemsList.tsx`, `RewardsCatalog.tsx` | Render long lists with `@shopify/flash-list` (1.7.x) instead of `ScrollView`/`FlatList`. |
-| **Caching** | `/src/api/endpoints/*` | TanStack Query caches product lookups and rewards (Cache-Aside); EAS Update ships OTA JS without a full store release. |
+| Strategy | Implementation |
+|----------|---------------|
+| **Lazy Loading** | Expo Router lazy-loads route screens; the camera module mounts only on the Scan screen to keep startup fast. |
+| **Code Splitting** | Metro inline requires + route-level splitting; heavy modules (camera, QR/SVG) load on demand. |
+| **Bundle Optimization** | Hermes engine with bytecode precompilation, tree-shaking, and dead-code elimination in production EAS builds. |
+| **Image Optimization** | `expo-image` with disk/memory caching and `contentFit`; sponsored-product images served as WebP at device-appropriate resolution. |
+| **Memoization** | `React.memo` on `ProductCard`/`RewardCard`; `useMemo`/`useCallback` for pending-points totals and list renderers; selective Zustand selectors to avoid over-rendering. |
+| **Virtualization** | `FlashList` (Shopify, 1.7.x) for the rewards catalog and pending list, keeping scroll smooth as item counts grow. |
+| **Caching** | TanStack Query caches product lookups and rewards (Cache-Aside); EAS Update delivers OTA JS without a full store release. |
 
 ---
 
 ## 1.8. Testing Strategy
 
-- **Where tests live:** Co-located with the unit under test as `*.test.ts(x)` (e.g. `RemoveProductCommand.test.ts` beside `RemoveProductCommand.ts`); E2E flows live in `/e2e/*.yaml` (Maestro). Coverage is enforced in CI.
-
-| Level | Tool | Scope | Example | Min. Coverage |
-|-------|------|-------|---------|---------------|
-| **Unit** | Jest 29.7.0 (jest-expo 52) | Session store, command objects (incl. undo), scan-validation chain, points rules, utils | `RemoveProductCommand` undo restores the prior pending total | 80% |
-| **Integration** | React Native Testing Library 12.8.0 | Scan-confirm modal, delete-with-undo, QR generation, manual-entry fallback, reward redemption | Tapping the red X removes a `ProductCard` and shows an undo toast | 70% |
-| **UI / E2E** | Maestro 1.39.x | Critical flow: register → scan → generate QR → confirm → redeem | Full happy-path journey on simulator | Key flows 100% |
-| **Accessibility** | `@axe-core/react` + manual VoiceOver/TalkBack passes | WCAG 2.1 AA on all interactive screens | No color-only status cues on the QR screen | 0 critical violations |
+| Level | Tool | Scope | Min. Coverage |
+|-------|------|-------|---------------|
+| **Unit** | Jest 29.7.0 (jest-expo 52) | Session store, command objects (incl. undo), scan-validation chain, points rules, utils | 80% |
+| **Integration** | React Native Testing Library 12.8.0 | Scan-confirm modal, delete-with-undo, QR generation, manual-entry fallback, reward redemption | 70% |
+| **UI / E2E** | Maestro 1.39.x | Critical flows: register → scan → generate QR → confirm → redeem | Key flows 100% |
+| **Accessibility** | `@axe-core/react` + manual VoiceOver/TalkBack passes | WCAG 2.1 AA on all interactive screens | 0 critical violations |
 
 ---
 
 ## 1.9. CI/CD Pipeline (Frontend)
 
-The pipeline is defined in **`.github/workflows/ci.yml`** (GitHub Actions). Each stage is a named job with concrete commands:
-
-| # | Job | Command | Gate |
-|---|-----|---------|------|
-| 1 | Install & cache deps | `npm ci` (with `actions/cache` on `~/.npm`) | — |
-| 2 | Lint | `npx eslint .` | Fail blocks merge |
-| 3 | Format check | `npx prettier --check .` | Fail blocks merge |
-| 4 | Type check | `npx tsc --noEmit` | Fail blocks merge |
-| 5 | Unit & integration tests | `npx jest --coverage` | Fail / below threshold blocks merge |
-| 6 | Build | `eas build --platform all --profile preview --non-interactive` | Fail blocks merge |
-| 7 | E2E | `maestro test e2e/` | Fail blocks merge |
-| 8 | Deploy | `eas update --branch staging` (auto on `main`) → `eas submit` (manual, post-QA) | Manual promotion |
-
 ```
-[Push to PR / main] → 1 Install → 2 Lint → 3 Format → 4 Type Check
-   → 5 Unit+Integration → 6 EAS Build → 7 Maestro E2E → 8 EAS Update(staging)→Submit(prod)
+[Trigger: Push to PR / main branch]
+        │
+        ▼
+┌─────────────────────────┐
+│  1. Install & Cache Deps │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  2. Lint (ESLint 9)      │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  3. Format Check         │
+│     (Prettier 3)         │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  4. Type Check (tsc)     │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  5. Unit & Integration   │
+│     Tests (Jest / RTL)   │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  6. EAS Build (iOS/And.) │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  7. E2E Tests (Maestro)  │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  8. Deploy: EAS Update   │
+│  (staging) → Submit (prod)│
+└─────────────────────────┘
 ```
 
 - **Tooling:** GitHub Actions for lint/type/test; `expo/expo-github-action` + EAS Build/Submit for binaries and store submission.
 - **Branch Strategy:** GitHub Flow — feature branches → PR → `main`.
-- **Quality Gates:** A PR cannot merge if lint, format, type check, tests, or build fail; minimum coverage thresholds (§1.8) are enforced in job 5.
+- **Quality Gates:** A PR cannot merge if lint, type check, tests, or build fail; minimum coverage thresholds enforced.
 - **Deployment Strategy:** Merge to `main` → automatic **EAS Update** to the staging channel; manual promotion (EAS Submit) to production store tracks after QA sign-off.
 
 ---
@@ -525,28 +381,24 @@ The pipeline is defined in **`.github/workflows/ci.yml`** (GitHub Actions). Each
 ├── /components/           # Reusable UI (Atomic Design)
 │   ├── /atoms/            # Button, Input, Badge, PointsTag, LocationPill, Toast
 │   ├── /molecules/        # ProductCard, PointsCard, ScanConfirmationModal, RewardCard, QRCodeView
-│   ├── /organisms/        # BottomNav, PendingItemsList, SponsoredCarousel, RewardsCatalog, CouponsList
-│   ├── /product/decorators/  # Sponsored/NewlyScanned/Validated/LockedReward (Decorator)
-│   └── ErrorBoundary.tsx  # Per-feature error boundary
+│   ├── /organisms/        # BottomNav, PendingItemsList, SponsoredCarousel, RewardsCatalog
+│   └── /product/decorators/  # Sponsored/NewlyScanned/Validated/LockedReward (Decorator)
 ├── /features/             # Feature logic & local state
 │   ├── /scan/             # scannerService.ts, /strategies/ (Camera, Manual), /validation/ (CoR chain)
 │   ├── /session/          # /states/ (State machine), /commands/ (Command + undo)
 │   ├── /checkout/         # QR generation + validation status (WebSocket/polling)
 │   └── /rewards/          # /factories/ (RewardFactory), redemption hooks
 ├── /hooks/                # useSession, useScan, useRewards, useAuth
-├── /lib/                  # utils, constants, secureStore.ts, /validation/ (Zod), /i18n/ (es-CR, en)
-├── /store/                # Zustand stores (sessionStore = Singleton, notificationStore), slices
+├── /lib/                  # utils, constants, /i18n/ (es-CR, en)
+├── /store/                # Zustand stores (sessionStore = Singleton), slices
 ├── /styles/               # NativeWind theme, design tokens
 └── /types/                # Shared TS types & DTOs (ProductDTO, RewardDTO, SessionDTO)
 
 /app                       # Expo Router screens
-├── _layout.tsx            # Root nav + providers (Query, SafeArea, ErrorBoundary, Sentry)
+├── _layout.tsx            # Root nav + providers (Query, SafeArea, ErrorBoundary)
 ├── index.tsx              # Lobby
 ├── scan.tsx               # Camera scanning
 ├── checkout.tsx           # QR validation
 ├── confirmation.tsx       # Points credited
 └── rewards.tsx            # Rewards & coupons
-
-/e2e                       # Maestro flow files (*.yaml)
-.github/workflows/ci.yml   # CI/CD pipeline
 ```
