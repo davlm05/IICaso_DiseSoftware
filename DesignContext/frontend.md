@@ -105,8 +105,6 @@ SmartCart's visual identity is **green-forward** — green communicates "valid s
 
 ### Core Business Process
 
-Described as user **actions** and their results (no visual components), per the four core flows of `appContext.md`.
-
 #### Onboarding & Home (Lobby)
 1. The user opens the app upon arriving at a store.
 2. The system detects the user's presence in an affiliated store and enables point accumulation for the session.
@@ -159,16 +157,53 @@ The interactive HTML prototypes referenced in `appContext.md` map to these scree
 
 ## 1.3. Component Design Strategy
 
-- **Strategy Name:** **Atomic Design** layered on top of a **Feature-Sliced** folder structure (atoms/molecules/organisms for shared UI; feature folders for screen logic).
-- **Component Hierarchy:**
-  - **Atoms:** `Button`, `Input`, `Icon`, `Badge`, `PointsTag`, `LocationPill`, `Toast`.
-  - **Molecules:** `ProductCard`, `PointsCard`, `ScanConfirmationModal`, `RewardCard`, `QRCodeView`.
-  - **Organisms:** `BottomNav`, `PendingItemsList`, `SponsoredCarousel`, `RewardsCatalog`, `CouponsList`.
-  - **Templates / Screens:** `LobbyScreen`, `ScanScreen`, `QRValidationScreen`, `ConfirmationScreen`, `RewardsScreen`.
-- **Reusability:** Shared, stateless UI lives in `/components` and receives data via props (Container/Presentational split). Feature-specific logic and state live in `/features/<feature>`. Naming: `PascalCase` components, `camelCase` hooks prefixed `use`, one component per file.
-- **Internationalization (i18n):** `i18next` 23.x + `react-i18next` 15.x with `expo-localization` for locale detection. Strings live in `/lib/i18n/<locale>.json`; default `es-CR` (primary market is Costa Rican supermarkets), with `en` fallback.
-- **Responsiveness:** Mobile-first single-column layouts; NativeWind responsive prefixes adapt spacing at the `md`/`lg` breakpoints for large phones and tablets. Safe-area insets handled via `react-native-safe-area-context`.
-- **Accessibility:** Every interactive element sets `accessibilityRole` and `accessibilityLabel`; status is conveyed by icon + text (not color alone); focus order follows visual order; dynamic type respected.
+#### Atoms — `/components/atoms/`
+
+| Component | File | How to build it |
+|-----------|------|-----------------|
+| `Button` | [`/components/atoms/Button.tsx`](../frontend/src/components/atoms/Button.tsx) | Stateless `Pressable`; props `variant` (`'primary' \| 'secondary' \| 'ghost'`), `label`, `icon?`, `onPress`, `disabled?`. Maps `variant` → NativeWind token classes — the single source for the primary-vs-secondary CTA hierarchy (usability Finding #1). Sets `accessibilityRole="button"` + `accessibilityLabel`. |
+| `Input` | [`/components/atoms/Input.tsx`](../frontend/src/components/atoms/Input.tsx) | Controlled wrapper over RN `TextInput`; props `value`, `onChangeText`, `error?`, `keyboardType?`. Driven by React Hook Form `Controller`; renders the Zod error message; `accessibilityLabel` required. Used by the manual-barcode fallback and auth forms. |
+| `Icon` | [`/components/atoms/Icon.tsx`](../frontend/src/components/atoms/Icon.tsx) | Thin wrapper over `lucide-react-native`; props `name`, `size`, `color` (from tokens). Decorative icons set `accessibilityElementsHidden`; meaningful icons pair with text. |
+| `Badge` | [`/components/atoms/Badge.tsx`](../frontend/src/components/atoms/Badge.tsx) | Small label pill; props `text`, `tone` (`'neutral' \| 'new'`). Renders the "Nuevo" tag on the latest scanned item. |
+| `PointsTag` | [`/components/atoms/PointsTag.tsx`](../frontend/src/components/atoms/PointsTag.tsx) | Points pill; props `points`, `state` (`'pending' \| 'credited'`). Color **and** icon by state (accent for pending, success for credited) — never color alone (a11y). |
+| `LocationPill` | [`/components/atoms/LocationPill.tsx`](../frontend/src/components/atoms/LocationPill.tsx) | Props `storeName`, `verified`. Dot + text; the visual gate that signals point accrual is enabled (user inside affiliated store). |
+| `Toast` | [`/components/atoms/Toast.tsx`](../frontend/src/components/atoms/Toast.tsx) | Transient banner; props `message`, `tone` (`success \| warning \| error`), `visible`. Subscribes to the global notification slice (Observer), auto-dismisses, and sets `accessibilityLiveRegion="polite"`. |
+
+#### Molecules — `/components/molecules/`
+
+| Component | File | How to build it |
+|-----------|------|-----------------|
+| `ProductCard` | [`/components/molecules/ProductCard.tsx`](../frontend/src/components/molecules/ProductCard.tsx) | Composes `Icon` + `PointsTag` + delete `Button`; props `product: ProductDTO`, `isNew?`, `onDelete`. Wrapped in `React.memo`. Delete dispatches `RemoveProductCommand` (supports undo). |
+| `PointsCard` | [`/components/molecules/PointsCard.tsx`](../frontend/src/components/molecules/PointsCard.tsx) | Points total + progress bar + pending subsection; props `total`, `pending`, `nextRewardAt`. Reads from the session store via a selective Zustand selector. |
+| `ScanConfirmationModal` | [`/components/molecules/ScanConfirmationModal.tsx`](../frontend/src/components/molecules/ScanConfirmationModal.tsx) | Props `product`, `onConfirm`, `onCancel`. Focus is trapped; confirm is the primary CTA. Enforces error prevention — explicit confirmation before accrual. |
+| `RewardCard` | [`/components/molecules/RewardCard.tsx`](../frontend/src/components/molecules/RewardCard.tsx) | Props `reward: RewardDTO`, `balance`, `onRedeem`. Locked state shows the point deficit; redeem `Button` is disabled when `balance < reward.cost`. |
+| `QRCodeView` | [`/components/molecules/QRCodeView.tsx`](../frontend/src/components/molecules/QRCodeView.tsx) | Wraps `react-native-qrcode-svg`; props `token`, `expiresAt`. Renders the alphanumeric fallback code and a countdown to the 10-minute expiry. |
+
+#### Organisms — `/components/organisms/`
+
+| Component | File | How to build it |
+|-----------|------|-----------------|
+| `BottomNav` | [`/components/organisms/BottomNav.tsx`](../frontend/src/components/organisms/BottomNav.tsx) | Tab bar (Home/Scan/Rewards/Profile); props `active`. Each tab sets `accessibilityRole="tab"`; navigation via Expo Router. |
+| `PendingItemsList` | [`/components/organisms/PendingItemsList.tsx`](../frontend/src/components/organisms/PendingItemsList.tsx) | `FlashList` of `ProductCard`; props `items`, `onDelete`. Empty list renders the dashed empty-state card. |
+| `SponsoredCarousel` | [`/components/organisms/SponsoredCarousel.tsx`](../frontend/src/components/organisms/SponsoredCarousel.tsx) | Horizontal list of sponsored cards; props `products`, `onSeeAll`. Implements the "Ver todos" progressive-disclosure affordance (usability Finding #3). |
+| `RewardsCatalog` | [`/components/organisms/RewardsCatalog.tsx`](../frontend/src/components/organisms/RewardsCatalog.tsx) | Tabs ("Disponibles" / "Mis cupones") wrapping a list of `RewardCard` and `CouponsList`; props `rewards`, `coupons`, `balance`. |
+| `CouponsList` | [`/components/organisms/CouponsList.tsx`](../frontend/src/components/organisms/CouponsList.tsx) | `FlashList` of redeemed coupons ready to use; props `coupons`. |
+
+#### Product decorators — `/components/product/decorators/`
+
+`SponsoredProductDecorator`, `NewlyScannedDecorator`, `ValidatedProductDecorator`, `LockedRewardDecorator` wrap a base card to add a visual state (badge / green highlight / check / lock) **without** modifying it (Decorator pattern). They are stacked per screen context — e.g. a sponsored + newly-scanned item composes two decorators.
+
+#### Templates / Screens — `/app/`
+
+| Screen component | Route file | How to build it |
+|------------------|-----------|-----------------|
+| `LobbyScreen` | [`/app/index.tsx`](../frontend/app/index.tsx) | Container: calls `useSession`, composes `PointsCard` + `SponsoredCarousel` + `PendingItemsList` + `BottomNav`. |
+| `ScanScreen` | [`/app/scan.tsx`](../frontend/app/scan.tsx) | Container: calls `useScan` (Strategy: camera/manual), mounts the camera, renders `ScanConfirmationModal`. |
+| `QRValidationScreen` | [`/app/checkout.tsx`](../frontend/app/checkout.tsx) | Container: calls the checkout hook (socket/poll), renders `QRCodeView` + waiting status. |
+| `ConfirmationScreen` | [`/app/confirmation.tsx`](../frontend/app/confirmation.tsx) | Container: renders the credited-points hero, validated list, and home/rewards CTAs. |
+| `RewardsScreen` | [`/app/rewards.tsx`](../frontend/app/rewards.tsx) | Container: calls `useRewards`, composes `RewardsCatalog`. |
+
+Screens are **containers**: they own data/state (hooks + stores), compose organisms, and pass plain props down. Presentational children hold no business logic (Container/Presentational split).
 
 ---
 
