@@ -184,8 +184,6 @@ SmartCart's visual identity is **green-forward** — green communicates "valid s
 
 ### Wireframes
 
-The interactive HTML prototypes referenced in `appContext.md` map to these screens:
-
 | Screen | Prototype | Purpose |
 |--------|----------------|---------|
 | 1 — Lobby (empty) | ![1](media/wireframes/1.png) | Overview of points, sponsored products, primary scan CTA, location pill. |
@@ -199,7 +197,6 @@ The interactive HTML prototypes referenced in `appContext.md` map to these scree
 ### UX Test Results
 
 - **Platform Used:** Maze (unmoderated remote) + in-person sessions with external design students.
-- **Results Summary:** See the Phase 1 metrics table in `DesignTemplate.md` (≥ 4 participants × 4 tasks: register, scan, generate QR, redeem).
 - **Key Findings (expected focus areas):** discoverability of the manual-entry fallback on the scan screen; clarity of the "pending vs credited" points distinction; one-tap QR generation satisfaction.
 - **Corrections Integrated:** track each finding in the Phase 1 "Key Findings & Applied Corrections" table and reflect the applied fix in the final NativeWind component styles.
 
