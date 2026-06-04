@@ -194,7 +194,7 @@ The interactive HTML prototypes referenced in `appContext.md` map to these scree
 
 | Screen | Prototype file | Purpose |
 |--------|----------------|---------|
-| 1 — Lobby (empty) | `pantalla-1-main-vacio.html` | Overview of points, sponsored products, primary scan CTA, location pill. |
+| 1 — Lobby (empty) | ![1](media/wireframes/1.png) | Overview of points, sponsored products, primary scan CTA, location pill. |
 | 2 — Camera Scanning | `pantalla-2-escanear.html` | Capture barcode via camera with manual-entry fallback and in-store confirmation. |
 | 3 — Lobby (1 product) | `pantalla-3-main-1producto.html` | First scanned product with toast, pending-points subsection, delete option. |
 | 4 — Lobby (multiple) | `pantalla-4-main-3productos.html` | Full pending list with dual CTAs (scan more / generate QR). |
