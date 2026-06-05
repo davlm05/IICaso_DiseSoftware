@@ -83,8 +83,6 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 | **CI/CD** | GitHub Actions + EAS Build | — | GitHub Actions runs lint/test/build; EAS Build produces signed iOS/Android binaries and EAS Submit ships to the stores. |
 | **Distribution / Hosting** | Expo EAS → Apple App Store + Google Play | — | Native app distribution channel; EAS Update delivers OTA JS patches between store releases. |
 
-> **Compatibility statement:** The entire stack is anchored on **Expo SDK 52**, which pins React 18.3.1, React Native 0.76.6, react-native-svg 15.8.0, expo-camera 16, expo-notifications 0.29, and TypeScript 5.3.3 as a validated, mutually compatible set. Third-party libraries (Zustand 4.5.5, TanStack Query 5.59, Axios 1.7.7, NativeWind 4.1, RHF 7.53, Zod 3.23.8, ble-plx 3.2.1, socket.io-client 4.8) all declare support for React 18.3.1 and RN 0.76 New Architecture.
-
 ### Environments
 
 | Environment | URL / Endpoint | Purpose |
@@ -356,8 +354,6 @@ classDiagram
 
 ### Authorization (RBAC)
 
-> **Maps to the `Role` enum in the class diagram above.** RBAC is enforced **server-side** in the API middleware. The mobile client trusts the `role` claim **only to hide/show UI**, never to grant access.
-
 This **consumer mobile app only ever authenticates `USER`-scoped accounts** — it never issues a privileged token. The back office is a **separate web tool** and, importantly, is **not staffed only by admins**: it has several distinct non-admin operational roles. All roles are documented here because RBAC is a shared, server-enforced concern.
 
 | Role | Surface | Key permissions |
@@ -368,11 +364,7 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 | `STORE_ADMIN` | Back-office | Per-store analytics, rewards-catalog configuration, monitor validations for their store(s). No global user management. |
 | `SUPER_ADMIN` | Back-office | User & role management, cross-store administration, configure fraud-risk thresholds. Full back-office authority. |
 
-> The high-stakes **AI Fraud Detection** human-review flow is operated by `BACKOFFICE_OPERATOR` (and escalated to `SUPER_ADMIN`) **in the back-office tool, not in this consumer app**.
-
 ### Session Management
-
-> **See the class diagram at the top of §1.4** — session state lives in `AuthSessionStore` (`SessionStatus`: `ANONYMOUS → AUTHENTICATED → REFRESHING → EXPIRED`); tokens live in `SecureTokenStore`; refresh is orchestrated by `ApiClient` + `RefreshQueue`.
 
 - **Token Expiry:** Access token **15 min** / Refresh token **7 days**. On access-token expiry the `ApiClient` response interceptor transitions `AuthSessionStore.status` to `REFRESHING`.
 - **Refresh Strategy:** Silent refresh handled by `ApiClient.onUnauthorized()` on `401`. `RefreshQueue` guarantees a **single in-flight refresh** (`runRefresh()`): concurrent requests are queued behind one promise and replayed once a new access token arrives. If the **refresh request itself returns `401`** (refresh token expired/revoked), the queue rejects all waiters and triggers a **hard logout** (`status → EXPIRED`).
@@ -386,15 +378,15 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 
 ### OWASP Compliance
 
-| MASVS control group | What we will do |
-|---------------------|-----------------|
-| **MASVS-STORAGE** (data storage) | Store access/refresh tokens **only** in Keychain/Keystore via `SecureTokenStore`; never in `AsyncStorage`; no PII written to logs or analytics |
-| **MASVS-CRYPTO** (cryptography) | Rely on platform-provided crypto (secure-store, TLS); **no hand-rolled crypto**; no secrets shipped in the bundle (EAS Secrets only) |
-| **MASVS-NETWORK** (network comms) | HTTPS-only with TLS 1.2+; iOS ATS / Android cleartext **disabled**; optional certificate pinning on the API host |
-| **MASVS-AUTH** (authentication) | Short-lived JWT + server-side refresh revocation; server-enforced **RBAC** (see Authorization above); biometric re-auth as a future option |
-| **MASVS-PLATFORM** (platform interaction) | Validate **all** input with Zod (manual barcode + auth forms) to block injection; request **least-privilege** native permissions (camera/location) only when needed; no sensitive data in screenshots/`pasteboard` |
-| **MASVS-CODE** (code quality) | Pinned dependencies + `npm audit` / SCA gate in CI; Zod runtime guards on every API DTO; IDOR prevented by server-side per-token authorization (client never trusts raw IDs) |
-| **MASVS-RESILIENCE** (anti-tampering) | Production builds strip `console.*`; release builds use **Hermes bytecode**; Sentry monitors anomalies; optional jailbreak/root detection signal |
+| MASVS control group | Risk it addresses | What we will do (how) | Validation criterion |
+|---------------------|-------------------|-----------------------|----------------------|
+| **MASVS-STORAGE** (data storage) | A lost/stolen phone could leak session tokens and personal data. | Persist access/refresh tokens **only** in the hardware-backed Keychain/Keystore via `SecureTokenStore`; never `AsyncStorage`; strip PII from logs/analytics. | Device-dump test recovers no token/PII; unit test asserts writes go only to secure-store. |
+| **MASVS-CRYPTO** (cryptography) | Home-grown or misused cryptography can be broken, exposing secrets. | Rely **only** on platform crypto (`expo-secure-store`, TLS); no hand-rolled crypto; no secrets in the bundle (EAS Secrets only). | Secret/SCA scan finds no bundled secrets or custom crypto primitives; build config shows EAS Secrets injection only. |
+| **MASVS-NETWORK** (network comms) | Traffic over untrusted networks can be intercepted (man-in-the-middle). | HTTPS-only with TLS 1.2+; iOS ATS enabled / Android cleartext **disabled**; optional certificate pinning on the API host. | MITM-proxy test cannot read traffic; a cleartext request is blocked; ATS/cleartext config asserted in native config. |
+| **MASVS-AUTH** (authentication) | Stolen tokens or weak auth let attackers hijack accounts or escalate roles. | Short-lived JWT (15 min) + server-side refresh revocation; server-enforced **RBAC** (see Authorization above); biometric re-auth as a future option. | Expired/revoked refresh token forces hard logout; a `USER`-scoped token is rejected on back-office endpoints. |
+| **MASVS-PLATFORM** (platform interaction) | Unvalidated input or over-broad permissions enable injection and data leakage. | Validate **all** input with Zod (manual barcode + auth forms); request **least-privilege** native permissions (camera/location) only when needed; keep sensitive data out of screenshots/`pasteboard`. | Malformed barcode/form input rejected by Zod schema tests; permission prompts fire only on use; sensitive screens flagged no-screenshot. |
+| **MASVS-CODE** (code quality) | Vulnerable dependencies or trusting client-supplied IDs (IDOR) expose data. | Pin dependencies + run `npm audit` / SCA gate in CI; Zod runtime guards on every API DTO; server-side per-token authorization so the client never trusts raw IDs. | CI fails on high-severity advisories; DTO contract tests reject malformed payloads; a cross-user ID request returns 403 from the server. |
+| **MASVS-RESILIENCE** (anti-tampering) | A tampered or reverse-engineered build could be repackaged or abused. | Strip `console.*` in production; ship **Hermes bytecode**; Sentry monitors anomalies; optional jailbreak/root detection signal. | Release bundle contains no `console.*` and uses Hermes bytecode; Sentry receives anomaly events; a root/jailbreak flag is emitted on a compromised device. |
 
 ---
 
