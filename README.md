@@ -721,3 +721,38 @@ The pipeline is defined in **`.github/workflows/ci.yml`**; each step runs an `np
 > **Test placement:** unit and integration tests are **co-located** with the code they cover, in
 > `__tests__/` folders or `*.test.ts(x)` files (e.g. `/features/session/commands/__tests__/`,
 > `/components/molecules/__tests__/`). E2E flows live separately in `/.maestro/`. See §1.8.
+
+
+
+# 2. Backend Design
+
+## 2.1. Technology Stack
+
+| Concern | Choice | Version | Justification |
+|---|---|---|---|
+| API Style | REST + OpenAPI | — | Frontend `apiClient` already REST; Swagger auto-gen in Nest |
+| Language | TypeScript / Node.js | 5.5 / 20 LTS | **Reuse frontend `types.ts` 1:1** (`Product`, `QrTicket`, `ValidationResult`) → zero contract drift |
+| Framework | NestJS | 10.4 | DI + modules map to template's layered design + Repository/Service/DTO patterns out-of-box |
+| ORM/DB | Prisma 5.20 / PostgreSQL | 16 | Template schema is relational; Prisma migrations + type-safety |
+| Async | BullMQ | 5.x | Analytics profiling + push notif queues (template 2.4) |
+| Cache | Redis | 7.4 | Session state (stateless API), profile cache invalidation |
+| File storage | Cloudflare R2 / AWS S3 | — | Product images |
+| AI segment | External inference (OpenAI / local sklearn microservice) | — | Consumer profiling classifier |
+| Hosting | Railway / Render / AWS ECS | — | Docker; cheap demo, scalable |
+| Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
+
+### El siguiente stack es la evolución hacia un despliegue completo:
+
+| Concern | Choice | Version | Justification |
+|---------|--------|---------|---------------|
+| **API Style** | REST API | — | Standart comunication method between Client and Server with well defined contracts via Open AI |
+| **Language** | Typescript | 6.0.3 | Static typing, less execution errors, great maintanability for big projects, excelent support for the AWS CDK ecosystem |
+| **Framework** | AWS Lambda + API gateway | — | AWS native serverless framework, and API gateway to expose REST endpoints and WebSockets |
+| **Database** | Amazon Aurora Postgre SQL | 17.0 + | Compatible database with PostgreSQL, scalable, high availability and completely manageable. Ideal for transactionable data such as sessions, products, user profiles |
+| **Hosting** | AWS | — | Allows for a serverless architecture with automatic scalability. Complete integration with the services: Lambda, API Gateway, DynamoDB, SQS, SNS, S3, SageMaker. |
+| **Async Processing** | AWS SQS + SNS | — | SQS for message queues and SNS for push notifications|
+| **Caching** | Amazon Elasticache for Redis | 7.0 + | Low latency cache for active data sessions, user profiles and constant analytical queries |
+| **File Storage** | Amazon S3 | — | Object storage, B2B reports and CI/CD artifacts |
+
+
+
