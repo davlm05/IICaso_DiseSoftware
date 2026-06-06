@@ -398,11 +398,11 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 | Layer | Responsibility | Examples |
 |-------|---------------|----------|
 | Presentation | Render UI, handle gestures/events | Screens, atoms/molecules/organisms |
-| Application / Use Cases | Orchestrate business logic | Custom hooks, Zustand stores, **Command** objects, session **State** machine |
-| Domain | Core business rules & entities | `Product`/`ProductDTO`, session states, scan-validation handlers, points rules |
-| Infrastructure | External communication & device APIs | Axios client (**Facade**), socket.io client, secure-store, camera/BLE adapters |
+| Application / Use Cases | Orchestrate use cases: drive the session flow, apply Domain rules, reach Infrastructure through interfaces | Custom hooks, Zustand session store (**Singleton**), **Command** objects (Add/Remove/GenerateQR/Redeem), session **State** machine + states, scan-validation **Chain of Responsibility** |
+| Domain | Pure business entities & rules — no React, no Infrastructure | `Product`/`ProductDTO`, `Reward`/`RewardDTO`, points rules, barcode-format & scan-validation rules, reward-type definitions (**Factory** products) |
+| Infrastructure | External communication & device APIs | Axios client (**Facade**), socket.io client, React Query cache (**Cache-Aside**), secure-store, camera/BLE adapters (**Strategy**) |
 
-- **Layer Access Rules:** Presentation may call only the Application layer (hooks/stores). Application may call Domain and Infrastructure (the latter only through interfaces). **Domain must not import Infrastructure or React** — it stays pure and unit-testable.
+- **Layer Access Rules:** Presentation may call only the Application layer (hooks/stores). Application drives the session **State** machine, dispatches **Command** objects, and runs the scan-validation **chain** — applying Domain rules and reaching Infrastructure only through interfaces. **Domain stays pure** — entities and rules with no imports of Infrastructure or React, so it remains unit-testable in isolation.
 
 - **Diagram:**
 
@@ -421,12 +421,13 @@ flowchart TD
         ST[Zustand Session Store · Singleton]
         CMD[Command Objects · Add/Remove/GenerateQR/Redeem]
         SM[Session State Machine]
+        VAL[Scan Validation Chain · CoR]
     end
 
     subgraph Domain
         ENT[Entities · Product, Reward]
-        VAL[Scan Validation Chain]
         RULES[Points Rules]
+        VRULES[Validation Rules]
     end
 
     subgraph Infrastructure
