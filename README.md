@@ -722,7 +722,3 @@ The pipeline is defined in **`.github/workflows/ci.yml`**; each step runs an `np
 ├── /.maestro/             # Maestro E2E flow files (*.yaml) — §1.8, §1.9
 └── /.github/workflows/    # ci.yml — lint → test → EAS build → E2E → deploy — §1.9
 ```
-
-> **Test placement:** unit and integration tests are **co-located** with the code they cover, in
-> `__tests__/` folders or `*.test.ts(x)` files (e.g. `/features/session/commands/__tests__/`,
-> `/components/molecules/__tests__/`). E2E flows live separately in `/.maestro/`. See §1.8.
