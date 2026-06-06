@@ -453,8 +453,6 @@ Mapped directly from `designPatterns.md` to their frontend implementation locati
 
 ### Asynchronous Operations
 
-SmartCart has **several distinct async operations**, each with its own mechanism, loading state, and retry/error semantics. The table below names each one so the rules (retry, polling, long-running) are unambiguous — rather than describing "async" as a single generic flow.
-
 | # | Operation | Trigger | Mechanism | Loading state | Retry policy | Error handling |
 |---|-----------|---------|-----------|---------------|--------------|----------------|
 | 1 | **Product catalog lookup** | Barcode scanned | TanStack Query over the backend **Cache-Aside** (`async/await` + Axios) | Inline skeleton on the scan-confirm modal | **Auto** retry on network/5xx, exponential backoff (max 3) — *idempotent read* | Fallback message "Servicio temporalmente no disponible"; user can retry |
@@ -589,26 +587,26 @@ flowchart TD
 
 ## 1.7. Performance
 
-| Strategy | Implementation |
-|----------|---------------|
-| **Lazy Loading** | Expo Router lazy-loads route screens; the camera module mounts only on the Scan screen to keep startup fast. |
-| **Code Splitting** | Metro inline requires + route-level splitting; heavy modules (camera, QR/SVG) load on demand. |
-| **Bundle Optimization** | Hermes engine with bytecode precompilation, tree-shaking, and dead-code elimination in production EAS builds. |
-| **Image Optimization** | `expo-image` with disk/memory caching and `contentFit`; sponsored-product images served as WebP at device-appropriate resolution. |
-| **Memoization** | `React.memo` on `ProductCard`/`RewardCard`; `useMemo`/`useCallback` for pending-points totals and list renderers; selective Zustand selectors to avoid over-rendering. |
-| **Virtualization** | `FlashList` (Shopify, 1.7.x) for the rewards catalog and pending list, keeping scroll smooth as item counts grow. |
-| **Caching** | TanStack Query caches product lookups and rewards (Cache-Aside); EAS Update delivers OTA JS without a full store release. |
+| Strategy | Where (file / config) | How |
+|----------|-----------------------|-----|
+| **Lazy Loading** | `/app/*.tsx` (Expo Router routes), `/app/scan.tsx` | Expo Router code-loads each route on demand by default. Mount the camera only while the Scan route is focused — gate `<CameraView>` behind `useIsFocused()` so it unmounts on blur. |
+| **Code Splitting** | `metro.config.js`, `/features/*` | Enable `transformer.inlineRequires` in Metro. Import heavy modules (`expo-camera`, `react-native-qrcode-svg`) **inside** their feature module, never from a root barrel, so Metro splits them out. |
+| **Bundle Optimization** | `app.json` (`jsEngine: "hermes"`), `eas.json` (`production` profile) | Ship the Hermes engine (bytecode precompile); the production EAS profile enables minify + tree-shaking + dead-code elimination. Verify bundle output with `npx expo export`. |
+| **Image Optimization** | `/components/molecules/ProductCard.tsx`, `/components/organisms/SponsoredCarousel.tsx` | Use `expo-image`'s `<Image>` with `cachePolicy="memory-disk"` and `contentFit="cover"`; serve sponsored images as WebP at device-appropriate resolution. |
+| **Memoization** | `/components/molecules/ProductCard.tsx`, `RewardCard.tsx`, `/store/sessionStore.ts`, `/hooks/` | Wrap list items in `React.memo`; compute pending-points totals with `useMemo` and pass stable callbacks via `useCallback`; read state with selective Zustand selectors (`useSessionStore(s => s.pending)`) to avoid whole-store re-renders. |
+| **Virtualization** | `/components/organisms/PendingItemsList.tsx`, `RewardsCatalog.tsx`, `CouponsList.tsx` | Render long lists with `FlashList` (1.7.x) instead of `FlatList`; set `estimatedItemSize` and a stable `keyExtractor`. |
+| **Caching** | `/api/`, `QueryClient` in `/app/_layout.tsx`, `eas.json` | Configure per-query `staleTime`/`gcTime` on the TanStack Query client (Cache-Aside for product/rewards lookups); ship JS-only fixes via `eas update` (OTA) without a store release. |
 
 ---
 
 ## 1.8. Testing Strategy
 
-| Level | Tool | Scope | Min. Coverage |
-|-------|------|-------|---------------|
-| **Unit** | Jest 29.7.0 (jest-expo 52) | Session store, command objects (incl. undo), scan-validation chain, points rules, utils | 80% |
-| **Integration** | React Native Testing Library 12.8.0 | Scan-confirm modal, delete-with-undo, QR generation, manual-entry fallback, reward redemption | 70% |
-| **UI / E2E** | Maestro 1.39.x | Critical flows: register → scan → generate QR → confirm → redeem | Key flows 100% |
-| **Accessibility** | `@axe-core/react` + manual VoiceOver/TalkBack passes | WCAG 2.1 AA on all interactive screens | 0 critical violations |
+| Level | Tool | Where (location / naming) | How | Min. Coverage |
+|-------|------|---------------------------|-----|---------------|
+| **Unit** | Jest 29.7.0 (jest-expo 52) | `__tests__/*.test.ts` co-located beside source: `/features/session/commands/`, `/features/scan/validation/`, `/store/`, `/lib/`; config in `jest.config.js` + `jest.setup.ts` | Pure-logic tests with mocked dependencies: command objects incl. `undo`, each CoR validation handler in isolation, points rules. No rendering. | 80% |
+| **Integration** | React Native Testing Library 12.8.0 | `/components/**/__tests__/*.test.tsx` | `render()` the component, drive it with `fireEvent`/`userEvent`, assert via accessibility queries (`getByRole`/`getByLabelText`); mock the API layer (jest mocks / MSW). Covers scan-confirm modal, delete-with-undo, QR generation, manual-entry fallback, redemption. | 70% |
+| **UI / E2E** | Maestro 1.39.x | `.maestro/*.yaml` flow files | One YAML flow per critical journey (register → scan → generate QR → confirm → redeem); run with `maestro test .maestro/` locally and in CI. | Key flows 100% |
+| **Accessibility** | `@axe-core/react` + manual VoiceOver/TalkBack passes | Component `__tests__` (automated) + manual device passes | Wire `@axe-core/react` in dev and assert no violations in component tests; complete manual VoiceOver (iOS) / TalkBack (Android) passes on each interactive screen. | 0 critical violations |
 
 ---
 
@@ -654,6 +652,19 @@ flowchart TD
 └─────────────────────────┘
 ```
 
+The pipeline is defined in **`.github/workflows/ci.yml`**; each step runs an `npm` script from `package.json` or an EAS command driven by `eas.json`. The `EXPO_TOKEN` secret lives in the GitHub repo settings (Settings → Secrets).
+
+| Step | Where (file / config) | How |
+|------|-----------------------|-----|
+| 1. Install & cache | `ci.yml`, `package.json` | `actions/setup-node` with `cache: npm`, then `npm ci` |
+| 2. Lint | `ci.yml` → `npm run lint` | ESLint 9 flat config (`eslint.config.js`) |
+| 3. Format check | `ci.yml` → `npm run format:check` | `prettier --check .` |
+| 4. Type check | `ci.yml` → `npm run typecheck` | `tsc --noEmit` |
+| 5. Unit & integration | `ci.yml` → `npm test -- --coverage` | Jest + RTL; fails below the §1.8 coverage thresholds |
+| 6. EAS Build | `ci.yml`, `eas.json` (`production` profile) | `eas build --platform all --profile production --non-interactive` via `expo/expo-github-action` (auth with `EXPO_TOKEN`) |
+| 7. E2E | `ci.yml`, `.maestro/` | `maestro test .maestro/` against the build artifact |
+| 8. Deploy | `ci.yml`, `eas.json` | `eas update --branch staging` on merge → `eas submit` to store tracks after QA |
+
 - **Tooling:** GitHub Actions for lint/type/test; `expo/expo-github-action` + EAS Build/Submit for binaries and store submission.
 - **Branch Strategy:** GitHub Flow — feature branches → PR → `main`.
 - **Quality Gates:** A PR cannot merge if lint, type check, tests, or build fail; minimum coverage thresholds enforced.
@@ -694,4 +705,19 @@ flowchart TD
 ├── checkout.tsx           # QR validation
 ├── confirmation.tsx       # Points credited
 └── rewards.tsx            # Rewards & coupons
+
+# Project root — config & tooling
+├── app.json               # Expo config (jsEngine: hermes) — §1.7 Bundle Optimization
+├── eas.json               # EAS Build/Update/Submit profiles — §1.7, §1.9
+├── metro.config.js        # Metro bundler (inlineRequires) — §1.7 Code Splitting
+├── package.json           # Scripts: lint, format:check, typecheck, test — §1.9
+├── eslint.config.js       # ESLint 9 flat config — §1.9
+├── jest.config.js         # Jest (jest-expo preset) — §1.8
+├── jest.setup.ts          # Test setup (RTL, @axe-core/react) — §1.8
+├── /.maestro/             # Maestro E2E flow files (*.yaml) — §1.8, §1.9
+└── /.github/workflows/    # ci.yml — lint → test → EAS build → E2E → deploy — §1.9
 ```
+
+> **Test placement:** unit and integration tests are **co-located** with the code they cover, in
+> `__tests__/` folders or `*.test.ts(x)` files (e.g. `/features/session/commands/__tests__/`,
+> `/components/molecules/__tests__/`). E2E flows live separately in `/.maestro/`. See §1.8.
