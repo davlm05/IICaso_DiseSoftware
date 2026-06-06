@@ -392,7 +392,6 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 
 ## 1.5. Layered Architecture
 
-- **Architectural Pattern:** **Clean Architecture adapted to React Native** with a Feature-Sliced layout — the UI depends inward on use-cases, which depend on the domain; infrastructure is injected behind interfaces.
 - **Layer Responsibilities:**
 
 | Layer | Responsibility | Examples |
@@ -454,17 +453,135 @@ Mapped directly from `designPatterns.md` to their frontend implementation locati
 
 ### Asynchronous Operations
 
-- **Approach:** `async/await` with Axios, wrapped by TanStack Query for caching/retries/de-duplication.
-- **Loading States:** Skeleton placeholders for the sponsored carousel and rewards catalog; an animated scan line signals active barcode processing.
+SmartCart has **several distinct async operations**, each with its own mechanism, loading state, and retry/error semantics. The table below names each one so the rules (retry, polling, long-running) are unambiguous — rather than describing "async" as a single generic flow.
+
+| # | Operation | Trigger | Mechanism | Loading state | Retry policy | Error handling |
+|---|-----------|---------|-----------|---------------|--------------|----------------|
+| 1 | **Product catalog lookup** | Barcode scanned | TanStack Query over the backend **Cache-Aside** (`async/await` + Axios) | Inline skeleton on the scan-confirm modal | **Auto** retry on network/5xx, exponential backoff (max 3) — *idempotent read* | Fallback message "Servicio temporalmente no disponible"; user can retry |
+| 2 | **Scan validation (CoR)** | After a successful lookup | Chain of Responsibility (format → location → sponsored → duplicate) | Spinner on the confirm action | **No** retry — re-scan instead | Inline reason: out-of-store / invalid / duplicate |
+| 3 | **QR generation** | Tap "Generar QR de salida" | `POST` via `GenerateQRCommand` — **non-idempotent** | Spinner on the primary button | **No** auto-retry; manual retry only (avoids duplicate codes) | Toast error; session left unchanged |
+| 4 | **POS validation status** | QR shown (`ValidatingState`) | socket.io room `session:{id}`, **fallback polling** `GET /sessions/:id` every 3 s | "Esperando validación de la cajera…" | Reconnect / keep polling until the 10-min expiry | Expiry/timeout → QR expired, prompt to regenerate |
+| 5 | **Fraud review (HITL)** | During POS validation | Backend human-in-the-loop, asynchronous, ≤ 2 min | "Verificando…" | n/a — resolves on push/socket or timeout | Never blocks indefinitely; timeout auto-resolves the session |
+| 6 | **Reward redemption** | Tap "Canjear" | `POST` via `RedeemCouponCommand` — **non-idempotent** | Spinner on the redeem button | **No** auto-retry | Toast error; points balance stays intact |
+| 7 | **Login / token refresh** | `401` on a protected request | `RefreshQueue` **single-flight** refresh (see §1.4) | Silent (no UI) | One in-flight refresh; concurrent requests queue behind it | Refresh `401` → hard logout (`status → EXPIRED`) |
+
+**Cross-cutting (apply to all of the above):**
+
+- **Loading States:** Skeleton placeholders for the sponsored carousel and rewards catalog; an animated scan line signals active barcode processing (operations 1–2).
 - **Error Boundaries:** A React Error Boundary per feature (`scan`, `checkout`, `rewards`) prevents a single failure from crashing the app.
-- **Retry Logic:** Automatic retry on network/5xx with exponential backoff (max 3 attempts) for idempotent reads; **non-idempotent** actions (QR generation, redemption) are **not** auto-retried.
-- **WebSocket Usage:** While in `ValidatingState`, the client joins socket.io room `session:{id}` to receive the POS validation result and auto-transition to the Confirmation screen; if the socket drops, it falls back to polling `GET /sessions/:id` every 3 s until the 10-minute QR expiry.
-- **Long-Running Processes:** Checkout validation may pause for AI fraud review (human-in-the-loop, ≤ 2 min). The screen shows a "Verificando…" status and never blocks indefinitely — it resolves on push/socket or on the expiry/timeout signal.
 
 ### Error Handling & Observability
 
-- **Global Error Handler:** The Axios response interceptor catches all API errors and dispatches user-friendly messages to a global notification slice.
-- **User-Facing Error Messages:** HTTP codes are mapped to friendly Spanish copy (e.g., expired QR → "El código expiró, genéralo de nuevo"; out-of-store scan → "Acércate a una tienda afiliada para sumar puntos").
+Errors are handled by a single pipeline: every API error is caught by the Axios response interceptor (`ApiClient`, the **Facade** from §1.4), normalized into a typed `AppError` by `ApiErrorMapper`, and then either retried, refreshed, or surfaced to the user through the global `NotificationSlice` (which `Toast` observes — **Observer**, §1.3). Render-time crashes are caught by per-feature Error Boundaries. The design below makes the components, the error taxonomy, and the flow explicit.
+
+#### Components
+
+```mermaid
+classDiagram
+    class ApiClient {
+        -instance: AxiosInstance
+        +request(config) Response
+        -onError(error) AppError
+    }
+
+    class ApiErrorMapper {
+        +toAppError(error: AxiosError) AppError
+        -mapStatus(status: number) ErrorCode
+        -resolveMessage(code: ErrorCode) string
+    }
+
+    class AppError {
+        +code: ErrorCode
+        +userMessage: string
+        +severity: Severity
+        +retryable: boolean
+        +context: Record~string, any~
+    }
+
+    class ErrorCode {
+        <<enumeration>>
+        NETWORK_ERROR
+        SERVER_ERROR
+        SESSION_EXPIRED
+        SCAN_OUT_OF_STORE
+        SCAN_REJECTED
+        QR_EXPIRED
+        VALIDATION_REJECTED
+        UNKNOWN
+    }
+
+    class Severity {
+        <<enumeration>>
+        INFO
+        WARNING
+        ERROR
+    }
+
+    class NotificationSlice {
+        +current: AppError
+        +notify(error: AppError) void
+        +dismiss() void
+    }
+
+    class Toast {
+        +message: string
+        +tone: Tone
+        +onShow(error: AppError) void
+    }
+
+    class FeatureErrorBoundary {
+        +feature: string
+        +componentDidCatch(error, info) void
+        +renderFallback() ReactNode
+    }
+
+    class Monitoring {
+        +captureException(error: AppError) void
+        +captureRenderError(error, info) void
+    }
+
+    ApiClient --> ApiErrorMapper : normalizes
+    ApiErrorMapper --> AppError : produces
+    AppError --> ErrorCode
+    AppError --> Severity
+    ApiClient --> NotificationSlice : dispatches non-retryable
+    NotificationSlice --> Toast : observed by
+    ApiClient --> Monitoring : reports ERROR severity
+    FeatureErrorBoundary --> Monitoring : reports render crashes
+```
+
+#### Error taxonomy
+
+| Category | Origin / Trigger | `AppError` code | User message (es) | Retryable | Sentry |
+|----------|------------------|-----------------|-------------------|-----------|--------|
+| Network / offline | No connectivity | `NETWORK_ERROR` | "Sin conexión. Reintentando…" | Yes (auto, op. 1) | Breadcrumb |
+| Server unavailable | Backend 5xx / `ProductLookupException` | `SERVER_ERROR` | "Servicio temporalmente no disponible" | Yes (idempotent reads only) | Yes |
+| Session expired | Refresh `401` (hard logout) | `SESSION_EXPIRED` | "Tu sesión expiró, inicia de nuevo" | No | Yes |
+| Out-of-store scan | `LocationHandler` rejects (CoR) | `SCAN_OUT_OF_STORE` | "Acércate a una tienda afiliada para sumar puntos" | No (user action) | No |
+| Invalid / duplicate scan | Format or `DuplicateScanHandler` rejects | `SCAN_REJECTED` | "Producto no válido o ya está en tu lista" | No (re-scan) | No |
+| Expired QR | QR > 10 min at POS | `QR_EXPIRED` | "El código expiró, genéralo de nuevo" | Regenerate | No |
+| Validation rejected | POS / fraud review rejects | `VALIDATION_REJECTED` | "No pudimos verificar tu compra" | No | Yes |
+| Render crash | Component throws | (caught by `FeatureErrorBoundary`) | "Algo salió mal. Vuelve a intentarlo." | Reload feature | Yes |
+
+#### Flow
+
+```mermaid
+flowchart TD
+    ERR[Error origin] --> INT[ApiClient response interceptor]
+    INT --> MAP[ApiErrorMapper - toAppError]
+    MAP --> DEC{AppError type}
+    DEC -->|retryable| RQ[React Query retry - backoff]
+    DEC -->|auth 401| REFRESH[RefreshQueue single-flight]
+    DEC -->|otherwise| NS[NotificationSlice.notify]
+    NS --> TOAST[Toast - Observer]
+    REFRESH -->|refresh 401| LOGOUT[Hard logout - EXPIRED]
+    RENDER[Render crash] --> EB[FeatureErrorBoundary]
+    EB --> FB[Fallback UI]
+    NS --> SENTRY[Sentry]
+    EB --> SENTRY
+    INT --> SENTRY
+```
+
 - **Frontend Monitoring:** Sentry captures uncaught exceptions and performance traces, tagged with screen and session state.
 - **Logging:** `console.*` stripped from production via Babel plugin; errors are forwarded to Sentry only.
 
