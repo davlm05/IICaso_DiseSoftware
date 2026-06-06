@@ -5,7 +5,7 @@
 - **Platform Used:** Maze | User Research and Testing Platform
 - **Prototype Link:** [https://t.maze.co/542525865]
 - **Prototype Scope:** Main onboarding, product scanning, QR checkout, and rewards redemption flow
-- **Number of Participants:** 5
+- **Number of Participants:** 4
 
 ### Defined Tasks
 
@@ -73,6 +73,9 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 | **Push Notifications** | expo-notifications (FCM/APNs) | **0.29.x** | Fires the "Puntos acreditados" notification when the backend credits points. Shipped with Expo SDK 52. |
 | **Forms & Validation** | React Hook Form + Zod | RHF **7.53.0** / Zod **3.23.8** | Validates the manual-barcode-entry fallback and auth forms. Zod schemas double as the runtime guard for API DTOs. Both compatible with React 18.3.1 / TS 5.3.3. |
 | **Styling / Design Tokens** | NativeWind (Tailwind CSS) | NativeWind **4.1.x** / Tailwind **3.4.x** | Utility-first styling enforces the design tokens (color/spacing/typography) consistently across all 7 screens. NativeWind 4 requires RN ≥ 0.76 — aligned with our framework. |
+| **List Virtualization** | @shopify/flash-list | **1.7.x** | High-performance virtualized lists for `PendingItemsList`, `RewardsCatalog`, and `CouponsList` — faster and lower-memory than `FlatList`. Compatible with RN 0.76 New Architecture. |
+| **Image Loading** | expo-image | **2.0.x** | Cached, performant images for the sponsored carousel (`cachePolicy="memory-disk"`, WebP). Shipped with Expo SDK 52. |
+| **Iconography** | lucide-react-native | **0.468.0** | Consistent outline icon set (nav, scan, flash, delete, rewards) wrapped by the `Icon` atom. |
 | **Secure Storage** | expo-secure-store | **14.0.x** | Stores JWT access/refresh tokens in the iOS Keychain / Android Keystore (never `AsyncStorage`). Shipped with Expo SDK 52. |
 | **Linting** | ESLint | **9.12.0** | Enforces code quality via flat config with the Expo/React Native preset. |
 | **Formatting** | Prettier | **3.3.3** | Deterministic formatting; integrated with ESLint to avoid rule conflicts. |
@@ -148,7 +151,7 @@ SmartCart's visual identity is **green-forward** — green communicates "valid s
 
 - **Grid System:** Single-column, mobile-first stacked layout (one primary action per screen); 4pt spacing scale.
 - **Breakpoints:** `sm: 375px` (baseline phone), `md: 768px` (large phones/tablet), `lg: 1024px` (tablet landscape).
-- **Iconography:** Lucide React Native (`lucide-react-native` 0.4xx) — consistent outline set for nav, scan, flash, delete, rewards.
+- **Iconography:** Lucide React Native (`lucide-react-native` 0.468.0) — consistent outline set for nav, scan, flash, delete, rewards.
 - **Logo Usage Rules:** Minimum 24px height; maintain clear space equal to the cart glyph height; never recolor outside the primary/secondary green or white-on-green.
 
 ### Core Business Process
@@ -398,7 +401,7 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 |-------|---------------|----------|
 | Presentation | Render UI, handle gestures/events | Screens, atoms/molecules/organisms |
 | Application / Use Cases | Orchestrate use cases: drive the session flow, apply Domain rules, reach Infrastructure through interfaces | Custom hooks, Zustand session store (**Singleton**), **Command** objects (Add/Remove/GenerateQR/Redeem), session **State** machine + states, scan-validation **Chain of Responsibility** |
-| Domain | Pure business entities & rules — no React, no Infrastructure | `Product`/`ProductDTO`, `Reward`/`RewardDTO`, points rules, barcode-format & scan-validation rules, reward-type definitions (**Factory** products) |
+| Domain | Pure business entities & rules — no React, no Infrastructure | `Product`/`ProductDTO`, `Reward`/`RewardDTO`, `Session/SessionDTO`, points rules, barcode-format & scan-validation rules, reward-type definitions (**Factory** products) |
 | Infrastructure | External communication & device APIs | Axios client (**Facade**), socket.io client, React Query cache (**Cache-Aside**), secure-store, camera/BLE adapters (**Strategy**) |
 
 - **Layer Access Rules:** Presentation may call only the Application layer (hooks/stores). Application drives the session **State** machine, dispatches **Command** objects, and runs the scan-validation **chain** — applying Domain rules and reaching Infrastructure only through interfaces. **Domain stays pure** — entities and rules with no imports of Infrastructure or React, so it remains unit-testable in isolation.
@@ -470,7 +473,7 @@ Mapped directly from `designPatterns.md` to their frontend implementation locati
 
 ### Error Handling & Observability
 
-Errors are handled by a single pipeline: every API error is caught by the Axios response interceptor (`ApiClient`, the **Facade** from §1.4), normalized into a typed `AppError` by `ApiErrorMapper`, and then either retried, refreshed, or surfaced to the user through the global `NotificationSlice` (which `Toast` observes — **Observer**, §1.3). Render-time crashes are caught by per-feature Error Boundaries. The design below makes the components, the error taxonomy, and the flow explicit.
+Errors are handled by a single pipeline: every API error is caught by the Axios response interceptor. A `401` is intercepted first by `onUnauthorized()`; every other error is normalized into a typed `AppError` by `ApiErrorMapper` via `onError()`, and then either retried or surfaced to the user through the global `NotificationSlice`. Render-time crashes are caught by per-feature Error Boundaries. The design below makes the components, the error taxonomy, and the flow explicit.
 
 #### Components
 
@@ -479,6 +482,7 @@ classDiagram
     class ApiClient {
         -instance: AxiosInstance
         +request(config) Response
+        -onUnauthorized(error) Response
         -onError(error) AppError
     }
 
@@ -605,7 +609,8 @@ flowchart TD
 |-------|------|---------------------------|-----|---------------|
 | **Unit** | Jest 29.7.0 (jest-expo 52) | `__tests__/*.test.ts` co-located beside source: `/features/session/commands/`, `/features/scan/validation/`, `/store/`, `/lib/`; config in `jest.config.js` + `jest.setup.ts` | Pure-logic tests with mocked dependencies: command objects incl. `undo`, each CoR validation handler in isolation, points rules. No rendering. | 80% |
 | **Integration** | React Native Testing Library 12.8.0 | `/components/**/__tests__/*.test.tsx` | `render()` the component, drive it with `fireEvent`/`userEvent`, assert via accessibility queries (`getByRole`/`getByLabelText`); mock the API layer (jest mocks / MSW). Covers scan-confirm modal, delete-with-undo, QR generation, manual-entry fallback, redemption. | 70% |
-| **UI / E2E** | Maestro 1.39.x | `.maestro/*.yaml` flow files | One YAML flow per critical journey (register → scan → generate QR → confirm → redeem); run with `maestro test .maestro/` locally and in CI. | Key flows 100% |
+| **UI / E2E** | Maestro 1.39.x | `.maestro/*.yaml` flow files | One YAML flow per critical journey (login → scan → generate QR → confirm → redeem); run with `maestro test .maestro/` lo
+cally and in CI. | Key flows 100% |
 | **Accessibility** | `@axe-core/react` + manual VoiceOver/TalkBack passes | Component `__tests__` (automated) + manual device passes | Wire `@axe-core/react` in dev and assert no violations in component tests; complete manual VoiceOver (iOS) / TalkBack (Android) passes on each interactive screen. | 0 critical violations |
 
 ---
@@ -677,7 +682,7 @@ The pipeline is defined in **`.github/workflows/ci.yml`**; each step runs an `np
 - **Root:** `/src` (Expo Router routes in `/app`)
 
 ```
-/src
+/frontend/src
 ├── /api/                  # API Facade + Cache-Aside
 │   ├── client.ts          # Axios instance: interceptors, JWT refresh (Singleton)
 │   └── /endpoints/        # products.ts, sessions.ts, rewards.ts, auth.ts, validation.ts
