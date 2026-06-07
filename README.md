@@ -754,5 +754,654 @@ The pipeline is defined in **`.github/workflows/ci.yml`**; each step runs an `np
 | **Caching** | Amazon Elasticache for Redis | 7.0 + | Low latency cache for active data sessions, user profiles and constant analytical queries |
 | **File Storage** | Amazon S3 | — | Object storage, B2B reports and CI/CD artifacts |
 
+## 2.2. Architecture
+
+- **Pattern:** Modular Monolith with Independent Worker Process — SmartCart is built as a single NestJS application with strictly separated modules per functional domain, plus a physically independent BullMQ worker process for the consumer profiling pipeline. This architectural decision is grounded in five concrete technical justifications:
+
+- **Single deployable artifact with logical boundaries:** The entire API runs as one Node.js process, deployed as one Docker container. Module boundaries are enforced at build time via TypeScript path aliases and ESLint import rules (no-restricted-imports), not at runtime via network calls. This means zero serialization/deserialization overhead between modules while maintaining strict separation of concerns. See eslint.config.mjs:
+
+```
+// eslint.config.mjs — Enforces module boundaries at lint level
+export default [
+  {
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['../checkout/domain/*'], message: 'Use ICheckoutService interface instead' },
+          { group: ['../catalog/infrastructure/*'], message: 'Infrastructure must be accessed through interfaces' },
+        ],
+      }],
+    },
+  },
+];
+---
+
+**Type-safe contract sharing with the frontend:** The monorepo structure (packages/shared-types/) exports TypeScript interfaces and Zod schemas consumed by both apps/api and the React Native frontend. Changing a DTO breaks both sides at compile time, eliminating contract drift. See packages/shared-types/src/checkout.types.ts:
+---
+// packages/shared-types/src/checkout.types.ts
+// This file is imported by BOTH NestJS and React Native
+export interface AddItemRequest {
+  barcode: string;
+  sessionId: string;
+}
+
+export interface AddItemResponse {
+  item: ProductDTO;
+  session: SessionDTO;
+}
+
+// Zod schema for runtime validation — used by NestJS ValidationPipe
+export const AddItemRequestSchema = z.object({
+  barcode: z.string().min(8).max(14),
+  sessionId: z.string().uuid(),
+});
+```
+
+- **ACID transactions without distributed complexity:** The checkout validation flow requires atomicity across multiple aggregate roots (session status update, points balance mutation, transaction audit entry). Prisma executes this in a single PostgreSQL transaction. The service method at apps/api/src/modules/checkout/application/services/checkout.service.ts demonstrates this:
+
+```
+// apps/api/src/modules/checkout/application/services/checkout.service.ts
+@Injectable()
+export class CheckoutService {
+  constructor(
+    private readonly prisma: PrismaService, // Transaction host
+    private readonly sessionRepo: ISessionRepository,
+    private readonly pointsService: IPointsService,
+    private readonly eventPublisher: IEventPublisher,
+  ) {}
+
+  async validateSession(
+    qrToken: string,
+    scannedItems: ScannedItemDTO[],
+  ): Promise<ValidationResult> {
+    // Single ACID transaction across session + points aggregates
+    return this.prisma.$transaction(async (tx) => {
+      const session = await this.sessionRepo.findById(qrPayload.sessionId, tx);
+      session.validateItems(scannedItems); // Domain method — throws on mismatch
+      const points = this.pointsService.calculatePoints(session.items);
+      await this.sessionRepo.markCompleted(session.id, tx);
+      await this.pointsService.creditPoints(session.userId, points, session.id, tx);
+      return { success: true, sessionId: session.id, pointsAwarded: points };
+    });
+    // After commit — non-blocking side effect
+    await this.eventPublisher.publish(new CheckoutCompletedEvent(/*...*/));
+  }
+}
+```
+
+- **Physical separation where the requirement demands it:** The consumer profiling pipeline (aggregation → feature extraction → AI classification → B2B export) is a long-running process triggered by checkout completion. It must not block the POS validation response. By extracting it to a BullMQ worker in apps/analytics-worker/src/processors/profile-update.processor.ts, we satisfy the "long-running processes" and "asynchronous communication" requirements without fragmenting the transactional domain:
+
+```
+// apps/analytics-worker/src/processors/profile-update.processor.ts
+@Processor('analytics-profile-update')
+export class ProfileUpdateProcessor {
+  constructor(
+    private readonly aggregator: ProfileAggregatorService,
+    private readonly aiClient: AiInferenceClient,
+    private readonly segmentRepo: SegmentRepository,
+  ) {}
+
+  @Process('profile-update')
+  async handleProfileUpdate(job: Job<CheckoutCompletedEvent>): Promise<void> {
+    // Step 1: Aggregate 90-day window (heavy query, runs async)
+    const features = await this.aggregator.aggregateFeatures(job.data.userId);
+    // Step 2: Call external AI (network call, could be slow)
+    const segment = await this.aiClient.classify(features);
+    // Step 3: Persist result
+    await this.segmentRepo.upsert(job.data.userId, segment);
+  }
+}
+```
+
+- **Evolutionary path to Serverless without rewrites:** Each module exposes its functionality through a TypeScript interface in the application/ layer. NestJS DI binds the interface to its implementation in *.module.ts. To migrate a module to AWS Lambda, only the binding changes — the domain logic remains untouched:
+
+```
+// apps/api/src/modules/catalog/catalog.module.ts — Current: in-process
+@Module({
+  providers: [
+    { provide: 'ICatalogService', useClass: PrismaCatalogService }, // ← Local
+  ],
+})
+export class CatalogModule {}
+
+// Evolution — Future: remote Lambda via HTTP
+@Module({
+  providers: [
+    { provide: 'ICatalogService', useClass: HttpCatalogServiceClient }, // ← Remote
+    { provide: 'CATALOG_SERVICE_URL', useValue: process.env.CATALOG_SERVICE_URL },
+  ],
+})
+export class CatalogModule {}
+```
+
+- **Layered Design:** The architecture employs a strict four-layer structure within each NestJS module, enforced by folder conventions and TypeScript compilation checks.
+| Layer          | Responsibility                                                                                                                                                                                                 | Path Convention                          | Example                                                                                                      |
+|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------|--------------------------------------------------------------------------------------------------------------|
+| Presentation   | Receive HTTP requests and WebSocket connections. Validate input DTOs using Zod schemas and ValidationPipe. Transform application-layer results into HTTP responses or WS events. Must not contain business logic. | src/modules/{domain}/presentation/        | apps/api/src/modules/checkout/presentation/controllers/session.controller.ts                                 |
+| Application    | Orchestrate business logic across domain entities and infrastructure services. Publish domain events after transaction commits. Must not access databases or external APIs directly — only through injected interfaces. | src/modules/{domain}/application/         | apps/api/src/modules/checkout/application/services/checkout.service.ts                                       |
+| Domain         | Pure TypeScript entities, value objects, domain events, business rules, and strategy interfaces. Must not import from NestJS, Prisma, or any infrastructure package.                                             | src/modules/{domain}/domain/              | apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts                                     |
+| Infrastructure | Concrete implementations of interfaces defined in the application/domain layers: Prisma repositories, BullMQ publishers, S3 storage clients, JWT signers.                                                        | src/modules/{domain}/infrastructure/      | apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts                       |
 
 
+
+**Layer Rules:** The dependency direction is strictly inward. These rules are verified at build time and enforced by the NestJS DI container at runtime.
+- **Domain → Nothing (Pure TypeScript):** The domain layer has zero external dependencies. It cannot import from @nestjs/common, @prisma/client, or any infrastructure/ folder. This is verified by the tsconfig.json paths configuration that blocks certain imports. See apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts:
+
+```
+// apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts
+// ZERO imports from NestJS, Prisma, or infrastructure
+
+import { SessionItem } from './session-item.entity';
+import { SessionStatus } from '../value-objects/session-status.enum';
+import { ValidationFailedError } from '../errors/validation-failed.error';
+
+export class ShoppingSession {
+  private _status: SessionStatus;
+  private readonly _items: SessionItem[] = [];
+
+  constructor(
+    public readonly id: string,
+    public readonly userId: string,
+    public readonly storeId: string,
+    public readonly createdAt: Date,
+  ) {
+    this._status = SessionStatus.ACTIVE;
+  }
+
+  // Business rule: Only ACTIVE sessions can accept items
+  addItem(item: SessionItem): void {
+    if (this._status !== SessionStatus.ACTIVE) {
+      throw new SessionNotActiveError(this.id, this._status);
+    }
+    this._items.push(item);
+  }
+
+  // Business rule: Transition to PENDING_CHECKOUT requires at least 1 item
+  requestCheckout(): void {
+    if (this._items.length === 0) {
+      throw new EmptySessionError(this.id);
+    }
+    this._status = SessionStatus.PENDING_CHECKOUT;
+  }
+
+  // Business rule: Validation compares item hashes
+  validateItems(scannedItems: ScannedItem[]): boolean {
+    const sessionHash = this.computeItemHash();
+    const scannedHash = this.computeScannedHash(scannedItems);
+    if (sessionHash !== scannedHash) {
+      throw new ValidationFailedError(this.id, sessionHash, scannedHash);
+    }
+    this._status = SessionStatus.COMPLETED;
+    return true;
+  }
+
+  // Pure domain logic — no side effects, no I/O
+  private computeItemHash(): string {
+    const data = this._items
+      .sort((a, b) => a.barcode.localeCompare(b.barcode))
+      .map(i => `${i.barcode}:${i.quantity}`)
+      .join('|');
+    return createHash('sha256').update(data).digest('hex');
+  }
+
+  get status(): SessionStatus { return this._status; }
+  get items(): ReadonlyArray<SessionItem> { return this._items; }
+}
+```
+
+- **Application → Domain Entities + Infrastructure Interfaces (not implementations):** Application services import domain entities and infrastructure interfaces (ISessionRepository, IEventPublisher). They never import concrete classes from infrastructure/. NestJS DI injects the concrete implementations at runtime. See apps/api/src/modules/checkout/application/services/checkout.service.ts (constructor shown above).
+
+- **Infrastructure → Domain Entities + Implements Application Interfaces:** Infrastructure classes import domain entities (to map to/from database rows) and implement interfaces from the application layer. See apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts:
+
+```
+// apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { ISessionRepository } from '../../application/interfaces/session-repository.interface';
+import { ShoppingSession } from '../../domain/entities/shopping-session.entity';
+import { SessionItem } from '../../domain/entities/session-item.entity';
+import { SessionMapper } from '../mappers/session.mapper';
+
+@Injectable()
+export class PrismaSessionRepository implements ISessionRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findById(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ShoppingSession | null> {
+    const client = tx ?? this.prisma;
+    const row = await client.shoppingSession.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+    return row ? SessionMapper.toDomain(row) : null; // Row → Domain Entity
+  }
+
+  async save(session: ShoppingSession, tx?: Prisma.TransactionClient): Promise<void> {
+    const client = tx ?? this.prisma;
+    const data = SessionMapper.toPersistence(session); // Domain Entity → Row
+    await client.shoppingSession.upsert({
+      where: { id: session.id },
+      create: data,
+      update: data,
+    });
+  }
+}
+```
+
+- **Presentation → Application Services Only:** Controllers inject application services and call their methods. They never access repositories, domain entities, or Prisma directly. They receive raw HTTP data and return DTOs. See apps/api/src/modules/checkout/presentation/controllers/session.controller.ts:
+
+```
+// apps/api/src/modules/checkout/presentation/controllers/session.controller.ts
+import { Controller, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { CheckoutService } from '../../application/services/checkout.service';
+import { AddItemRequestSchema, AddItemRequest } from '@smartcart/shared-types';
+import { ZodValidationPipe } from '../../../../common/pipes/zod-validation.pipe';
+import { CurrentUser } from '../../../../common/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../../../../common/guards/jwt-auth.guard';
+
+@Controller('sessions')
+@UseGuards(JwtAuthGuard)
+export class SessionController {
+  constructor(
+    private readonly checkoutService: CheckoutService, // ← Application service only
+  ) {}
+
+  @Post(':id/items')
+  async addItem(
+    @Param('id') sessionId: string,
+    @Body(new ZodValidationPipe(AddItemRequestSchema)) body: AddItemRequest,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    // Presentation: validate input, extract auth context, delegate
+    const result = await this.checkoutService.addItem(sessionId, body.barcode);
+    // Presentation: map to HTTP response
+    return { item: result.item, session: result.session };
+  }
+}
+```
+
+- **Dependency Injection as the sole coupling mechanism:** NestJS acts as the inversion-of-control container. Module files bind interfaces to implementations. See apps/api/src/modules/checkout/checkout.module.ts:
+
+```
+// apps/api/src/modules/checkout/checkout.module.ts
+import { Module } from '@nestjs/common';
+import { PrismaModule } from '../../common/prisma/prisma.module';
+import { SessionController } from './presentation/controllers/session.controller';
+import { ValidationController } from './presentation/controllers/validation.controller';
+import { CheckoutService } from './application/services/checkout.service';
+import { PrismaSessionRepository } from './infrastructure/repositories/prisma-session.repository';
+import { BullMqEventPublisher } from './infrastructure/events/bullmq-event.publisher';
+import { JwtQrSigner } from './infrastructure/crypto/jwt-qr.signer';
+import { PointsService } from './application/services/points.service';
+
+@Module({
+  imports: [PrismaModule],
+  controllers: [SessionController, ValidationController],
+  providers: [
+    CheckoutService,
+    PointsService,
+    // Interface bindings — swap implementations here to evolve to Serverless
+    { provide: 'ISessionRepository', useClass: PrismaSessionRepository },
+    { provide: 'IEventPublisher', useClass: BullMqEventPublisher },
+    { provide: 'IQrSigner', useClass: JwtQrSigner },
+  ],
+  exports: ['ISessionRepository'], // Available to other modules if needed
+})
+export class CheckoutModule {}
+```
+
+#### Cross-Layer Dependency Flow (Visual)
+```mermaid
+flowchart TD
+    %% Core Nodes
+    P["Presentation<br/>(controllers, gateways)"]
+    A["Application<br/>(services)"]
+    D["Domain<br/>(entities, value objects, events, interfaces)"]
+    I["Infrastructure<br/>(Prisma repos, BullMQ, S3, JWT)"]
+
+    %% Standard Relationships
+    P -- "imports" --> A
+    A -- "imports domain entities" --> D
+    I -- "implements" --> D
+
+    %% Negative Constraints
+    P -. "❌ NEVER imports domain directly" .-> D
+
+    %% Key Rule Node
+    KR["**KEY RULE:**<br/>All arrows point inward toward Domain.<br/>Domain has NO outgoing arrows to external packages."]
+
+    %% Layout positioning
+    D ~~~ KR
+    I ~~~ KR
+
+    %% Styles
+    classDef default fill:#f8f9fa,stroke:#ced4da,stroke-width:2px,color:#212529;
+    classDef domain fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
+    classDef rule fill:#fff3cd,stroke:#856404,stroke-width:2px,stroke-dasharray: 5 5;
+
+    class D domain;
+    class KR rule;
+```
+
+#### Nest JS dependency injection container
+```mermaid
+flowchart TD
+    subgraph DI ["NestJS DI Container at Runtime"]
+        direction TD
+        
+        SC["SessionController<br/><i>constructor(CheckoutService)</i>"]
+        CS["CheckoutService<br/><i>constructor(ISessionRepository, IEventPublisher, IQrSigner)</i>"]
+        
+        %% Concrete Implementations
+        PSR["PrismaSessionRepository"]
+        BEP["BullMqEventPublisher"]
+        JQS["JwtQrSigner"]
+        PTS["PointsService"]
+        
+        %% Deep Dependencies
+        Prisma["PrismaService<br/>(connection pool to PostgreSQL)"]
+        
+        %% Dependency Tree
+        SC --> CS
+        
+        CS -- "resolves ISessionRepository" --> PSR
+        CS -- "resolves IEventPublisher" --> BEP
+        CS -- "resolves IQrSigner" --> JQS
+        CS --> PTS
+        
+        PSR --> Prisma
+    end
+
+    %% Module Resolution Note
+    Bindings["<b>Bindings resolved from checkout.module.ts providers:</b><br/>'ISessionRepository' → PrismaSessionRepository<br/>'IEventPublisher' → BullMqEventPublisher<br/>'IQrSigner' → JwtQrSigner"]
+
+    %% Invisible link to place the note below the container
+    DI ~~~ Bindings
+
+    %% Styles
+    classDef default fill:#f8f9fa,stroke:#ced4da,stroke-width:2px,color:#212529;
+    classDef controller fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
+    classDef service fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100;
+    classDef infra fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
+    classDef note fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,stroke-dasharray: 5 5,color:#212529;
+
+    class SC controller;
+    class CS,PTS service;
+    class PSR,BEP,JQS,Prisma infra;
+    class Bindings note;
+  ```
+
+
+
+### Architecture Diagrams
+
+#### Level 1 — System Context Diagram
+```mermaid
+graph LR
+    %% Central System wrapped in a subgraph to represent the context boundary
+    subgraph Context["SmartCart System Context"]
+        SmartCart(SmartCart System)
+    end
+
+    %% Actors defined as round-edged nodes
+    Shopper(Shopper Mobile)
+    Cashier(Cashier POS)
+    Admin(Admin / B2B Partner)
+    CSR(Customer Service Rep)
+
+    %% Relationships and Interactions with labels
+    Shopper -- "Scans products, generates QR, redeems rewards" --> SmartCart
+    Cashier -- "Validates QR, confirms checkout" --> SmartCart
+    Admin -- "Downloads consumer reports, segments" --> SmartCart
+    CSR -- "Deducts points from user account" --> SmartCart
+
+    %% Styling to make it look cleaner
+    style SmartCart fill:#f9f,stroke:#333,stroke-width:2px,font-weight:bold
+    style Context fill:#fff,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+```
+
+#### Level 2 — Container Diagram
+```mermaid
+flowchart TD
+    %% Styling Classes
+    classDef mobile fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
+    classDef gateway fill:#e0f7fa,stroke:#006064,stroke-width:2px,color:#004d40;
+    classDef module fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100;
+    classDef layer fill:#fafafa,stroke:#e65100,stroke-width:2px,stroke-dasharray: 5 5,color:#212529;
+    classDef db fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
+    classDef worker fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#4a148c;
+    classDef external fill:#ffebee,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5,color:#b71c1c;
+
+    %% 1. Mobile App Container
+    subgraph MobileApp ["📱 Mobile App (React Native / Expo)"]
+        direction LR
+        Lobby[Lobby<br/>Screen]:::mobile
+        Scan[Scan<br/>Screen]:::mobile
+        Cart[Cart<br/>Screen]:::mobile
+        QR[QR Code<br/>Screen]:::mobile
+        Rewards[Rewards<br/>Screen]:::mobile
+    end
+
+    %% 2. API Gateway
+    Gateway["<b>API Gateway (Nginx / Cloud Load Balancer)</b><br/>Routes: /api/* → NestJS API | /ws → NestJS WebSocket | /health → Health"]:::gateway
+
+    %% Connection: Mobile to Gateway
+    MobileApp -- "HTTPS (REST) + WSS (WebSocket)" --> Gateway
+
+    %% 3. NestJS Monolith Container
+    subgraph NestJS ["⚙️ NestJS Modular Monolith (API Container)"]
+        direction TB
+        
+        subgraph Modules [" "]
+            direction LR
+            Auth["<b>AuthModule</b><br/>- Login<br/>- Register<br/>- JWT Issue"]:::module
+            Catalog["<b>CatalogModule</b><br/>- Search<br/>- Barcode Lookup"]:::module
+            Checkout["<b>CheckoutModule</b><br/>- Session CRUD<br/>- QR Gen<br/>- Validate<br/>- Points Calc"]:::module
+            Rew["<b>RewardsModule</b><br/>- List<br/>- Redeem<br/>- Deduct"]:::module
+        end
+        
+        Domain["<b>Domain Layer (Pure TS)</b><br/>Entities, Value Objects, Events"]:::layer
+        Infrastructure["<b>Infrastructure Layer</b><br/>PrismaRepos, BullMqPublisher, S3Store"]:::layer
+
+        Modules --> Domain
+        Domain --> Infrastructure
+    end
+
+    %% Connection: Gateway to Monolith
+    Gateway --> NestJS
+
+    %% 4. Data Stores
+    subgraph DataStores ["🗄️ Data Stores & Infrastructure"]
+        direction LR
+        DB[("<b>PostgreSQL</b><br/>(Primary DB)")]:::db
+        Cache[("<b>Redis</b><br/>(Cache + Sessions)")]:::db
+        Queue[["<b>BullMQ</b><br/>(Job Queue)"]]:::db
+        Storage[("<b>S3 / R2</b><br/>(Images + Reports)")]:::db
+    end
+
+    %% Connections: Monolith to Data Stores
+    Infrastructure --> DB
+    Infrastructure --> Cache
+    Infrastructure --> Queue
+    Infrastructure --> Storage
+
+    %% 5. Analytics Worker Container
+    subgraph Worker ["🔄 Analytics Worker (BullMQ Consumer)"]
+        direction LR
+        PA["<b>ProfileAggregator</b><br/>(90-day window)"]:::worker
+        FE["<b>FeatureExtractor</b><br/>(Category freq,<br/>avg ticket, hour)"]:::worker
+        SS["<b>SegmentationService</b><br/>(Calls AI inference,<br/>upserts segments)"]:::worker
+        
+        PA --> FE --> SS
+    end
+
+    %% Connection: Queue to Worker
+    Queue --> Worker
+
+    %% 6. External AI Service
+    AIService["<b>AI Inference Service (External)</b><br/>POST /classify → { segment: 'premium_lover', confidence: 0.87 }"]:::external
+
+    %% Connection: Worker to AI
+    SS --> AIService
+```
+
+#### Level 3 — Component Diagram (per service/module)
+```mermaid
+classDiagram
+    %% ==========================================
+    %% PRESENTATION LAYER
+    %% ==========================================
+    class SessionController {
+        <<REST>>
+        +POST /sessions
+        +POST /sessions/:id/items
+    }
+    class QrController {
+        <<REST>>
+        +POST /sessions/:id/qr
+    }
+    class ValidationController {
+        <<REST>>
+        +POST /sessions/validate
+    }
+    class SessionGateway {
+        <<WebSocket>>
+        +emit(sessionStatusChanged)
+    }
+
+    %% ==========================================
+    %% APPLICATION LAYER
+    %% ==========================================
+    class CheckoutService {
+        +createSession(userId, storeId) Session
+        +addItem(sessionId, barcode) AddItemResult
+        +generateQr(sessionId) QrTicket
+        +validateSession(qrToken, scannedItems) ValidationResult
+    }
+    class PointsService {
+        +calculate(items, userId) Points[]
+        +credit(points) void
+    }
+    class AppQrSigner {
+        +sign(session, items) string
+        +verify(token) QrPayload
+    }
+    class SessionStateMachine {
+        <<StateMachine>>
+        +transition(session, event) Session
+    }
+
+    %% INJECTED INTERFACES (Ports)
+    class ISessionRepository {
+        <<Interface>>
+    }
+    class ICatalogService {
+        <<Interface>>
+    }
+    class IPointsService {
+        <<Interface>>
+    }
+    class IEventPublisher {
+        <<Interface>>
+    }
+    class IQrSigner {
+        <<Interface>>
+    }
+
+    %% ==========================================
+    %% DOMAIN LAYER
+    %% ==========================================
+    class ShoppingSession {
+        +String id
+        +String userId
+        +String storeId
+        +String status
+        +Array items
+        +Int totalPoints
+    }
+    class SessionItem {
+        +String productId
+        +String barcode
+        +Int quantity
+        +Int pointsValue
+    }
+    class QrTicket {
+        +String token
+        +Date expiresAt
+        +String sessionId
+        +String itemHash
+    }
+    class CheckoutCompletedEvent {
+        <<Event>>
+        +String sessionId
+        +String userId
+        +Int pointsAwarded
+        +Array items
+        +Date timestamp
+    }
+    class PointsCalculationStrategy {
+        <<Interface>>
+        +calculate() PointsAwarded
+    }
+    class FixedPointsStrategy {
+        +rate: 50 pts/unit
+    }
+    class MultiplierStrategy {
+        +multiplier: 2x spend
+    }
+
+    %% ==========================================
+    %% INFRASTRUCTURE LAYER (Adapters)
+    %% ==========================================
+    class PrismaSessionRepository {
+        <<Adapter>>
+        -PrismaService prisma
+        -Redis cache
+    }
+    class BullMqEventPublisher {
+        <<Adapter>>
+        -Queue analyticsQueue
+    }
+    class JwtQrSigner {
+        <<Adapter>>
+        -String secret
+    }
+
+    %% ==========================================
+    %% RELATIONSHIPS
+    %% ==========================================
+    
+    %% Presentation -> Application
+    SessionController --> CheckoutService
+    QrController --> CheckoutService
+    ValidationController --> CheckoutService
+    SessionGateway --> CheckoutService
+
+    %% Application internal helper usage
+    CheckoutService --> PointsService
+    CheckoutService --> AppQrSigner
+    CheckoutService --> SessionStateMachine
+
+    %% Dependency Inversion (Application depends on Interfaces)
+    CheckoutService ..> ISessionRepository : injects
+    CheckoutService ..> ICatalogService : injects
+    CheckoutService ..> IPointsService : injects
+    CheckoutService ..> IEventPublisher : injects
+    CheckoutService ..> IQrSigner : injects
+
+    %% Infrastructure fulfills Interfaces
+    PrismaSessionRepository ..|> ISessionRepository : implements
+    BullMqEventPublisher ..|> IEventPublisher : implements
+    JwtQrSigner ..|> IQrSigner : implements
+
+    %% Domain Patterns & Aggregates
+    PointsCalculationStrategy <|-- FixedPointsStrategy : implements
+    PointsCalculationStrategy <|-- MultiplierStrategy : implements
+    PointsService ..> PointsCalculationStrategy : uses
+    
+    ShoppingSession "1" *-- "*" SessionItem : composition
+    CheckoutService ..> ShoppingSession : mutates
+    CheckoutCompletedEvent ..> BullMqEventPublisher : sent via
+```
