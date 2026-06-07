@@ -875,6 +875,7 @@ export class CatalogModule {}
 ```
 
 - **Layered Design:** The architecture employs a strict four-layer structure within each NestJS module, enforced by folder conventions and TypeScript compilation checks.
+
 | Layer | Responsibility | Path Convention | Example |
 |---|---|---|---|
 | Presentation | Receive HTTP requests and WebSocket connections. Validate input DTOs using Zod schemas and ValidationPipe. Transform application-layer results into HTTP responses or WS events. Must not contain business logic. | src/modules/{domain}/presentation/ | apps/api/src/modules/checkout/presentation/controllers/session.controller.ts |
