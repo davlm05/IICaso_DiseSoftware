@@ -30,7 +30,6 @@
 
 ## Heatmaps
 
-
 | Screen | Heatmap |
 |--------|----------------|
 |Lobby (empty) | ![MazeLobby](media/mazeLobby.jpg) |
@@ -38,6 +37,119 @@
 |Pending Items / QR Generation | ![MazePendingItems](media/mazePendingItems.jpg) |
 |QR Validation | ![MazeQRValidation](media/mazeQRValidation.jpg) |
 | Rewards | ![MazeRewards](media/mazeRewards.jpg) |
+
+---
+
+## Usability Attributes
+
+| Attribute | Target |
+|-----------|--------|
+| **Learnability** | A first-time shopper completes the scan → validate → redeem loop with no instructions, guided by one primary CTA per screen ("Escanear producto" → "Generar QR de salida" → "Ver mis recompensas"). |
+| **Efficiency** | Scanning a product and adding it to the pending list takes ≤ 3 interactions: tap CTA → align barcode → confirm. |
+| **Error Prevention** | After a scan, the app requires explicit confirmation of the detected product before adding it (prevents wrong-product accrual). Point accrual is blocked unless the location pill confirms the user is inside an affiliated store. |
+| **Visibility of Status** | Current points, pending points (yellow tags), and the live QR validation state ("Esperando validación…") are always visible. The points card progress bar shows the deficit to the next reward. |
+| **Confidence Feedback** | Green success toast on each scan ("+15 pts pendientes"), full-green confirmation hero with checkmark, and explicit warning/error messages for failed scans or expired QR. |
+| **Consistency** | Uniform design tokens (color, spacing, typography) applied via NativeWind across all 7 screens; the green brand color signals "valid / earn points" everywhere. |
+| **Error Recovery** | A failed camera scan offers retry or manual barcode entry without leaving the flow (**Strategy** pattern). A wrongly scanned item can be deleted before validation via the red X (**Command** pattern with undo). |
+| **Accessibility** | WCAG 2.1 AA: contrast ≥ 4.5:1 (verified against the green palette), screen-reader labels on camera/QR/CTAs, scalable text, and non-color-only status cues (icons + text alongside green/yellow/red). |
+
+---
+
+## Branding & Style Guidelines
+
+SmartCart's visual identity is **green-forward** — green communicates "valid scan / points earned" and dominates the checkout and confirmation screens for cashier visibility.
+
+#### Color Palette
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `--color-primary` | `#16A34A` | Primary actions, CTAs ("Escanear", "Generar QR"), confirmation hero |
+| `--color-secondary` | `#15803D` | Secondary green elements, pressed states, gradient base for featured reward |
+| `--color-accent` | `#FACC15` | Pending-points tags, "Nuevo" highlights, badges |
+| `--color-background` | `#F9FAFB` | App background |
+| `--color-surface` | `#FFFFFF` | Cards, modals, product list rows |
+| `--color-error` | `#DC2626` | Error states, delete (red X), expired QR |
+| `--color-success` | `#22C55E` | Success toast, validated-product checkmarks |
+| `--color-text-primary` | `#111827` | Main text |
+| `--color-text-secondary` | `#6B7280` | Subtitles, captions, motivational subtitle |
+
+### Typography
+
+| Role | Font Family | Weight | Size | Usage |
+|------|-------------|--------|------|-------|
+| Display / Heading | Poppins | 700 | 24px | Screen titles, points total |
+| Subheading | Poppins | 600 | 18px | Section headers ("Productos con puntos hoy") |
+| Body | Inter | 400 | 16px | General text, product names |
+| Caption | Inter | 400 | 12px | Labels, hints, expiry dates, alphanumeric QR fallback |
+| Button | Poppins | 600 | 14px | CTA text |
+
+### Spacing & Layout
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--spacing-xs` | 4px | Tight spacing (tag padding) |
+| `--spacing-sm` | 8px | Internal component padding |
+| `--spacing-md` | 16px | Default padding, card gaps |
+| `--spacing-lg` | 24px | Section spacing |
+| `--spacing-xl` | 32px | Screen-level padding |
+
+- **Grid System:** Single-column, mobile-first stacked layout (one primary action per screen); 4pt spacing scale.
+- **Breakpoints:** `sm: 375px` (baseline phone), `md: 768px` (large phones/tablet), `lg: 1024px` (tablet landscape).
+- **Iconography:** Lucide React Native (`lucide-react-native` 0.468.0) — consistent outline set for nav, scan, flash, delete, rewards.
+- **Logo Usage Rules:** Minimum 24px height; maintain clear space equal to the cart glyph height; never recolor outside the primary/secondary green or white-on-green.
+
+---
+
+## Core Business Process
+
+### Onboarding & Home (Lobby)
+1. The user opens the app upon arriving at a store.
+2. The system detects the user's presence in an affiliated store and enables point accumulation for the session.
+3. The user reviews their current point balance, progress toward the next reward, and the day's sponsored products.
+4. The user chooses to begin scanning or to review pending items from a prior moment in the session.
+
+### Product Scanning & Pending List
+1. The user initiates scanning.
+2. The system activates barcode capture (camera by default).
+3. Alternatively, the user provides the barcode manually when the printed code is damaged.
+4. Once a code is captured, the system retrieves the product details and asks the user to confirm the detected product.
+5. Upon confirmation, the system validates that the user is in-store, the format is valid, the product is sponsored, and it is not already in the session, then adds it with its pending points.
+6. The user may continue scanning or move toward checkout.
+
+### Checkout & Points Validation
+1. With shopping complete, the user requests a checkout validation code.
+2. The system issues a unique, time-limited (10-minute) code representing the pending items.
+3. The user presents the code to the cashier.
+4. The system waits for the store's confirmation of the purchase.
+5. Upon confirmation, the system credits the corresponding points and informs the user that the purchase was verified.
+
+### Rewards Redemption
+1. The user opens the rewards section.
+2. The system shows the available point balance and the redeemable rewards, marking those still out of reach with the missing amount.
+3. The user selects a reward and confirms spending the points.
+4. The system deducts the points and issues a coupon ready to use.
+
+---
+
+## Wireframes
+
+| Screen | Prototype | Purpose |
+|--------|----------------|---------|
+| 1 — Lobby (empty) | ![1](media/wireframes/1.png) | Overview of points, sponsored products, primary scan CTA, location pill. |
+| 2 — Camera Scanning | ![2](media/wireframes/2.png) | Capture barcode via camera with manual-entry fallback and in-store confirmation. |
+| 3 — Lobby (1 product) | ![3](media/wireframes/3.png) | First scanned product with toast, pending-points subsection, delete option. |
+| 4 — Lobby (multiple) | ![4](media/wireframes/4.png) | Full pending list with dual CTAs (scan more / generate QR). |
+| 5 — QR Validation | ![5](media/wireframes/5.png) | Full-green QR + alphanumeric fallback, 10-min validity, polling status. |
+| 6 — Confirmation | ![6](media/wireframes/6.png) | Points-credited hero, validated products, new total, paths to home or rewards. |
+| 7 — My Rewards | ![7](media/wireframes/7.png) | Available rewards + redeemed coupons tabs; locked rewards show point deficit. |
+
+---
+
+## UX Test Results
+
+- **Platform Used:** Maze (unmoderated remote) + in-person sessions with external design students.
+- **Key Findings (expected focus areas):** discoverability of the manual-entry fallback on the scan screen; clarity of the "pending vs credited" points distinction; one-tap QR generation satisfaction.
+- **Corrections Integrated:** track each finding in the Phase 1 "Key Findings & Applied Corrections" table and reflect the applied fix in the final NativeWind component styles.
 
 ---
 
@@ -96,114 +208,7 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 
 ---
 
-## 1.2. UX / UI Analysis
-
-### Usability Attributes
-
-| Attribute | Target |
-|-----------|--------|
-| **Learnability** | A first-time shopper completes the scan → validate → redeem loop with no instructions, guided by one primary CTA per screen ("Escanear producto" → "Generar QR de salida" → "Ver mis recompensas"). |
-| **Efficiency** | Scanning a product and adding it to the pending list takes ≤ 3 interactions: tap CTA → align barcode → confirm. |
-| **Error Prevention** | After a scan, the app requires explicit confirmation of the detected product before adding it (prevents wrong-product accrual). Point accrual is blocked unless the location pill confirms the user is inside an affiliated store. |
-| **Visibility of Status** | Current points, pending points (yellow tags), and the live QR validation state ("Esperando validación…") are always visible. The points card progress bar shows the deficit to the next reward. |
-| **Confidence Feedback** | Green success toast on each scan ("+15 pts pendientes"), full-green confirmation hero with checkmark, and explicit warning/error messages for failed scans or expired QR. |
-| **Consistency** | Uniform design tokens (color, spacing, typography) applied via NativeWind across all 7 screens; the green brand color signals "valid / earn points" everywhere. |
-| **Error Recovery** | A failed camera scan offers retry or manual barcode entry without leaving the flow (**Strategy** pattern). A wrongly scanned item can be deleted before validation via the red X (**Command** pattern with undo). |
-| **Accessibility** | WCAG 2.1 AA: contrast ≥ 4.5:1 (verified against the green palette), screen-reader labels on camera/QR/CTAs, scalable text, and non-color-only status cues (icons + text alongside green/yellow/red). |
-
-### Branding & Style Guidelines
-
-SmartCart's visual identity is **green-forward** — green communicates "valid scan / points earned" and dominates the checkout and confirmation screens for cashier visibility.
-
-#### Color Palette
-
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `--color-primary` | `#16A34A` | Primary actions, CTAs ("Escanear", "Generar QR"), confirmation hero |
-| `--color-secondary` | `#15803D` | Secondary green elements, pressed states, gradient base for featured reward |
-| `--color-accent` | `#FACC15` | Pending-points tags, "Nuevo" highlights, badges |
-| `--color-background` | `#F9FAFB` | App background |
-| `--color-surface` | `#FFFFFF` | Cards, modals, product list rows |
-| `--color-error` | `#DC2626` | Error states, delete (red X), expired QR |
-| `--color-success` | `#22C55E` | Success toast, validated-product checkmarks |
-| `--color-text-primary` | `#111827` | Main text |
-| `--color-text-secondary` | `#6B7280` | Subtitles, captions, motivational subtitle |
-
-#### Typography
-
-| Role | Font Family | Weight | Size | Usage |
-|------|-------------|--------|------|-------|
-| Display / Heading | Poppins | 700 | 24px | Screen titles, points total |
-| Subheading | Poppins | 600 | 18px | Section headers ("Productos con puntos hoy") |
-| Body | Inter | 400 | 16px | General text, product names |
-| Caption | Inter | 400 | 12px | Labels, hints, expiry dates, alphanumeric QR fallback |
-| Button | Poppins | 600 | 14px | CTA text |
-
-#### Spacing & Layout
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--spacing-xs` | 4px | Tight spacing (tag padding) |
-| `--spacing-sm` | 8px | Internal component padding |
-| `--spacing-md` | 16px | Default padding, card gaps |
-| `--spacing-lg` | 24px | Section spacing |
-| `--spacing-xl` | 32px | Screen-level padding |
-
-- **Grid System:** Single-column, mobile-first stacked layout (one primary action per screen); 4pt spacing scale.
-- **Breakpoints:** `sm: 375px` (baseline phone), `md: 768px` (large phones/tablet), `lg: 1024px` (tablet landscape).
-- **Iconography:** Lucide React Native (`lucide-react-native` 0.468.0) — consistent outline set for nav, scan, flash, delete, rewards.
-- **Logo Usage Rules:** Minimum 24px height; maintain clear space equal to the cart glyph height; never recolor outside the primary/secondary green or white-on-green.
-
-### Core Business Process
-
-#### Onboarding & Home (Lobby)
-1. The user opens the app upon arriving at a store.
-2. The system detects the user's presence in an affiliated store and enables point accumulation for the session.
-3. The user reviews their current point balance, progress toward the next reward, and the day's sponsored products.
-4. The user chooses to begin scanning or to review pending items from a prior moment in the session.
-
-#### Product Scanning & Pending List
-1. The user initiates scanning.
-2. The system activates barcode capture (camera by default).
-3. Alternatively, the user provides the barcode manually when the printed code is damaged.
-4. Once a code is captured, the system retrieves the product details and asks the user to confirm the detected product.
-5. Upon confirmation, the system validates that the user is in-store, the format is valid, the product is sponsored, and it is not already in the session, then adds it with its pending points.
-6. The user may continue scanning or move toward checkout.
-
-#### Checkout & Points Validation
-1. With shopping complete, the user requests a checkout validation code.
-2. The system issues a unique, time-limited (10-minute) code representing the pending items.
-3. The user presents the code to the cashier.
-4. The system waits for the store's confirmation of the purchase.
-5. Upon confirmation, the system credits the corresponding points and informs the user that the purchase was verified.
-
-#### Rewards Redemption
-1. The user opens the rewards section.
-2. The system shows the available point balance and the redeemable rewards, marking those still out of reach with the missing amount.
-3. The user selects a reward and confirms spending the points.
-4. The system deducts the points and issues a coupon ready to use.
-
-### Wireframes
-
-| Screen | Prototype | Purpose |
-|--------|----------------|---------|
-| 1 — Lobby (empty) | ![1](media/wireframes/1.png) | Overview of points, sponsored products, primary scan CTA, location pill. |
-| 2 — Camera Scanning | ![2](media/wireframes/2.png) | Capture barcode via camera with manual-entry fallback and in-store confirmation. |
-| 3 — Lobby (1 product) | ![3](media/wireframes/3.png) | First scanned product with toast, pending-points subsection, delete option. |
-| 4 — Lobby (multiple) | ![4](media/wireframes/4.png) | Full pending list with dual CTAs (scan more / generate QR). |
-| 5 — QR Validation | ![5](media/wireframes/5.png) | Full-green QR + alphanumeric fallback, 10-min validity, polling status. |
-| 6 — Confirmation | ![6](media/wireframes/6.png) | Points-credited hero, validated products, new total, paths to home or rewards. |
-| 7 — My Rewards | ![7](media/wireframes/7.png) | Available rewards + redeemed coupons tabs; locked rewards show point deficit. |
-
-### UX Test Results
-
-- **Platform Used:** Maze (unmoderated remote) + in-person sessions with external design students.
-- **Key Findings (expected focus areas):** discoverability of the manual-entry fallback on the scan screen; clarity of the "pending vs credited" points distinction; one-tap QR generation satisfaction.
-- **Corrections Integrated:** track each finding in the Phase 1 "Key Findings & Applied Corrections" table and reflect the applied fix in the final NativeWind component styles.
-
----
-
-## 1.3. Component Design Strategy
+## 1.2. Component Design Strategy
 
 #### Atoms — `/components/atoms/`
 
@@ -255,7 +260,7 @@ Screens are **containers**: they own data/state (hooks + stores), compose organi
 
 ---
 
-## 1.4. Security
+## 1.3. Security
 
 The authentication, session, and authorization classes are modeled below; the
 `Authentication`, `Session Management`, and `Authorization (RBAC)` subsections
@@ -393,7 +398,7 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 
 ---
 
-## 1.5. Layered Architecture
+## 1.4. Layered Architecture
 
 - **Layer Responsibilities:**
 
@@ -450,7 +455,7 @@ flowchart TD
 
 ---
 
-## 1.6. Design Patterns
+## 1.5. Design Patterns
 
 Mapped directly from `designPatterns.md` to their frontend implementation locations.
 
@@ -589,7 +594,7 @@ flowchart TD
 
 ---
 
-## 1.7. Performance
+## 1.6. Performance
 
 | Strategy | Where (file / config) | How |
 |----------|-----------------------|-----|
@@ -603,7 +608,7 @@ flowchart TD
 
 ---
 
-## 1.8. Testing Strategy
+## 1.7. Testing Strategy
 
 | Level | Tool | Where (location / naming) | How | Min. Coverage |
 |-------|------|---------------------------|-----|---------------|
@@ -615,7 +620,7 @@ cally and in CI. | Key flows 100% |
 
 ---
 
-## 1.9. CI/CD Pipeline (Frontend)
+## 1.8. CI/CD Pipeline (Frontend)
 
 ```
 [Trigger: Push to PR / main branch]
@@ -677,9 +682,9 @@ The pipeline is defined in **`.github/workflows/ci.yml`**; each step runs an `np
 
 ---
 
-## 1.10. Project Scaffold
+## 1.9. Project Scaffold
 
-- **Root:** `/src` (Expo Router routes in `/app`)
+- **Root:** [`/src`](/frontend/scr)
 
 ```
 /frontend/src
