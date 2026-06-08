@@ -684,7 +684,7 @@ The pipeline is defined in **`.github/workflows/ci.yml`**; each step runs an `np
 
 ## 1.9. Project Scaffold
 
-- **Root:** [`/src`](/frontend/scr)
+- **Root:** [`/frontend/scr`](/frontend/src/) 
 
 ```
 /frontend/src
