@@ -1,0 +1,63 @@
+# SmartCart — E2E flow template (Maestro), README §1.7 UI/E2E.
+# One YAML flow per critical journey. This is the happy path:
+#   login -> scan a product -> generate QR -> confirm points -> redeem a reward.
+# Run locally and in CI with:  maestro test .maestro/
+#
+# NOTE: Design-deliverable template. Replace appId and the testID/text selectors
+# below with the real ones once screens are built. Selectors should match the
+# accessibility labels / testIDs used by the components in frontend/src.
+appId: com.smartcart.app
+---
+# --- Launch & login ------------------------------------------------------------
+- launchApp:
+    clearState: true
+- assertVisible: "Iniciar sesión"
+- tapOn:
+    id: "login-email"
+- inputText: "shopper@example.com"
+- tapOn:
+    id: "login-password"
+- inputText: "test-password"
+- tapOn: "Entrar"
+
+# --- Lobby: start a session ----------------------------------------------------
+- assertVisible:
+    id: "lobby-screen"
+- tapOn:
+    id: "scan-cta"          # opens the Scan screen
+
+# --- Scan a product ------------------------------------------------------------
+- assertVisible:
+    id: "scan-screen"
+# In CI the camera is stubbed; trigger the manual-entry fallback instead.
+- tapOn: "Ingreso manual"
+- tapOn:
+    id: "manual-barcode-input"
+- inputText: "7441234567890"
+- tapOn: "Agregar"
+# Scan confirmation modal (see ScanConfirmationModal.test.tsx)
+- assertVisible:
+    id: "scan-confirmation-modal"
+- tapOn: "Confirmar"
+
+# --- Generate QR & confirm points ---------------------------------------------
+- tapOn:
+    id: "generate-qr-cta"
+- assertVisible:
+    id: "qr-code-view"
+# Cashier validates the QR -> app polls and moves to the confirmation screen.
+- extendedWaitUntil:
+    visible:
+      id: "confirmation-screen"
+    timeout: 15000
+- assertVisible: "Puntos acreditados"
+
+# --- Redeem a reward -----------------------------------------------------------
+- tapOn:
+    id: "tab-rewards"
+- assertVisible:
+    id: "rewards-catalog"
+- tapOn:
+    id: "reward-card-0"
+- tapOn: "Canjear"
+- assertVisible: "Cupón generado"
