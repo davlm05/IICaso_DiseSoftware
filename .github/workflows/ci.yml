@@ -1,0 +1,114 @@
+# SmartCart — Frontend CI/CD pipeline (template)
+#
+# Mirrors README §1.8. Each step maps to an npm script in package.json or an
+# EAS command driven by eas.json. The EXPO_TOKEN secret lives in the GitHub repo
+# settings (Settings -> Secrets and variables -> Actions).
+#
+# NOTE: This is a design-deliverable template. Jobs are wired to the intended
+# scripts/commands; they will run once the frontend project (package.json, eas.json,
+# .maestro/, test suites) is fully scaffolded.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  # Steps 1-5: lint, format, types, unit + integration tests (quality gate).
+  quality:
+    name: Lint, Types & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Step 1 — Install & cache deps
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+
+      # Step 2 — Lint (ESLint 9 flat config)
+      - name: Lint
+        run: npm run lint
+
+      # Step 3 — Format check (Prettier 3)
+      - name: Format check
+        run: npm run format:check
+
+      # Step 4 — Type check (tsc --noEmit)
+      - name: Type check
+        run: npm run typecheck
+
+      # Step 5 — Unit & integration tests (Jest + RTL); fails below coverage thresholds
+      - name: Test
+        run: npm test -- --coverage
+
+  # Step 6 — EAS Build (iOS + Android), production profile from eas.json
+  build:
+    name: EAS Build
+    runs-on: ubuntu-latest
+    needs: quality
+    # Only build/deploy on pushes to main, not on every PR.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Build (all platforms)
+        run: eas build --platform all --profile production --non-interactive
+
+  # Step 7 — E2E tests (Maestro) against the build artifact
+  e2e:
+    name: E2E (Maestro)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Maestro
+        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+      - name: Run flows
+        run: maestro test .maestro/
+
+  # Step 8 — Deploy: EAS Update (staging) then manual Submit (prod) after QA
+  deploy:
+    name: Deploy (EAS Update -> Submit)
+    runs-on: ubuntu-latest
+    needs: e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      # Automatic OTA push to the staging channel on merge to main.
+      - name: EAS Update (staging)
+        run: eas update --branch staging --message "${{ github.event.head_commit.message }}"
+      # Promotion to production store tracks (eas submit) is gated on manual QA sign-off.

@@ -612,11 +612,10 @@ flowchart TD
 
 | Level | Tool | Where (location / naming) | How | Min. Coverage |
 |-------|------|---------------------------|-----|---------------|
-| **Unit** | Jest 29.7.0 (jest-expo 52) | `__tests__/*.test.ts` co-located beside source: `/features/session/commands/`, `/features/scan/validation/`, `/store/`, `/lib/`; config in `jest.config.js` + `jest.setup.ts` | Pure-logic tests with mocked dependencies: command objects incl. `undo`, each CoR validation handler in isolation, points rules. No rendering. | 80% |
-| **Integration** | React Native Testing Library 12.8.0 | `/components/**/__tests__/*.test.tsx` | `render()` the component, drive it with `fireEvent`/`userEvent`, assert via accessibility queries (`getByRole`/`getByLabelText`); mock the API layer (jest mocks / MSW). Covers scan-confirm modal, delete-with-undo, QR generation, manual-entry fallback, redemption. | 70% |
-| **UI / E2E** | Maestro 1.39.x | `.maestro/*.yaml` flow files | One YAML flow per critical journey (login → scan → generate QR → confirm → redeem); run with `maestro test .maestro/` lo
-cally and in CI. | Key flows 100% |
-| **Accessibility** | `@axe-core/react` + manual VoiceOver/TalkBack passes | Component `__tests__` (automated) + manual device passes | Wire `@axe-core/react` in dev and assert no violations in component tests; complete manual VoiceOver (iOS) / TalkBack (Android) passes on each interactive screen. | 0 critical violations |
+| **Unit** | Jest 29.7.0 (jest-expo 52) | `__tests__/*.test.ts` co-located beside source: `/features/session/commands/`, `/features/scan/validation/`, `/store/`, `/lib/`; config in `jest.config.js` + `jest.setup.ts`. Template: [`addItemCommand.test.ts`](/frontend/src/features/session/commands/__tests__/addItemCommand.test.ts) | Pure-logic tests with mocked dependencies: command objects incl. `undo`, each CoR validation handler in isolation, points rules. No rendering. | 80% |
+| **Integration** | React Native Testing Library 12.8.0 | `/components/**/__tests__/*.test.tsx`. Template: [`ScanConfirmationModal.test.tsx`](/frontend/src/components/molecules/__tests__/ScanConfirmationModal.test.tsx) | `render()` the component, drive it with `fireEvent`/`userEvent`, assert via accessibility queries (`getByRole`/`getByLabelText`); mock the API layer (jest mocks / MSW). Covers scan-confirm modal, delete-with-undo, QR generation, manual-entry fallback, redemption. | 70% |
+| **UI / E2E** | Maestro 1.39.x | `.maestro/*.yaml` flow files. Template: [`scan-to-redeem.yaml`](/.maestro/scan-to-redeem.yaml) | One YAML flow per critical journey (login → scan → generate QR → confirm → redeem); run with `maestro test .maestro/` locally and in CI. | Key flows 100% |
+| **Accessibility** | `@axe-core/react` + manual VoiceOver/TalkBack passes | Component `__tests__` (automated) + manual device passes. Template: [`Button.a11y.test.tsx`](/frontend/src/components/atoms/__tests__/Button.a11y.test.tsx) | Wire `@axe-core/react` in dev and assert no violations in component tests; complete manual VoiceOver (iOS) / TalkBack (Android) passes on each interactive screen. | 0 critical violations |
 
 ---
 
@@ -662,7 +661,7 @@ cally and in CI. | Key flows 100% |
 └─────────────────────────┘
 ```
 
-The pipeline is defined in **`.github/workflows/ci.yml`**; each step runs an `npm` script from `package.json` or an EAS command driven by `eas.json`. The `EXPO_TOKEN` secret lives in the GitHub repo settings (Settings → Secrets).
+The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.yml)**; each step runs an `npm` script from `package.json` or an EAS command driven by `eas.json`. The `EXPO_TOKEN` secret lives in the GitHub repo settings (Settings → Secrets).
 
 | Step | Where (file / config) | How |
 |------|-----------------------|-----|
