@@ -3139,12 +3139,14 @@ This section documents every security control in the SmartCart backend, organize
 ```
 
 - **1. Transport Security**
+
 | Concern               | Strategy                                                                                                      | Implementation                |
 |-----------------------|--------------------------------------------------------------------------------------------------------------|-------------------------------|
 | HTTPS Enforcement     | All traffic is encrypted via TLS 1.3. HTTP requests are redirected to HTTPS at the Nginx reverse proxy layer. | `docker/nginx/default.conf`     |
 | TLS Version           | TLS 1.3 minimum; TLS 1.2 accepted only for legacy Android devices (API level < 26).                          | Nginx configuration           |
 | HSTS                  | `Strict-Transport-Security` header set to `max-age=31536000; includeSubDomains; preload`.                        | Helmet middleware             |
 | Certificate Management| Let's Encrypt certificates auto-renewed via Certbot in production. Managed certificates on Railway/Render.   | CI/CD pipeline                |
+
 
 ```
 # 📁 docker/nginx/default.conf — TLS termination & HSTS
@@ -3238,6 +3240,7 @@ async function bootstrap() {
 ```
 
 - **3. Authentication**
+
 | Concern              | Strategy                                                                                                                                    | Implementation                                                                 |
 |----------------------|--------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
 | Primary Auth         | JWT `accessToken` (15-minute expiry) in `Authorization: Bearer header`. `refreshToken` (7-day expiry) in HTTP-only, Secure, SameSite=Strict cookie. | `apps/api/src/modules/auth/`                                                     |
@@ -3247,6 +3250,7 @@ async function bootstrap() {
 | Password Policy      | Minimum 8 characters, must contain uppercase, lowercase, and number. Validated by Zod schema at registration.                               | `packages/shared-types/src/auth.types.ts`                                        |
 | Account Lockout      | 5 failed login attempts within 15 minutes locks the account for 30 minutes. Implemented via Redis `login_attempts:{email}` key with TTL.       | `apps/api/src/modules/auth/application/services/auth.service.ts`                 |
 | Token Revocation     | `refreshToken` is stored hashed in the database. On logout, the token is deleted. On refresh, the old token is invalidated (rotation).         |  `apps/api/src/modules/auth/application/services/auth.service.ts`                 |
+
 
 ```
 // 📁 apps/api/src/modules/auth/infrastructure/crypto/password.service.ts
@@ -3445,12 +3449,14 @@ export class JwtService {
 ```
 
 - **4. Authorization**
+
 | Concern                  | Strategy                                                                                                                       | Implementation                                         |
 |---------------------------|-------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------|
 | Role-Based Access Control (RBAC) | Five roles: `shopper`, `pos_operator`, `customer_service`, `b2b_partner`, `admin`. Each endpoint decorated with `@Roles()` requiring specific roles. | `apps/api/src/common/guards/roles.guard.ts`              |
 | Resource Ownership        | Users can only access their own sessions, points, and redemptions. `ResourceOwnershipGuard` compares `userId` from JWT with the resource's owner. | `apps/api/src/common/guards/resource-ownership.guard.ts` |
 | POS API Key Auth          | POS endpoints use API Key authentication (`X-API-Key header`) with scoped permissions (only `POST /sessions/:id/validate`).        | `apps/api/src/common/guards/api-key.guard.ts`            |
 | B2B API Key Auth          | B2B analytics endpoints use separate API keys with read-only access to aggregated data.                                       | `apps/api/src/common/guards/api-key.guard.ts`            |
+
 
 ```
 // 📁 apps/api/src/common/guards/roles.guard.ts
@@ -3587,11 +3593,13 @@ export class ValidationController {
 ```
 
 - **5.Database encryption**
+
 | Concern              | Strategy                                                                                                                      |
 |----------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | Encryption at Rest   | PostgreSQL: AES-256 encryption enabled at the storage level (provider-managed on Railway/Render/GCP Cloud SQL). All tablespaces are encrypted. |
 | Encryption in Transit| TLS 1.3 enforced for all database connections. Prisma client configured with `sslmode=require`.                                  |
 | Connection String    | Never hardcoded. Fetched from environment variable `DATABASE_URL` with SSL parameters appended.                                 |
+
 
 ```
 // 📁 prisma/schema.prisma — Datasource with SSL enforcement
@@ -3605,12 +3613,14 @@ datasource db {
 ```
 
 - **6.Secrets manager**
+
 | Concern   | Strategy                                                                                                      |
 |-----------|---------------------------------------------------------------------------------------------------------------|
 | Storage   | All secrets stored in environment variables. Never committed to Git. `.env` files in `.gitignore`.                 |
 | Provider  | Railway Shared Variables / Render Environment Groups for production. `.env.local`  for development.               |
 | Rotation  | JWT secrets rotated quarterly. Database credentials rotated every 90 days. Manual process documented in runbook. |
 | Validation| Application validates all required secrets at startup and fails fast if any are missing.                       |
+
 
 ```
 // 📁 apps/api/src/config/env.validation.ts
@@ -3781,6 +3791,7 @@ export const ProductIdParamSchema = z.object({
 ```
 
 - **9.OWASP Compliance - Injection prevention**
+
 | Attack Vector   | Mitigation                                                                                          | Implementation                                                      |
 |-----------------|-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
 | SQL Injection   | 100% parameterized queries via Prisma ORM. No raw SQL concatenation.                                 | Prisma Client — all queries are parameterized by design             |
@@ -3790,6 +3801,7 @@ export const ProductIdParamSchema = z.object({
 | CSRF            | SameSite=Strict cookies. JWT in Authorization header (not cookie-based for API calls).               | Cookie configuration in auth.controller.ts                          |
 | Path Traversal  | UUID validation on all path parameters. S3 keys use UUIDs, not user-supplied paths.                  | Zod UUID schemas                                                    |
 | ReDoS           | Zod regex patterns are tested for catastrophic backtracking. Input lengths capped.                   | Pre-commit hook runs `npx regexploit` on all schemas                |
+
 
 - **10. Audit logging**
 
