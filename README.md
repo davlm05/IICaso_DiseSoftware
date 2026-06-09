@@ -3819,3 +3819,818 @@ export class DeprecationInterceptor implements NestInterceptor {
 ```
 
 ---
+
+## 2.5 Security
+
+This section documents every security control in the SmartCart backend, organized by the OWASP Application Security Verification Standard (ASVS) categories where applicable. Each control includes its implementation mechanism, the specific threat it mitigates, and the code path where it is enforced.
+
+### Security Architecture Overview
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                         SmartCart Security Architecture                               │
+│                                                                                     │
+│  ┌──────────────┐     HTTPS (TLS 1.3)       ┌────────────────────────────────────┐  │
+│  │ Mobile App   │─────────────────────────▶│         API Gateway / Nginx         │  │
+│  │ (React Native)│     HSTS enforced        │                                    │  │
+│  └──────────────┘                           │  - TLS termination                  │  │
+│         │                                   │  - Rate limiting                    │  │
+│         │ JWT in Authorization header       │  - Request size limits (10MB)       │  │
+│         │ Refresh token in HTTP-only cookie │  - CORS policy                      │  │
+│         ▼                                   │  - Security headers (Helmet)        │  │
+│  ┌──────────────────────────────────────────┼────────────────────────────────────┘  │
+│  │                        NestJS Application (Modular Monolith)                     │
+│  │                                                                                 │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │  │                        Middleware Pipeline (order matters)                 │  │
+│  │  │                                                                          │  │
+│  │  │  1. HelmetMiddleware      → Security headers (CSP, X-Frame-Options...)   │  │
+│  │  │  2. CorrelationIdMiddleware → Attach X-Correlation-Id to every request    │  │
+│  │  │  3. RateLimiterMiddleware  → Throttle requests by IP / user               │  │
+│  │  │  4. JwtAuthGuard          → Verify JWT signature + expiry (except @Public)│  │
+│  │  │  5. RolesGuard            → Check user.role against @Roles() decorator    │  │
+│  │  │  6. ResourceOwnershipGuard→ Verify userId in JWT matches resource owner   │  │
+│  │  │  7. ValidationPipe        → Validate all inputs against Zod schemas       │  │
+│  │  │  8. Controller            → Business logic executes                      │  │
+│  │  │  9. AuditInterceptor      → Log sensitive operations                     │  │
+│  │  │  10. ExceptionFilter      → Standardize error responses, hide internals  │  │
+│  │  └──────────────────────────────────────────────────────────────────────────┘  │
+│  └─────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                     │
+│  ┌────────────────────────────┐  ┌────────────────────────────┐                     │
+│  │ PostgreSQL (AES-256 at rest)│  │ Redis (TLS, AUTH password) │                     │
+│  │ TLS 1.3 in transit         │  │                            │                     │
+│  └────────────────────────────┘  └────────────────────────────┘                     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+```
+
+- **1. Transport Security**
+| Concern               | Strategy                                                                                                      | Implementation                |
+|-----------------------|--------------------------------------------------------------------------------------------------------------|-------------------------------|
+| HTTPS Enforcement     | All traffic is encrypted via TLS 1.3. HTTP requests are redirected to HTTPS at the Nginx reverse proxy layer. | `docker/nginx/default.conf`     |
+| TLS Version           | TLS 1.3 minimum; TLS 1.2 accepted only for legacy Android devices (API level < 26).                          | Nginx configuration           |
+| HSTS                  | `Strict-Transport-Security` header set to `max-age=31536000; includeSubDomains; preload`.                        | Helmet middleware             |
+| Certificate Management| Let's Encrypt certificates auto-renewed via Certbot in production. Managed certificates on Railway/Render.   | CI/CD pipeline                |
+
+```
+# 📁 docker/nginx/default.conf — TLS termination & HSTS
+server {
+    listen 80;
+    server_name api.smartcart.app;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name api.smartcart.app;
+
+    # TLS 1.3 with strong ciphers
+    ssl_protocols TLSv1.3 TLSv1.2;
+    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # HSTS (1 year, include subdomains, preload list)
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+    # Prevent MIME type sniffing
+    add_header X-Content-Type-Options "nosniff" always;
+
+    # Prevent clickjacking
+    add_header X-Frame-Options "DENY" always;
+
+    # Limit request body size to prevent DoS
+    client_max_body_size 10m;
+
+    location /api/ {
+        proxy_pass http://api:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /ws/ {
+        proxy_pass http://api:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+- **2. Helmet middleware - security headers**
+```
+// 📁 apps/api/src/main.ts — Helmet configuration
+import helmet from 'helmet';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  app.use(helmet({
+    // Content Security Policy
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'https://cdn.smartcart.app'],
+        connectSrc: ["'self'", 'wss://api.smartcart.app'],
+        frameAncestors: ["'none'"],
+        formAction: ["'self'"],
+      },
+    },
+    // Prevent browsers from doing DNS prefetch
+    dnsPrefetchControl: { allow: false },
+    // Prevent browsers from inferring MIME types
+    noSniff: true,
+    // Prevent clickjacking
+    frameguard: { action: 'deny' },
+    // Remove X-Powered-By header
+    hidePoweredBy: true,
+    // HTTP Public Key Pinning (not enforced, report-only)
+    hpkp: false,
+    // IE-specific: prevent executing downloads
+    ieNoOpen: true,
+    // Don't include referrer header on navigation to less secure destinations
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    // Prevent XSS via reflected X-XSS-Protection header
+    xssFilter: true,
+  }));
+
+  await app.listen(3000);
+}
+```
+
+- **3. Authentication**
+| Concern              | Strategy                                                                                                                                    | Implementation                                                                 |
+|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| Primary Auth         | JWT `accessToken` (15-minute expiry) in `Authorization: Bearer header`. `refreshToken` (7-day expiry) in HTTP-only, Secure, SameSite=Strict cookie. | `apps/api/src/modules/auth/`                                                     |
+| Token Signing        | HS256 with 256-bit secret from environment variable. RS256 planned for multi-service future (public key distribution).                       | `apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts`                 |
+| Token Storage (Client)| `accessToken` in memory (Zustand store). `refreshToken` in expo-secure-store (iOS Keychain / Android Keystore). Never in `AsyncStorage`.          | `apps/mobile/src/utils/secure-storage.ts`                                        |
+| Password Hashing     | bcrypt with cost factor 12. Salt generated per-password.                                                                                   | `apps/api/src/modules/auth/infrastructure/crypto/password.service.ts`            |
+| Password Policy      | Minimum 8 characters, must contain uppercase, lowercase, and number. Validated by Zod schema at registration.                               | `packages/shared-types/src/auth.types.ts`                                        |
+| Account Lockout      | 5 failed login attempts within 15 minutes locks the account for 30 minutes. Implemented via Redis `login_attempts:{email}` key with TTL.       | `apps/api/src/modules/auth/application/services/auth.service.ts`                 |
+| Token Revocation     | `refreshToken` is stored hashed in the database. On logout, the token is deleted. On refresh, the old token is invalidated (rotation).         |  `apps/api/src/modules/auth/application/services/auth.service.ts`                 |
+
+```
+// 📁 apps/api/src/modules/auth/infrastructure/crypto/password.service.ts
+import { Injectable } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+
+@Injectable()
+export class PasswordService {
+  private readonly BCRYPT_ROUNDS = 12;
+
+  /**
+   * Hash a plain-text password with bcrypt.
+   * Cost factor 12 = ~250ms on modern hardware — acceptable for login,
+   * resistant to brute-force.
+   */
+  async hash(plainText: string): Promise<string> {
+    return bcrypt.hash(plainText, this.BCRYPT_ROUNDS);
+  }
+
+  /**
+   * Constant-time comparison prevents timing attacks.
+   */
+  async compare(plainText: string, hash: string): Promise<boolean> {
+    return bcrypt.compare(plainText, hash);
+  }
+
+  /**
+   * Validate password strength.
+   * Called before hashing — prevents weak passwords from being stored.
+   */
+  validateStrength(password: string): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    if (password.length < 8) errors.push('Minimum 8 characters required');
+    if (!/[A-Z]/.test(password)) errors.push('Must contain an uppercase letter');
+    if (!/[a-z]/.test(password)) errors.push('Must contain a lowercase letter');
+    if (!/[0-9]/.test(password)) errors.push('Must contain a number');
+    if (password.length > 128) errors.push('Maximum 128 characters allowed');
+    return { valid: errors.length === 0, errors };
+  }
+}
+```
+
+```
+// 📁 apps/api/src/modules/auth/application/services/auth.service.ts — Account lockout
+import { Injectable, UnauthorizedException, TooManyRequestsException } from '@nestjs/common';
+import { RedisService } from '../../../../common/redis/redis.service';
+
+@Injectable()
+export class AuthService {
+  private readonly MAX_LOGIN_ATTEMPTS = 5;
+  private readonly LOCKOUT_DURATION = 30 * 60; // 30 minutes in seconds
+  private readonly ATTEMPT_WINDOW = 15 * 60;   // 15 minutes in seconds
+
+  constructor(
+    private readonly redis: RedisService,
+    private readonly passwordService: PasswordService,
+    private readonly userRepo: IUserRepository,
+  ) {}
+
+  async login(email: string, password: string): Promise<LoginResult> {
+    // 1. Check if account is locked
+    const lockKey = `auth:lockout:${email}`;
+    const isLocked = await this.redis.exists(lockKey);
+    if (isLocked) {
+      const ttl = await this.redis.ttl(lockKey);
+      throw new TooManyRequestsException(
+        `Account temporarily locked. Try again in ${Math.ceil(ttl / 60)} minutes.`,
+      );
+    }
+
+    // 2. Find user
+    const user = await this.userRepo.findByEmail(email);
+    if (!user) {
+      await this.recordFailedAttempt(email);
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // 3. Verify password
+    const isPasswordValid = await this.passwordService.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      await this.recordFailedAttempt(email);
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // 4. Successful login — clear failed attempts
+    await this.redis.del(`auth:attempts:${email}`);
+
+    // 5. Generate tokens
+    return this.generateTokens(user);
+  }
+
+  /**
+   * Records a failed login attempt in Redis.
+   * If attempts exceed threshold, locks the account.
+   */
+  private async recordFailedAttempt(email: string): Promise<void> {
+    const key = `auth:attempts:${email}`;
+    const attempts = await this.redis.incr(key);
+
+    if (attempts === 1) {
+      // Set TTL on first attempt within the window
+      await this.redis.expire(key, this.ATTEMPT_WINDOW);
+    }
+
+    if (attempts >= this.MAX_LOGIN_ATTEMPTS) {
+      // Lock the account
+      await this.redis.set(
+        `auth:lockout:${email}`,
+        `Locked after ${attempts} failed attempts`,
+        'EX',
+        this.LOCKOUT_DURATION,
+      );
+    }
+  }
+}
+```
+
+```
+// 📁 apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts
+import { Injectable } from '@nestjs/common';
+import * as jwt from 'jsonwebtoken';
+import { JwtPayload, UserRole } from '@smartcart/shared-types';
+
+@Injectable()
+export class JwtService {
+  private readonly ACCESS_SECRET: Buffer;
+  private readonly REFRESH_SECRET: Buffer;
+  private readonly ACCESS_TTL = '15m';
+  private readonly REFRESH_TTL = '7d';
+
+  constructor() {
+    this.ACCESS_SECRET = Buffer.from(process.env.JWT_ACCESS_SECRET ?? '', 'utf-8');
+    this.REFRESH_SECRET = Buffer.from(process.env.JWT_REFRESH_SECRET ?? '', 'utf-8');
+
+    if (this.ACCESS_SECRET.length < 32 || this.REFRESH_SECRET.length < 32) {
+      throw new Error('JWT secrets must be at least 32 characters (256 bits)');
+    }
+  }
+
+  async signAccessToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): Promise<string> {
+    return new Promise((resolve, reject) => {
+      jwt.sign(
+        payload,
+        this.ACCESS_SECRET,
+        {
+          algorithm: 'HS256',
+          expiresIn: this.ACCESS_TTL,
+          issuer: 'smartcart',
+          subject: payload.sub,
+        },
+        (err, token) => (err ? reject(err) : resolve(token!)),
+      );
+    });
+  }
+
+  async signRefreshToken(userId: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      jwt.sign(
+        { sub: userId, type: 'refresh' },
+        this.REFRESH_SECRET,
+        {
+          algorithm: 'HS256',
+          expiresIn: this.REFRESH_TTL,
+          issuer: 'smartcart',
+          jwtid: crypto.randomUUID(),
+        },
+        (err, token) => (err ? reject(err) : resolve(token!)),
+      );
+    });
+  }
+
+  async verifyAccessToken(token: string): Promise<JwtPayload> {
+    return new Promise((resolve, reject) => {
+      jwt.verify(
+        token,
+        this.ACCESS_SECRET,
+        {
+          algorithms: ['HS256'],
+          issuer: 'smartcart',
+          clockTolerance: 30,
+        },
+        (err, decoded) => {
+          if (err) reject(new UnauthorizedException(this.mapJwtError(err)));
+          else resolve(decoded as JwtPayload);
+        },
+      );
+    });
+  }
+
+  private mapJwtError(err: jwt.VerifyErrors): string {
+    if (err instanceof jwt.TokenExpiredError) return 'Access token has expired';
+    if (err instanceof jwt.JsonWebTokenError) return 'Invalid access token';
+    return 'Token verification failed';
+  }
+}
+```
+
+- **4. Authorization**
+| Concern                  | Strategy                                                                                                                       | Implementation                                         |
+|---------------------------|-------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------|
+| Role-Based Access Control (RBAC) | Five roles: `shopper`, `pos_operator`, `customer_service`, `b2b_partner`, `admin`. Each endpoint decorated with `@Roles()` requiring specific roles. | `apps/api/src/common/guards/roles.guard.ts`              |
+| Resource Ownership        | Users can only access their own sessions, points, and redemptions. `ResourceOwnershipGuard` compares `userId` from JWT with the resource's owner. | `apps/api/src/common/guards/resource-ownership.guard.ts` |
+| POS API Key Auth          | POS endpoints use API Key authentication (`X-API-Key header`) with scoped permissions (only `POST /sessions/:id/validate`).        | `apps/api/src/common/guards/api-key.guard.ts`            |
+| B2B API Key Auth          | B2B analytics endpoints use separate API keys with read-only access to aggregated data.                                       | `apps/api/src/common/guards/api-key.guard.ts`            |
+
+```
+// 📁 apps/api/src/common/guards/roles.guard.ts
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { UserRole } from '@smartcart/shared-types';
+import { ROLES_KEY } from '../decorators/roles.decorator';
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const requiredRoles = this.reflector.getAllAndOverride<UserRole[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    // If no roles are required, allow access (used with @Public or open endpoints)
+    if (!requiredRoles || requiredRoles.length === 0) {
+      return true;
+    }
+
+    const { user } = context.switchToHttp().getRequest();
+    if (!user) return false;
+
+    return requiredRoles.includes(user.role);
+  }
+}
+
+// Decorator for specifying required roles on endpoints
+export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
+```
+
+```
+// 📁 apps/api/src/common/guards/resource-ownership.guard.ts
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+
+/**
+ * Verifies that the authenticated user is accessing their own resources.
+ * Compares `req.user.sub` (userId from JWT) with `req.params.userId`
+ * or the `userId` field on the request body.
+ */
+@Injectable()
+export class ResourceOwnershipGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    const authenticatedUserId = request.user?.sub;
+
+    if (!authenticatedUserId) return false;
+
+    // Check URL param: /users/:userId/...
+    const paramUserId = request.params?.userId;
+    if (paramUserId && paramUserId !== authenticatedUserId) {
+      throw new ForbiddenException('You can only access your own resources');
+    }
+
+    // Check body field: { userId: "..." }
+    const bodyUserId = request.body?.userId;
+    if (bodyUserId && bodyUserId !== authenticatedUserId) {
+      throw new ForbiddenException('You can only modify your own resources');
+    }
+
+    return true;
+  }
+}
+```
+
+```
+// 📁 apps/api/src/common/guards/api-key.guard.ts
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'crypto';
+import { PrismaService } from '../prisma/prisma.service';
+
+@Injectable()
+export class ApiKeyGuard implements CanActivate {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+    const apiKey = request.headers['x-api-key'];
+
+    if (!apiKey || typeof apiKey !== 'string') {
+      throw new UnauthorizedException('API key is required');
+    }
+
+    // Hash the provided key and compare with stored hash (constant-time)
+    const keyHash = createHash('sha256').update(apiKey).digest('hex');
+
+    const storedKey = await this.prisma.apiKey.findUnique({
+      where: { keyHash },
+    });
+
+    if (!storedKey || !storedKey.isActive) {
+      throw new UnauthorizedException('Invalid or inactive API key');
+    }
+
+    // Attach partner info to request for audit logging
+    request.apiKey = {
+      id: storedKey.id,
+      partnerName: storedKey.partnerName,
+      role: storedKey.role,
+    };
+
+    // Update last used timestamp
+    await this.prisma.apiKey.update({
+      where: { id: storedKey.id },
+      data: { lastUsedAt: new Date() },
+    });
+
+    return true;
+  }
+}
+```
+**Usage in  controllers**:
+```
+// 📁 apps/api/src/modules/checkout/presentation/controllers/validation.controller.ts
+@Controller('sessions')
+export class ValidationController {
+  constructor(private readonly checkoutService: CheckoutService) {}
+
+  @Post(':id/validate')
+  @UseGuards(ApiKeyGuard) // Only POS with valid API key can call this
+  @Roles(UserRole.POS_OPERATOR) // API key must have pos_operator role
+  @ApiSecurity('api-key')
+  async validateSession(
+    @Param('id') sessionId: string,
+    @Body(new ZodValidationPipe(ValidateSessionRequestSchema)) body: ValidateSessionRequest,
+    @Req() request: Request,
+  ): Promise<ValidateSessionResponse> {
+    return this.checkoutService.validateSession(body.qrToken, body.scannedItems);
+  }
+}
+```
+
+- **5.Database encryption**
+| Concern              | Strategy                                                                                                                      |
+|----------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| Encryption at Rest   | PostgreSQL: AES-256 encryption enabled at the storage level (provider-managed on Railway/Render/GCP Cloud SQL). All tablespaces are encrypted. |
+| Encryption in Transit| TLS 1.3 enforced for all database connections. Prisma client configured with `sslmode=require`.                                  |
+| Connection String    | Never hardcoded. Fetched from environment variable `DATABASE_URL` with SSL parameters appended.                                 |
+
+```
+// 📁 prisma/schema.prisma — Datasource with SSL enforcement
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Connection string in production (via environment variable):
+// DATABASE_URL=postgresql://user:pass@host:5432/smartcart?sslmode=require&sslcert=/path/to/ca.pem
+```
+
+- **6.Secrets manager**
+| Concern   | Strategy                                                                                                      |
+|-----------|---------------------------------------------------------------------------------------------------------------|
+| Storage   | All secrets stored in environment variables. Never committed to Git. `.env` files in `.gitignore`.                 |
+| Provider  | Railway Shared Variables / Render Environment Groups for production. `.env.local`  for development.               |
+| Rotation  | JWT secrets rotated quarterly. Database credentials rotated every 90 days. Manual process documented in runbook. |
+| Validation| Application validates all required secrets at startup and fails fast if any are missing.                       |
+
+```
+// 📁 apps/api/src/config/env.validation.ts
+// Fails at startup if any required secret is missing or invalid
+
+import { z } from 'zod';
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'staging', 'production']),
+  PORT: z.string().transform(Number).default('3000'),
+  DATABASE_URL: z.string().url().startsWith('postgresql://'),
+  REDIS_URL: z.string().url().startsWith('redis://'),
+  JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 chars'),
+  JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 chars'),
+  QR_SIGNING_SECRET: z.string().min(32, 'QR_SIGNING_SECRET must be at least 32 chars'),
+  BCRYPT_ROUNDS: z.string().transform(Number).default('12'),
+  AI_SERVICE_URL: z.string().url().optional(),
+  AI_SERVICE_API_KEY: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_BUCKET_NAME: z.string().optional(),
+  S3_REGION: z.string().optional(),
+  EXPO_PUSH_API_TOKEN: z.string().optional(),
+  CORS_ORIGINS: z.string().default('http://localhost:19006'),
+  RATE_LIMIT_TTL: z.string().transform(Number).default('60'),
+  RATE_LIMIT_MAX: z.string().transform(Number).default('100'),
+});
+
+export function validateEnv() {
+  const result = envSchema.safeParse(process.env);
+  if (!result.success) {
+    console.error('❌ Invalid environment configuration:');
+    for (const issue of result.error.issues) {
+      console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
+    }
+    process.exit(1); // Fail fast — don't start with invalid config
+  }
+  return result.data;
+}
+
+export type EnvConfig = z.infer<typeof envSchema>;
+```
+
+- **7.Rate limiting**
+```
+// 📁 apps/api/src/common/middleware/rate-limiter.middleware.ts
+import { Injectable, NestMiddleware, TooManyRequestsException } from '@nestjs/common';
+import { Request, Response, NextFunction } from 'express';
+import { RedisService } from '../redis/redis.service';
+
+@Injectable()
+export class RateLimiterMiddleware implements NestMiddleware {
+  constructor(private readonly redis: RedisService) {}
+
+  async use(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Identify client: use authenticated user ID if available, otherwise IP
+    const identifier = (req as any).user?.sub ?? req.ip ?? 'unknown';
+    const key = `ratelimit:${identifier}`;
+
+    const current = await this.redis.incr(key);
+
+    if (current === 1) {
+      // First request in the window — set TTL
+      await this.redis.expire(key, 60); // 60-second window
+    }
+
+    const limit = parseInt(process.env.RATE_LIMIT_MAX ?? '100');
+    if (current > limit) {
+      throw new TooManyRequestsException(
+        `Rate limit exceeded. ${limit} requests per minute allowed.`,
+      );
+    }
+
+    // Set rate limit headers
+    res.setHeader('X-RateLimit-Limit', limit);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, limit - current));
+
+    next();
+  }
+}
+```
+  - **Route-specific rate limits**:
+```
+// 📁 apps/api/src/app.module.ts — Apply rate limiting per-route
+@Module({
+  // ...
+})
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // Global: 100 req/min per user/IP
+    consumer.apply(RateLimiterMiddleware).forRoutes('*');
+
+    // Auth endpoints: stricter limits to prevent brute-force
+    consumer
+      .apply(
+        new RateLimiterMiddleware(/* config: 10 req/min */)
+      )
+      .forRoutes(
+        { path: '/api/v1/auth/login', method: RequestMethod.POST },
+        { path: '/api/v1/auth/register', method: RequestMethod.POST },
+      );
+  }
+}
+```
+- **8. Input validation**
+
+All inputs are validated at the controller boundary using Zod schemas and the ZodValidationPipe. This prevents malformed data, injection attacks, and type confusion from reaching the application layer.
+```
+// 📁 apps/api/src/common/pipes/zod-validation.pipe.ts
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+import { ZodSchema, ZodError } from 'zod';
+
+@Injectable()
+export class ZodValidationPipe implements PipeTransform {
+  constructor(private readonly schema: ZodSchema) {}
+
+  transform(value: unknown): unknown {
+    try {
+      return this.schema.parse(value);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        throw new BadRequestException({
+          errorCode: 'VALIDATION_FAILED',
+          message: 'Request validation failed',
+          details: error.issues.map(issue => ({
+            field: issue.path.join('.'),
+            code: issue.code,
+            message: issue.message,
+          })),
+        });
+      }
+      throw error;
+    }
+  }
+}
+```
+
+  - **Examples of Zod schemas that prevent specific attacks**:
+
+```
+// 📁 packages/shared-types/src/auth.types.ts — SQL injection prevention via strict types
+export const LoginRequestSchema = z.object({
+  email: z.string()
+    .email('Invalid email format')
+    .max(255)
+    .transform(v => v.toLowerCase().trim()), // Normalize email
+  password: z.string()
+    .min(1, 'Password is required')
+    .max(128), // Prevent buffer overflow attempts
+});
+
+// 📁 packages/shared-types/src/session.types.ts — XSS prevention
+export const AddItemRequestSchema = z.object({
+  barcode: z.string()
+    .min(8)
+    .max(14)
+    .regex(/^\d+$/, 'Barcode must be numeric only'), // Only digits — no XSS possible
+  sessionId: z.string()
+    .uuid('Session ID must be a valid UUID'), // Only UUID format — no injection
+});
+
+// 📁 packages/shared-types/src/analytics.types.ts — Prevent path traversal
+export const ProductIdParamSchema = z.object({
+  id: z.string()
+    .uuid('Product ID must be a valid UUID')
+    .refine(val => !val.includes('..'), 'Invalid product ID'), // Extra path traversal guard
+});
+```
+
+- **9.OWASP Compliance - Injection prevention**
+| Attack Vector   | Mitigation                                                                                          | Implementation                                                      |
+|-----------------|-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| SQL Injection   | 100% parameterized queries via Prisma ORM. No raw SQL concatenation.                                 | Prisma Client — all queries are parameterized by design             |
+| NoSQL Injection | Not applicable (no MongoDB). Redis commands use typed methods, not string concatenation.             | ``redis.get(key)`` — typed, no injection surface                        |
+| XSS (Stored)    | All string fields validated with Zod. No HTML rendering in API responses.                            | Zod schemas enforce format constraints                              |
+| XSS (Reflected) | Helmet CSP headers block inline scripts. No user input echoed unsanitized.                           | ``helmet({ contentSecurityPolicy: ... })``                              |
+| CSRF            | SameSite=Strict cookies. JWT in Authorization header (not cookie-based for API calls).               | Cookie configuration in auth.controller.ts                          |
+| Path Traversal  | UUID validation on all path parameters. S3 keys use UUIDs, not user-supplied paths.                  | Zod UUID schemas                                                    |
+| ReDoS           | Zod regex patterns are tested for catastrophic backtracking. Input lengths capped.                   | Pre-commit hook runs `npx regexploit` on all schemas                |
+
+- **10. Audit logging**
+
+All security-sensitive operations are logged with structured JSON, including userId, action, resource, IP address, and correlation ID.
+```
+// 📁 apps/api/src/common/interceptors/audit.interceptor.ts
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Observable, tap } from 'rxjs';
+import { Logger } from '@nestjs/common';
+
+@Injectable()
+export class AuditInterceptor implements NestInterceptor {
+  private readonly auditLogger = new Logger('Audit');
+
+  private readonly SENSITIVE_ACTIONS = [
+    'login', 'register', 'logout', 'refresh',
+    'redeemReward', 'validateSession',
+    'updateProfile', 'deleteAccount',
+  ];
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const request = context.switchToHttp().getRequest();
+    const handlerName = context.getHandler().name;
+    const controllerName = context.getClass().name;
+
+    // Only audit sensitive actions
+    const isSensitive = this.SENSITIVE_ACTIONS.some(
+      action => handlerName.toLowerCase().includes(action.toLowerCase()),
+    );
+
+    if (!isSensitive) return next.handle();
+
+    const auditEntry = {
+      action: `${controllerName}.${handlerName}`,
+      userId: request.user?.sub ?? 'anonymous',
+      userRole: request.user?.role ?? 'anonymous',
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+      correlationId: request.headers['x-correlation-id'],
+      method: request.method,
+      path: request.url,
+      timestamp: new Date().toISOString(),
+    };
+
+    return next.handle().pipe(
+      tap({
+        next: (response) => {
+          this.auditLogger.log({
+            ...auditEntry,
+            status: 'SUCCESS',
+            responseStatus: 200,
+          });
+        },
+        error: (error) => {
+          this.auditLogger.warn({
+            ...auditEntry,
+            status: 'FAILURE',
+            responseStatus: error.status ?? 500,
+            errorCode: error.response?.errorCode,
+          });
+        },
+      }),
+    );
+  }
+}
+```
+  **Points transaction audit trail**:
+  ```
+// 📁 apps/api/src/modules/checkout/infrastructure/repositories/prisma-points.repository.ts
+// The points_transactions table is append-only — an immutable audit trail
+@Injectable()
+export class PrismaPointsRepository implements IPointsRepository {
+  async creditPoints(
+    userId: string,
+    points: PointsAwarded[],
+    sessionId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const client = tx ?? this.prisma;
+    const total = points.reduce((sum, p) => sum + p.totalPoints, 0);
+
+    await client.pointsTransaction.create({
+      data: {
+        userId,
+        sessionId,
+        delta: total,
+        reason: 'PURCHASE',
+        metadata: {
+          breakdown: points.map(p => ({
+            strategyType: p.strategyType,
+            points: p.totalPoints,
+            baseValue: p.baseValue,
+          })),
+        },
+      },
+    });
+  }
+
+  // Points balance is always derived from transactions — never directly set
+  async getBalance(userId: string): Promise<number> {
+    const result = await this.prisma.pointsTransaction.aggregate({
+      where: { userId },
+      _sum: { delta: true },
+    });
+    return result._sum.delta ?? 0;
+  }
+}
+  ```
+
+- **11.PII Handling**:
+| Data Element     | Classification        | Handling                                                                                                      |
+|------------------|-----------------------|---------------------------------------------------------------------------------------------------------------|
+| ``email``            | PII                   | Stored encrypted at rest (provider-managed AES-256). Masked in logs: ``j***@example.com``.                        |
+| ``password_hash``    | Sensitive             | bcrypt hash with cost factor 12. Never logged. Never included in API responses.                               |
+| ``fullName``         | PII                   | Stored in database. Masked in logs.                                                                           |
+| ``phone``            | PII                   | Stored encrypted at rest. Optional field.                                                                     |
+| ``pushToken``        | Sensitive             | Stored encrypted. Allows targeting. Deleted on app uninstall.                                                 |
+| Analytics data   | Aggregated/Anonymized | Individual user data never exposed to B2B partners. Minimum 50 users per segment before data is shown.        |
