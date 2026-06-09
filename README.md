@@ -3954,4 +3954,360 @@ export class PrismaPointsRepository implements IPointsRepository {
 
 
 ---
+# 2.6 Observability — SISTRA-TEC
 
+> **Reference stack:** React 19 · Supabase (PostgreSQL + Storage + Auth + RPC) · pnpm · Create React App 5 · `@supabase/supabase-js ^2.107`
+
+---
+
+## Tool summary by concern
+
+| Concern | Tool / Approach |
+|---|---|
+| **Structured Logging** | Custom wrapper (`apps/sistra-tec/src/utils/logger.js`) — JSON with `requestId`, `userId`, `severity`, `screen`; replaceable by Sentry Breadcrumbs in production |
+| **Monitoring** | Supabase Dashboard (query latency, RPC errors, storage usage); Web Vitals via `reportWebVitals.js` already bundled in the project |
+| **Distributed Tracing** | Correlation IDs propagated on every Supabase RPC call; forward-compatible with OpenTelemetry |
+| **Alerting** | Supabase Alerts (UI) for database errors and quota thresholds; optional e-mail/webhook for P1 incidents |
+| **Health Checks** | `checkSupabaseHealth()` utility (`apps/sistra-tec/src/utils/healthCheck.js`) that verifies Supabase connectivity; callable from CI/CD pipelines |
+| **Error Tracking** | Sentry SDK (`@sentry/react`) for unhandled exceptions; `console.error` wrapped in the logger to capture service-layer errors |
+
+---
+
+## 1. Structured Logging
+
+### Design rationale
+
+SISTRA-TEC is a pure React frontend with no owned Node.js server, so structured logging lives on the client. A thin wrapper emits JSON to the console in development and can be swapped for a Sentry/LogRocket transport in production without touching any call sites.
+
+### Proposed implementation
+
+**`apps/sistra-tec/src/utils/logger.js`**
+```js
+// apps/sistra-tec/src/utils/logger.js
+const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
+const MIN_LEVEL = process.env.NODE_ENV === 'production' ? 1 : 0;
+
+let _requestId = null;
+let _userId    = null;
+
+export const setLogContext = ({ requestId, userId }) => {
+  _requestId = requestId;
+  _userId    = userId;
+};
+
+const emit = (severity, message, extra = {}) => {
+  if (LOG_LEVELS[severity] < MIN_LEVEL) return;
+  const entry = {
+    timestamp:  new Date().toISOString(),
+    severity,
+    message,
+    requestId:  _requestId,
+    userId:     _userId,
+    ...extra,
+  };
+  // Pretty-print in development; flat JSON in production for log ingestion
+  if (process.env.NODE_ENV === 'development') {
+    console[severity === 'error' ? 'error' : 'log'](entry);
+  } else {
+    console.log(JSON.stringify(entry));
+  }
+};
+
+export const logger = {
+  debug: (msg, extra) => emit('debug', msg, extra),
+  info:  (msg, extra) => emit('info',  msg, extra),
+  warn:  (msg, extra) => emit('warn',  msg, extra),
+  error: (msg, extra) => emit('error', msg, extra),
+};
+```
+
+### Usage in existing services
+
+`apps/sistra-tec/src/services/AddDonation.js` currently has a bare `console.error` in its catch block. Replace it with:
+
+```js
+// apps/sistra-tec/src/services/AddDonation.js  (updated catch block)
+import { logger } from '../utils/logger';
+
+} catch (error) {
+  logger.error('AddDonation RPC failed', {
+    service:      'AddDonation',
+    donorId:      loggedInUserId,
+    supabaseCode: error?.code,
+    supabaseMsg:  error?.message,
+  });
+  return null;
+}
+```
+
+The same pattern applies to every future service that calls `supabase.rpc(...)` or `supabase.from(...).select(...)`.
+
+---
+
+## 2. Monitoring
+
+### Web Vitals (already wired)
+
+The project ships with `apps/sistra-tec/src/reportWebVitals.js` from CRA. To forward metrics to a collector:
+
+```js
+// apps/sistra-tec/src/index.jsx  (snippet)
+import reportWebVitals from './reportWebVitals';
+
+// Development: print to console
+reportWebVitals(console.log);
+
+// Production: send to a Supabase Edge Function or custom endpoint
+// reportWebVitals(({ name, value, id }) =>
+//   fetch('/api/vitals', { method: 'POST', body: JSON.stringify({ name, value, id }) })
+// );
+```
+
+Captured metrics: CLS, FCP, FID, LCP, TTFB.
+
+### Supabase Dashboard
+
+The following metrics are available without additional instrumentation:
+
+| Metric | Dashboard path |
+|---|---|
+| SQL query latency | Database → Query Performance |
+| RPC errors | Database → Logs → Postgres Logs |
+| Storage usage | Storage → Bucket stats |
+| Auth failures | Authentication → Logs |
+| API request quota | Settings → Usage |
+
+---
+
+## 3. Distributed Tracing
+
+### Correlation IDs on RPC calls
+
+Although SISTRA-TEC has no owned backend, each Supabase RPC call can carry a `requestId` to correlate client-side logs with Postgres logs in the dashboard.
+
+**`apps/sistra-tec/src/utils/tracing.js`**
+```js
+// apps/sistra-tec/src/utils/tracing.js
+import { logger, setLogContext } from './logger';
+
+export const generateRequestId = () =>
+  `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+/**
+ * Wraps a supabase.rpc() call with automatic tracing.
+ * @param {object} supabase  Supabase client instance
+ * @param {string} fnName    RPC function name
+ * @param {object} params    RPC parameters
+ * @param {string} userId    Authenticated user ID
+ */
+export const tracedRpc = async (supabase, fnName, params, userId) => {
+  const requestId = generateRequestId();
+  setLogContext({ requestId, userId });
+
+  const start = performance.now();
+  const result = await supabase.rpc(fnName, params);
+  const duration = Math.round(performance.now() - start);
+
+  if (result.error) {
+    logger.error(`RPC ${fnName} failed`, { requestId, duration, error: result.error });
+  } else {
+    logger.info(`RPC ${fnName} ok`, { requestId, duration });
+  }
+
+  return result;
+};
+```
+
+Usage in `apps/sistra-tec/src/services/AddDonation.js`:
+```js
+// Replaces: await supabase.rpc("AddDonation", { ... })
+const { data: trackingId, error } = await tracedRpc(
+  supabase,
+  'AddDonation',
+  { p_donor_id: userId, ... },
+  userId
+);
+```
+
+### OpenTelemetry — forward compatibility
+
+If the project migrates to an owned backend (Next.js API Routes or an Express proxy), the `requestId` already being propagated makes OpenTelemetry adoption straightforward:
+
+```js
+// Future instrumentation — no structural changes needed
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { WebTracerProvider }  from '@opentelemetry/sdk-trace-web';
+```
+
+---
+
+## 4. Alerting
+
+### Supabase Alerts (recommended configuration)
+
+In the Supabase dashboard → Settings → Alerts, enable:
+
+| Alert | Suggested threshold | Channel |
+|---|---|---|
+| Postgres CPU > 80% | Sustained 5 minutes | Team e-mail |
+| Storage > 80% quota | — | Team e-mail |
+| Auth failures > 20/min | — | Team e-mail |
+| RPC error rate > 5% | 5-minute window | E-mail / Webhook |
+
+### Incident classification
+
+| Priority | SISTRA-TEC example | Action |
+|---|---|---|
+| **P1** | `AddDonation` RPC down, Storage inaccessible | Immediate alert + rollback |
+| **P2** | Mock data served in production, latency > 3 s | Team notification within 1 h |
+| **P3** | LCP Web Vital degraded | Backlog issue |
+
+---
+
+## 5. Health Checks
+
+### Supabase connectivity check
+
+**`apps/sistra-tec/src/utils/healthCheck.js`**
+```js
+// apps/sistra-tec/src/utils/healthCheck.js
+import { supabase } from '../supabaseClient';
+
+/**
+ * Verifies that the Supabase connection is live.
+ * Returns { status: 'ok' | 'degraded' | 'down', latencyMs, detail }
+ */
+export const checkSupabaseHealth = async () => {
+  const start = performance.now();
+  try {
+    // Minimal query against a public table (no auth required)
+    const { error } = await supabase
+      .from('beneficiaries')
+      .select('id')
+      .limit(1);
+
+    const latencyMs = Math.round(performance.now() - start);
+
+    if (error) {
+      return { status: 'degraded', latencyMs, detail: error.message };
+    }
+    return { status: 'ok', latencyMs };
+
+  } catch (err) {
+    return { status: 'down', latencyMs: null, detail: err.message };
+  }
+};
+```
+
+### Integration in App init (recommended)
+
+```js
+// apps/sistra-tec/src/App.jsx  — run before first route render
+useEffect(() => {
+  checkSupabaseHealth().then(({ status, latencyMs }) => {
+    logger.info('Supabase health check', { status, latencyMs });
+    if (status === 'down') {
+      // Show service-unavailable banner
+    }
+  });
+}, []);
+```
+
+### CI/CD health check step
+
+Add a post-deploy step to the GitHub Actions pipeline:
+
+```yaml
+# apps/sistra-tec/.github/workflows/deploy.yml  (snippet)
+- name: Health check
+  run: |
+    STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+      "https://<project>.supabase.co/rest/v1/beneficiaries?select=id&limit=1" \
+      -H "apikey: $SUPABASE_ANON_KEY")
+    if [ "$STATUS" != "200" ]; then
+      echo "Health check failed with status $STATUS" && exit 1
+    fi
+```
+
+---
+
+## 6. Error Tracking
+
+### Sentry (recommended for production)
+
+Install:
+```bash
+pnpm add @sentry/react
+```
+
+Initialize in `apps/sistra-tec/src/index.jsx`:
+```js
+// apps/sistra-tec/src/index.jsx
+import * as Sentry from '@sentry/react';
+
+Sentry.init({
+  dsn:         process.env.REACT_APP_SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  release:     process.env.REACT_APP_VERSION,  // ties errors to deploy releases
+  enabled:     process.env.NODE_ENV === 'production',
+  integrations: [
+    Sentry.browserTracingIntegration(),
+  ],
+  tracesSampleRate: 0.1,  // capture 10% of sessions
+});
+```
+
+Manual capture in critical services (`apps/sistra-tec/src/services/AddDonation.js`):
+```js
+import * as Sentry from '@sentry/react';
+
+} catch (error) {
+  Sentry.captureException(error, {
+    tags:  { service: 'AddDonation' },
+    extra: { donorId: loggedInUserId, donationData },
+  });
+  logger.error('AddDonation RPC failed', { error });
+  return null;
+}
+```
+
+### Required environment variables
+
+Add to `apps/sistra-tec/.env.local` (and to your production environment — Vercel / Netlify):
+
+```
+# apps/sistra-tec/.env.local
+REACT_APP_SUPABASE_URL=https://<project>.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=<anon-key>
+REACT_APP_SENTRY_DSN=https://<hash>@o<org>.ingest.sentry.io/<project>
+REACT_APP_VERSION=0.1.0
+```
+
+> ⚠️ Never commit `apps/sistra-tec/.env.local`. It is already covered by the project's existing `.gitignore`.
+
+---
+
+## 7. Current state vs. target state
+
+| Area | Current state (this branch) | Target state |
+|---|---|---|
+| Logging | Bare `console.error` in `AddDonation.js` | `logger.error(...)` with JSON context in all services |
+| Monitoring | Manual Supabase Dashboard | + Web Vitals forwarded to endpoint; automated alerts configured |
+| Tracing | No correlation IDs | `tracedRpc()` wrapping all Supabase calls |
+| Health checks | Not implemented | `checkSupabaseHealth()` in App init + CI/CD step |
+| Error tracking | Not implemented | Sentry enabled in production |
+| Mock services | `AdminUsers`, `AdminBeneficiaries`, `AdminDonations` use `localStorage` | No network instrumentation needed until migrated to Supabase |
+
+---
+
+## File reference map
+
+| File | Role in observability |
+|---|---|
+| `apps/sistra-tec/src/supabaseClient.js` | Central Supabase client — wrap with `tracedRpc` |
+| `apps/sistra-tec/src/services/AddDonation.js` | Only live Supabase service; primary target for logging and tracing |
+| `apps/sistra-tec/src/services/AdminDonations.js` | Mock with migration comments; logging applies when real block is uncommented |
+| `apps/sistra-tec/src/reportWebVitals.js` | Web Vitals hook already included; only needs a transport configured |
+| `apps/sistra-tec/src/utils/reportUtils.js` | Downloadable report generation; no additional observability required |
+| `supabase/GetAllDonations.sql` | Admin RPC; target for health check and tracing once activated |
+| `apps/sistra-tec/.env.local` (not committed) | `REACT_APP_SUPABASE_URL`, `REACT_APP_SUPABASE_ANON_KEY`, `REACT_APP_SENTRY_DSN` |
