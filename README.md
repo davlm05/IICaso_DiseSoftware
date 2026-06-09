@@ -48,10 +48,11 @@ export default [
     },
   },
 ];
----
 ```
+
 **Type-safe contract sharing with the frontend:** The monorepo structure (`packages/shared-types/`) exports TypeScript interfaces and Zod schemas consumed by both `apps/api` and the React Native frontend. Changing a DTO breaks both sides at compile time, eliminating contract drift. See `packages/shared-types/src/checkout.types.ts`:
----
+
+
 ```
 // packages/shared-types/src/checkout.types.ts
 // This file is imported by BOTH NestJS and React Native
