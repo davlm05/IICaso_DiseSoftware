@@ -1406,3 +1406,1436 @@ classDiagram
     CheckoutService ..> ShoppingSession : mutates
     CheckoutCompletedEvent ..> BullMqEventPublisher : sent via
 ```
+
+## 2.3. Business Logic & Design Patterns
+This section documents every design pattern employed in the SmartCart backend, following the Gang of Four classification where applicable. Each pattern includes its technical implementation, participating classes, activation mechanism, and the specific business problem it solves. All code paths reference the monorepo structure established in Section 2.2.
+
+### Pattern Catalog
+1. **Repository Pattern**
+| Aspect              | Detail                                                                                                                                                                                                 |
+|---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Classification      | Structural (Domain-Driven Design)                                                                                                                                                                      |
+| Responsibility      | Abstract database access behind an interface so the domain and application layers never depend on an ORM or raw SQL                                                                                     |
+| Classes Participating | `ISessionRepository` (interface), `PrismaSessionRepository` (concrete), `ShoppingSession` (domain entity), `SessionMapper` (row ↔ entity translator)                                                           |
+| Activation          | NestJS DI container injects `PrismaSessionRepository` wherever `ISessionRepository` is requested, as configured in `checkout.module.ts`                                                                       |
+| Interaction         | `CheckoutService` → `ISessionRepository.findById()` → `PrismaSessionRepository` → `PrismaService` → PostgreSQL. The service never sees Prisma types.                                                            |
+| Advantages          | Swap PostgreSQL for DynamoDB by writing a new implementation of the interface. Mock the interface in unit tests without a database. Centralize query logic (e.g., .`findById()` always includes items relation). |
+
+**Implementation**:
+```
+// 📁 apps/api/src/modules/checkout/application/interfaces/session-repository.interface.ts
+// PORT: defines what the application layer needs
+
+import { ShoppingSession } from '../../domain/entities/shopping-session.entity';
+import { Prisma } from '@prisma/client';
+
+export interface ISessionRepository {
+  findById(id: string, tx?: Prisma.TransactionClient): Promise<ShoppingSession | null>;
+  findActiveByUserId(userId: string): Promise<ShoppingSession | null>;
+  save(session: ShoppingSession, tx?: Prisma.TransactionClient): Promise<void>;
+  markCompleted(id: string, tx?: Prisma.TransactionClient): Promise<void>;
+  markExpired(id: string): Promise<void>;
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts
+// ADAPTER: concrete Prisma implementation
+
+@Injectable()
+export class PrismaSessionRepository implements ISessionRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findById(id: string, tx?: Prisma.TransactionClient): Promise<ShoppingSession | null> {
+    const client = tx ?? this.prisma;
+    const row = await client.shoppingSession.findUnique({
+      where: { id },
+      include: { items: { include: { product: true } } },
+    });
+    if (!row) return null;
+
+    // Map persistence row → domain entity (pure transformation)
+    return new ShoppingSession(
+      row.id,
+      row.userId,
+      row.storeId,
+      row.createdAt,
+      row.items.map(item => new SessionItem(
+        item.id,
+        item.product.barcode,
+        1, // quantity defaulted; extend schema for multi-quantity
+        item.product.pointsConfig as PointsConfig,
+        item.product.isSponsored,
+      )),
+      row.status as SessionStatus,
+    );
+  }
+
+  async findActiveByUserId(userId: string): Promise<ShoppingSession | null> {
+    const row = await this.prisma.shoppingSession.findFirst({
+      where: { userId, status: { in: ['ACTIVE', 'PENDING_CHECKOUT'] } },
+      include: { items: { include: { product: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!row) return null;
+    return this.toDomain(row);
+  }
+
+  async save(session: ShoppingSession, tx?: Prisma.TransactionClient): Promise<void> {
+    const client = tx ?? this.prisma;
+    await client.shoppingSession.upsert({
+      where: { id: session.id },
+      create: {
+        id: session.id,
+        userId: session.userId,
+        storeId: session.storeId,
+        status: session.status,
+        items: {
+          create: session.items.map(item => ({
+            productId: item.productId,
+            pointsAwarded: item.pointsValue,
+          })),
+        },
+      },
+      update: {
+        status: session.status,
+        items: {
+          deleteMany: {},
+          create: session.items.map(item => ({
+            productId: item.productId,
+            pointsAwarded: item.pointsValue,
+          })),
+        },
+      },
+    });
+  }
+
+  async markCompleted(id: string, tx?: Prisma.TransactionClient): Promise<void> {
+    const client = tx ?? this.prisma;
+    await client.shoppingSession.update({
+      where: { id },
+      data: { status: 'COMPLETED', completedAt: new Date() },
+    });
+  }
+
+  async markExpired(id: string): Promise<void> {
+    await this.prisma.shoppingSession.update({
+      where: { id },
+      data: { status: 'EXPIRED' },
+    });
+  }
+
+  private toDomain(row: any): ShoppingSession {
+    return new ShoppingSession(
+      row.id, row.userId, row.storeId, row.createdAt,
+      row.items.map((i: any) => new SessionItem(
+        i.id, i.product.barcode, 1,
+        i.product.pointsConfig as PointsConfig,
+        i.product.isSponsored,
+      )),
+      row.status as SessionStatus,
+    );
+  }
+}
+```
+**Unit test example**:
+```
+// 📁 apps/api/src/modules/checkout/application/services/checkout.service.spec.ts
+// Repository is mocked — no database needed for business logic tests
+
+describe('CheckoutService', () => {
+  let service: CheckoutService;
+  let mockSessionRepo: jest.Mocked<ISessionRepository>;
+
+  beforeEach(async () => {
+    mockSessionRepo = {
+      findById: jest.fn(),
+      findActiveByUserId: jest.fn(),
+      save: jest.fn(),
+      markCompleted: jest.fn(),
+      markExpired: jest.fn(),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        CheckoutService,
+        { provide: 'ISessionRepository', useValue: mockSessionRepo },
+        { provide: 'IEventPublisher', useValue: { publish: jest.fn() } },
+        { provide: 'IQrSigner', useValue: { sign: jest.fn(), verify: jest.fn() } },
+        { provide: 'IPointsService', useValue: { calculatePoints: jest.fn(), creditPoints: jest.fn() } },
+      ],
+    }).compile();
+
+    service = module.get(CheckoutService);
+  });
+
+  it('should throw SessionNotActiveError when adding item to completed session', async () => {
+    const completedSession = new ShoppingSession(
+      's1', 'u1', 'st1', new Date(), [], SessionStatus.COMPLETED,
+    );
+    mockSessionRepo.findById.mockResolvedValue(completedSession);
+
+    await expect(
+      service.addItem('s1', '7861234567890'),
+    ).rejects.toThrow(SessionNotActiveError);
+  });
+});
+```
+
+2. **Service layer pattern**
+| Aspect               | Detail                                                                                                                                                                                                 |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Classification       | Behavioral (Domain-Driven Design)                                                                                                                                                                      |
+| Responsibility       | Orchestrate use cases by coordinating domain entities, repositories, and infrastructure services. Each public method represents a single business operation.                                             |
+| Classes Participating| CheckoutService, PointsService, QrSigner (injected), ISessionRepository (injected), IEventPublisher (injected)                                                                                          |
+| Activation           | Called directly by Presentation layer (controllers) or scheduled jobs (@Cron)                                                                                                                          |
+| Interaction          | Controller → CheckoutService.addItem() → ISessionRepository.findById() → ShoppingSession.addItem() (domain method) → ISessionRepository.save()                                                          |
+| Advantages           | Business logic is testable without HTTP. Transaction boundaries are explicit. Multiple controllers can reuse the same service method.                                                                   |
+
+**Implementation**:
+```
+// 📁 apps/api/src/modules/checkout/application/services/checkout.service.ts
+
+@Injectable()
+export class CheckoutService {
+  constructor(
+    @Inject('ISessionRepository') private readonly sessionRepo: ISessionRepository,
+    @Inject('IEventPublisher') private readonly eventPublisher: IEventPublisher,
+    @Inject('IQrSigner') private readonly qrSigner: IQrSigner,
+    @Inject('IPointsService') private readonly pointsService: IPointsService,
+    @Inject('ICatalogService') private readonly catalogService: ICatalogService,
+    private readonly prisma: PrismaService, // For $transaction host
+  ) {}
+
+  /**
+   * Creates a new shopping session for a user in a store.
+   * Business rule: Only one ACTIVE session per user at a time.
+   */
+  async createSession(userId: string, storeId: string): Promise<ShoppingSession> {
+    // Check for existing active session
+    const existing = await this.sessionRepo.findActiveByUserId(userId);
+    if (existing) {
+      throw new DuplicateSessionError(userId, existing.id);
+    }
+
+    const session = new ShoppingSession(
+      crypto.randomUUID(),
+      userId,
+      storeId,
+      new Date(),
+      [],
+      SessionStatus.ACTIVE,
+    );
+
+    await this.sessionRepo.save(session);
+    return session;
+  }
+
+  /**
+   * Adds a scanned product to an active session.
+   * Business rule: Product must exist in catalog. Session must be ACTIVE.
+   */
+  async addItem(sessionId: string, barcode: string): Promise<AddItemResult> {
+    const session = await this.sessionRepo.findById(sessionId);
+    if (!session) throw new SessionNotFoundError(sessionId);
+
+    const product = await this.catalogService.findByBarcode(barcode);
+    if (!product) throw new ProductNotFoundError(barcode);
+
+    const item = new SessionItem(
+      crypto.randomUUID(),
+      barcode,
+      1,
+      product.pointsConfig,
+      product.isSponsored,
+    );
+
+    session.addItem(item); // Domain method — throws if session not ACTIVE
+    await this.sessionRepo.save(session);
+
+    return {
+      item: { productId: item.productId, barcode: item.barcode, pointsValue: item.pointsValue },
+      session: { totalPendingItems: session.itemCount, totalPendingPoints: session.totalPoints },
+    };
+  }
+
+  /**
+   * Generates a signed QR token for checkout.
+   * Business rule: Session must be ACTIVE with at least one item.
+   */
+  async generateQr(sessionId: string): Promise<QrTicket> {
+    const session = await this.sessionRepo.findById(sessionId);
+    if (!session) throw new SessionNotFoundError(sessionId);
+
+    session.requestCheckout(); // Domain method — validates state, transitions to PENDING_CHECKOUT
+    await this.sessionRepo.save(session);
+
+    const token = await this.qrSigner.sign({
+      sessionId: session.id,
+      userId: session.userId,
+      itemHash: session.computeItemHash(),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5-minute validity
+    });
+
+    return new QrTicket(token, new Date(Date.now() + 5 * 60 * 1000));
+  }
+}
+```
+3. **Factory pattern**
+| Aspect               | Detail                                                                                                                                                                                                 |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Classification       | Creational (GoF)                                                                                                                                                                                       |
+| Responsibility       | Encapsulate complex object creation that involves multiple steps, default values, or validation                                                                                                         |
+| Classes Participating| SessionFactory (factory), ShoppingSession (product), QrTicketFactory (factory), QrTicket (product)                                                                                                      |
+| Activation           | Called by CheckoutService.createSession() or CheckoutService.generateQr()                                                                                                                              |
+| Interaction          | Service → Factory.create() → returns fully-constructed entity with all invariants satisfied                                                                                                             |
+| Advantages           | Domain entities have no public constructors with 7+ parameters. Creation logic is testable in isolation. Default values (e.g., initial status, timestamps) are centralized.                             |
+
+**Implementation**
+```
+// 📁 apps/api/src/modules/checkout/domain/factories/session.factory.ts
+
+export class SessionFactory {
+  /**
+   * Creates a new ShoppingSession with guaranteed invariants:
+   * - Always starts in ACTIVE status
+   * - Always has a creation timestamp
+   * - ID is generated, not passed by caller
+   */
+  static create(userId: string, storeId: string): ShoppingSession {
+    return new ShoppingSession(
+      crypto.randomUUID(),  // id
+      userId,                // userId
+      storeId,               // storeId
+      new Date(),            // createdAt — factory controls timestamp
+      [],                    // items — always empty
+      SessionStatus.ACTIVE,  // status — factory enforces initial state
+    );
+  }
+
+  /**
+   * Reconstitutes a session from persistence.
+   * Used only by the repository mapper — not by application code.
+   */
+  static reconstitute(
+    id: string,
+    userId: string,
+    storeId: string,
+    createdAt: Date,
+    items: SessionItem[],
+    status: SessionStatus,
+  ): ShoppingSession {
+    return new ShoppingSession(id, userId, storeId, createdAt, items, status);
+  }
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts
+
+export class QrTicketFactory {
+  /**
+   * Creates a QrTicket with embedded expiration logic.
+   * The factory enforces that tokens are never valid for more than 5 minutes.
+   */
+  static create(
+    sessionId: string,
+    userId: string,
+    itemHash: string,
+    validityMinutes: number = 5,
+  ): { payload: QrPayload; expiresAt: Date } {
+    if (validityMinutes > 5) {
+      throw new QrValidityExceededError(validityMinutes);
+    }
+
+    const expiresAt = new Date(Date.now() + validityMinutes * 60 * 1000);
+
+    return {
+      payload: {
+        sessionId,
+        userId,
+        itemHash,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(expiresAt.getTime() / 1000),
+      },
+      expiresAt,
+    };
+  }
+}
+```
+
+**Usage in service**:
+```
+// 📁 apps/api/src/modules/checkout/application/services/checkout.service.ts (extract)
+
+async createSession(userId: string, storeId: string): Promise<ShoppingSession> {
+  // Factory encapsulates creation rules — service doesn't set defaults manually
+  const session = SessionFactory.create(userId, storeId);
+  await this.sessionRepo.save(session);
+  return session;
+}
+```
+
+4. **Strategy Pattern**
+| Aspect               | Detail                                                                                                                                                                                                 |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Classification       | Behavioral (GoF)                                                                                                                                                                                       |
+| Responsibility       | Allow the points calculation algorithm to vary independently from the checkout flow that uses it                                                                                                       |
+| Classes Participating| IPointsCalculationStrategy (interface), FixedPointsStrategy, SpendMultiplierStrategy, VolumeTierStrategy, PointsStrategyResolver (context)                                                              |
+| Activation           | PointsService.calculatePoints() calls PointsStrategyResolver.resolve(product.pointsConfig.type) which returns the correct strategy instance                                                             |
+| Interaction          | CheckoutService → PointsService.calculatePoints() → PointsStrategyResolver.resolve(type) → Strategy.calculate(item)                                                                                      |
+| Advantages           | New point schemes (e.g., "double points on weekends", "bonus for premium segment") can be added without modifying CheckoutService or PointsService. Strategies are unit-testable in isolation.          |
+
+**Implementation**:
+```
+// 📁 apps/api/src/modules/checkout/domain/strategies/points-calculation-strategy.interface.ts
+
+import { PointsConfig } from '../value-objects/points-config.vo';
+import { PointsAwarded } from '../value-objects/points-awarded.vo';
+
+export interface IPointsCalculationStrategy {
+  readonly strategyType: string;
+  calculate(
+    itemPrice: number,
+    quantity: number,
+    config: PointsConfig,
+    context?: PointsCalculationContext,
+  ): PointsAwarded;
+}
+
+export interface PointsCalculationContext {
+  userId?: string;
+  sessionTotal?: number;
+  timestamp?: Date;
+  userSegment?: string;
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/domain/strategies/fixed-points.strategy.ts
+
+export class FixedPointsStrategy implements IPointsCalculationStrategy {
+  readonly strategyType = 'FIXED_PER_UNIT';
+
+  calculate(
+    _itemPrice: number,
+    quantity: number,
+    config: PointsConfig,
+  ): PointsAwarded {
+    // config.value is points per unit (e.g., 50 points per item)
+    const totalPoints = (config.value as number) * quantity;
+
+    return new PointsAwarded(totalPoints, this.strategyType, config.value as number);
+  }
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/domain/strategies/spend-multiplier.strategy.ts
+
+export class SpendMultiplierStrategy implements IPointsCalculationStrategy {
+  readonly strategyType = 'SPEND_MULTIPLIER';
+
+  calculate(
+    itemPrice: number,
+    quantity: number,
+    config: PointsConfig,
+  ): PointsAwarded {
+    // config.value is the multiplier (e.g., 2.0 = 2 points per dollar spent)
+    const subtotal = itemPrice * quantity;
+    const multiplier = config.value as number;
+    const totalPoints = Math.round(subtotal * multiplier);
+
+    return new PointsAwarded(totalPoints, this.strategyType, multiplier);
+  }
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/domain/strategies/volume-tier.strategy.ts
+
+export class VolumeTierStrategy implements IPointsCalculationStrategy {
+  readonly strategyType = 'VOLUME_TIER';
+
+  calculate(
+    _itemPrice: number,
+    quantity: number,
+    config: PointsConfig,
+  ): PointsAwarded {
+    // config.tiers: [{ minQty: 1, maxQty: 5, pointsPerUnit: 10 }, { minQty: 6, pointsPerUnit: 20 }]
+    const tiers = config.tiers as VolumeTier[];
+    const tier = tiers
+      .sort((a, b) => b.minQty - a.minQty)
+      .find(t => quantity >= t.minQty);
+
+    if (!tier) throw new NoMatchingTierError(quantity, tiers);
+    const totalPoints = quantity * tier.pointsPerUnit;
+
+    return new PointsAwarded(totalPoints, this.strategyType, tier.pointsPerUnit);
+  }
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/application/services/points-strategy-resolver.ts
+// CONTEXT: selects the correct strategy based on product configuration
+
+@Injectable()
+export class PointsStrategyResolver {
+  private readonly strategies: Map<string, IPointsCalculationStrategy>;
+
+  constructor() {
+    this.strategies = new Map();
+    // Register all available strategies
+    this.register(new FixedPointsStrategy());
+    this.register(new SpendMultiplierStrategy());
+    this.register(new VolumeTierStrategy());
+  }
+
+  register(strategy: IPointsCalculationStrategy): void {
+    this.strategies.set(strategy.strategyType, strategy);
+  }
+
+  resolve(strategyType: string): IPointsCalculationStrategy {
+    const strategy = this.strategies.get(strategyType);
+    if (!strategy) throw new UnknownStrategyError(strategyType);
+    return strategy;
+  }
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/application/services/points.service.ts
+// Orchestrates strategy execution with per-item context
+
+@Injectable()
+export class PointsService implements IPointsService {
+  constructor(private readonly strategyResolver: PointsStrategyResolver) {}
+
+  calculatePoints(
+    items: SessionItem[],
+    context?: PointsCalculationContext,
+  ): PointsAwarded[] {
+    return items
+      .filter(item => item.isSponsored) // Only sponsored products earn points
+      .map(item => {
+        const strategy = this.strategyResolver.resolve(item.pointsConfig.type);
+        return strategy.calculate(
+          item.price ?? 0,
+          item.quantity,
+          item.pointsConfig,
+          context,
+        );
+      });
+  }
+
+  async creditPoints(
+    userId: string,
+    points: PointsAwarded[],
+    sessionId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const total = points.reduce((sum, p) => sum + p.totalPoints, 0);
+    const client = tx ?? this.prisma;
+
+    await client.pointsAccount.upsert({
+      where: { userId },
+      create: { userId, balance: total },
+      update: { balance: { increment: total }, lastUpdated: new Date() },
+    });
+
+    await client.pointsTransaction.create({
+      data: {
+        userId,
+        sessionId,
+        delta: total,
+        reason: 'PURCHASE',
+      },
+    });
+  }
+}
+```
+**Adding a new straategy (extension without modification)**:
+```
+// 📁 apps/api/src/modules/checkout/domain/strategies/weekend-bonus.strategy.ts
+// New strategy added post-launch — no existing code modified
+
+export class WeekendBonusStrategy implements IPointsCalculationStrategy {
+  readonly strategyType = 'WEEKEND_BONUS';
+
+  calculate(
+    itemPrice: number,
+    quantity: number,
+    config: PointsConfig,
+    context?: PointsCalculationContext,
+  ): PointsAwarded {
+    const basePoints = (config.basePoints as number) * quantity;
+    const isWeekend = context?.timestamp
+      ? [0, 6].includes(context.timestamp.getDay())
+      : false;
+    const multiplier = isWeekend ? (config.weekendMultiplier as number) : 1;
+    const totalPoints = Math.round(basePoints * multiplier);
+
+    return new PointsAwarded(totalPoints, this.strategyType, multiplier);
+  }
+}
+```
+```
+// Register in PointsStrategyResolver constructor:
+this.register(new WeekendBonusStrategy());
+```
+
+5. **Observer pattern**
+| Aspect               | Detail                                                                                                                                                                                                 |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Classification       | Behavioral (GoF)                                                                                                                                                                                       |
+| Responsibility       | Decouple side effects (push notifications, analytics enqueueing) from the core transaction                                                                                                             |
+| Classes Participating| IEventPublisher (interface), BullMqEventPublisher (concrete), CheckoutCompletedEvent (domain event), PushNotificationHandler (subscriber), ProfileUpdateHandler (subscriber)                             |
+| Activation           | CheckoutService.validateSession() publishes CheckoutCompletedEvent AFTER the Prisma $transaction commits successfully                                                                                   |
+| Interaction          | CheckoutService → IEventPublisher.publish(event) → BullMqEventPublisher → BullMQ Queue → Worker picks up → PushNotificationHandler / ProfileUpdateHandler                                                |
+| Advantages           | The POS validation response is not delayed by notification sending or analytics aggregation. New side effects can be added by writing a new handler without modifying CheckoutService.                   |
+
+**Implementation**:
+```
+// 📁 apps/api/src/modules/checkout/domain/events/checkout-completed.event.ts
+
+export class CheckoutCompletedEvent {
+  readonly eventName = 'checkout.completed';
+  readonly occurredAt: Date;
+
+  constructor(
+    public readonly sessionId: string,
+    public readonly userId: string,
+    public readonly storeId: string,
+    public readonly pointsAwarded: number,
+    public readonly items: Array<{ barcode: string; isSponsored: boolean; pointsValue: number }>,
+  ) {
+    this.occurredAt = new Date();
+  }
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/application/interfaces/event-publisher.interface.ts
+
+export interface IEventPublisher {
+  publish<T>(event: T): Promise<void>;
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts
+
+@Injectable()
+export class BullMqEventPublisher implements IEventPublisher {
+  constructor(
+    @InjectQueue('analytics-profile-update') private readonly analyticsQueue: Queue,
+    @InjectQueue('push-notifications') private readonly notificationQueue: Queue,
+  ) {}
+
+  async publish<T extends { eventName: string }>(event: T): Promise<void> {
+    // Route event to appropriate queue based on event name
+    switch (event.eventName) {
+      case 'checkout.completed': {
+        const e = event as unknown as CheckoutCompletedEvent;
+        // Fire-and-forget to analytics pipeline
+        await this.analyticsQueue.add('profile-update', {
+          sessionId: e.sessionId,
+          userId: e.userId,
+          storeId: e.storeId,
+          items: e.items,
+          timestamp: e.occurredAt.toISOString(),
+        });
+        // Fire-and-forget to push notification worker
+        await this.notificationQueue.add('points-credited', {
+          userId: e.userId,
+          pointsAwarded: e.pointsAwarded,
+          sessionId: e.sessionId,
+        });
+        break;
+      }
+      default:
+        // Log unknown event; don't throw — publishing is best-effort after commit
+        console.warn(`No queue configured for event: ${event.eventName}`);
+    }
+  }
+}
+```
+```
+// 📁 apps/analytics-worker/src/processors/profile-update.processor.ts
+// SUBSCRIBER: reacts to CheckoutCompletedEvent asynchronously
+
+@Processor('analytics-profile-update')
+export class ProfileUpdateProcessor {
+  constructor(
+    private readonly aggregator: ProfileAggregatorService,
+    private readonly aiClient: AiInferenceClient,
+    private readonly segmentRepo: SegmentRepository,
+  ) {}
+
+  @Process('profile-update')
+  async handle(job: Job<ProfileUpdateJobData>): Promise<void> {
+    // This runs in a separate process — zero impact on checkout latency
+    const features = await this.aggregator.aggregateFeatures(job.data.userId);
+    const segment = await this.aiClient.classify(features);
+    await this.segmentRepo.upsert(job.data.userId, segment);
+  }
+}
+```
+```
+// 📁 apps/api/src/modules/notifications/handlers/points-credited.handler.ts
+// SUBSCRIBER: sends push notification when points are earned
+
+@Processor('push-notifications')
+export class PointsCreditedHandler {
+  constructor(private readonly pushGateway: ExpoPushNotificationGateway) {}
+
+  @Process('points-credited')
+  async handle(job: Job<{ userId: string; pointsAwarded: number; sessionId: string }>): Promise<void> {
+    const pushToken = await this.getUserPushToken(job.data.userId);
+    if (!pushToken) return;
+
+    await this.pushGateway.send({
+      to: pushToken,
+      title: '¡Puntos acreditados! 🎉',
+      body: `Has ganado ${job.data.pointsAwarded} puntos en tu última compra.`,
+      data: { sessionId: job.data.sessionId, type: 'POINTS_CREDITED' },
+    });
+  }
+
+  private async getUserPushToken(userId: string): Promise<string | null> {
+    // Lookup from users table or cache
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { pushToken: true } });
+    return user?.pushToken ?? null;
+  }
+}
+```
+**Critical timing rule**: Events are published AFTER the transaction commits, not inside it. This prevents sending a notification for a transaction that was rolled back.
+```
+// 📁 apps/api/src/modules/checkout/application/services/checkout.service.ts
+async validateSession(qrToken: string, scannedItems: ScannedItemDTO[]): Promise<ValidationResult> {
+  // Step 1: Transaction (atomic, synchronous)
+  const result = await this.prisma.$transaction(async (tx) => {
+    // ... validation, points calculation, persisting ...
+    return { success: true, session: s, points: totalPoints };
+  });
+
+  // Step 2: Side effects (non-blocking, after commit)
+  // If this fails, the transaction is already committed — we use BullMQ retry for resilience
+  await this.eventPublisher.publish(new CheckoutCompletedEvent(
+    result.session.id, result.session.userId, result.session.storeId,
+    result.points, result.session.items,
+  ));
+
+  return result;
+}
+```
+6. **Data transfer object pattern (DTO)**:
+| Aspect               | Detail                                                                                                                                                                                                 |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Classification       | Structural (Enterprise)                                                                                                                                                                                |
+| Responsibility       | Define the exact shape of data crossing process boundaries (HTTP request/response, queue messages). Keep domain entities decoupled from serialization concerns.                                          |
+| Classes Participating| AddItemRequest (input DTO), AddItemResponse (output DTO), AddItemRequestSchema (Zod validation), ZodValidationPipe (NestJS pipe)                                                                        |
+| Activation           | ZodValidationPipe validates incoming HTTP bodies against Zod schemas before they reach the controller method                                                                                            |
+| Interaction          | HTTP Request Body → ZodValidationPipe.transform(AddItemRequestSchema) → validated AddItemRequest → Controller → Service → Response DTO → HTTP Response                                                  |
+| Advantages           | Frontend and backend share DTO definitions from packages/shared-types. Validation is runtime-safe. Domain entities are never leaked to API consumers.                                                   |
+
+**Implementation**:
+```
+// 📁 packages/shared-types/src/checkout.types.ts
+// SHARED: imported by both apps/api and React Native frontend
+
+import { z } from 'zod';
+
+// ─── Input DTOs (what the client sends) ───────────────────────────
+
+export interface CreateSessionRequest {
+  storeId: string;
+}
+
+export const CreateSessionRequestSchema = z.object({
+  storeId: z.string().uuid(),
+});
+
+export interface AddItemRequest {
+  barcode: string;
+  sessionId: string;
+}
+
+export const AddItemRequestSchema = z.object({
+  barcode: z.string().min(8).max(14).regex(/^\d+$/, 'Barcode must be numeric'),
+  sessionId: z.string().uuid(),
+});
+
+// ─── Output DTOs (what the server returns) ────────────────────────
+
+export interface AddItemResponse {
+  item: {
+    productId: string;
+    name: string;
+    brand: string;
+    pointsValue: number;
+    imageUrl: string;
+  };
+  session: {
+    id: string;
+    totalPendingItems: number;
+    totalPendingPoints: number;
+    status: string;
+  };
+}
+
+// ─── Validation DTOs ─────────────────────────────────────────────
+
+export interface ValidationRequest {
+  qrToken: string;
+  scannedItems: Array<{ barcode: string; quantity: number }>;
+}
+
+export const ValidationRequestSchema = z.object({
+  qrToken: z.string().min(1),
+  scannedItems: z.array(z.object({
+    barcode: z.string().min(8).max(14),
+    quantity: z.number().int().min(1),
+  })).min(1, 'At least one scanned item is required'),
+});
+
+export interface ValidationResponse {
+  success: boolean;
+  pointsAwarded: number;
+  itemsMatched: number;
+  itemsMismatched: number;
+  errorCode?: string;
+}
+```
+```
+// 📁 apps/api/src/common/pipes/zod-validation.pipe.ts
+// REUSABLE: validates any request against a Zod schema
+
+@Injectable()
+export class ZodValidationPipe implements PipeTransform {
+  constructor(private readonly schema: z.ZodSchema) {}
+
+  transform(value: unknown): unknown {
+    const result = this.schema.safeParse(value);
+    if (result.success) return result.data;
+
+    throw new BadRequestException({
+      errorCode: 'VALIDATION_FAILED',
+      message: 'Request validation failed',
+      details: result.error.issues.map(issue => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      })),
+    });
+  }
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/presentation/controllers/session.controller.ts
+// CONTROLLER: uses DTOs with validation pipe
+
+@Controller('sessions')
+@UseGuards(JwtAuthGuard)
+export class SessionController {
+  constructor(private readonly checkoutService: CheckoutService) {}
+
+  @Post(':id/items')
+  async addItem(
+    @Param('id') sessionId: string,
+    @Body(new ZodValidationPipe(AddItemRequestSchema)) body: AddItemRequest,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<AddItemResponse> {
+    const result = await this.checkoutService.addItem(sessionId, body.barcode);
+
+    // Map domain result → API contract DTO (presentation concern)
+    return {
+      item: {
+        productId: result.item.productId,
+        name: result.item.name,
+        brand: result.item.brand,
+        pointsValue: result.item.pointsValue,
+        imageUrl: result.item.imageUrl,
+      },
+      session: {
+        id: result.session.id,
+        totalPendingItems: result.session.totalPendingItems,
+        totalPendingPoints: result.session.totalPendingPoints,
+        status: result.session.status,
+      },
+    };
+  }
+}
+```
+
+### Complex business layer
+1. **Consumer Profiling Pipeline**
+
+**Business Context**: After each validated checkout, the system must update a rolling 90-day behavioral profile for the user, extract features, classify them into a consumer segment via AI, and make aggregated, anonymized segment data available to B2B partners (supermarkets and brands) for campaign planning and demand prediction.
+
+**Participants**: ``CheckoutCompletedEvent`` (trigger), ``BullMqEventPublisher`` (producer), ``analytics-profile-update queue``, ``ProfileUpdateProcessor`` (consumer), ``ProfileAggregatorService`` (business logic), ``AiInferenceClient`` (external API client), ``SegmentRepository`` (persistence).
+
+**Step by step algorithm**:
+```
+Step 1: EVENT EMISSION (synchronous, post-transaction)
+├── File: apps/api/src/modules/checkout/application/services/checkout.service.ts
+├── Method: CheckoutService.validateSession()
+├── Trigger: After Prisma $transaction commits successfully
+├── Action: Publishes CheckoutCompletedEvent with userId, storeId, items[], pointsAwarded, timestamp
+└── Queue: analytics-profile-update (BullMQ)
+
+Step 2: JOB CONSUMPTION (asynchronous, separate worker process)
+├── File: apps/analytics-worker/src/processors/profile-update.processor.ts
+├── Method: ProfileUpdateProcessor.handle()
+├── Trigger: BullMQ delivers job from queue
+└── Action: Delegates to ProfileAggregatorService
+
+Step 3: ROLLING WINDOW AGGREGATION
+├── File: apps/analytics-worker/src/services/profile-aggregator.service.ts
+├── Method: ProfileAggregatorService.aggregateFeatures(userId)
+├── Algorithm:
+│   1. Query PostgreSQL for all transactions in [today - 90 days, today]
+│      SELECT * FROM points_transactions
+│      WHERE user_id = $1
+│        AND reason = 'PURCHASE'
+│        AND created_at >= NOW() - INTERVAL '90 days'
+│      ORDER BY created_at DESC
+│
+│   2. Compute behavioral features:
+│      a. category_frequency: Map<string, number>
+│         → Count purchases per product category (join with products table)
+│      b. avg_ticket: number
+│         → Sum(total spent per session) / Count(distinct sessions)
+│      c. avg_purchase_hour: number (0-23)
+│         → Mean of EXTRACT(HOUR FROM created_at) across all transactions
+│      d. weekly_frequency: number
+│         → Count(distinct DATE_TRUNC('week', created_at)) in window
+│         → Divide by 12.85 (weeks in 90 days) for normalized frequency
+│      e. sponsored_ratio: number (0-1)
+│         → Count(items WHERE is_sponsored = true) / Count(all items)
+│      f. organic_preference_score: number (0-1)
+│         → Derived from category_frequency of organic-labeled products
+│
+│   3. Return BehavioralFeatures object
+└── Output: BehavioralFeatures DTO
+
+Step 4: AI SEGMENT CLASSIFICATION
+├── File: apps/analytics-worker/src/infrastructure/ai/ai-inference.client.ts
+├── Method: AiInferenceClient.classify(features)
+├── Algorithm:
+│   1. Check Redis cache: `segment:{userId}` with TTL of 24 hours
+│      → Cache hit: return cached segment, skip AI call
+│
+│   2. Serialize features to JSON
+│      POST /api/v1/classify
+│      Authorization: Bearer {AI_SERVICE_API_KEY}
+│      {
+│        "features": {
+│          "category_frequency": {...},
+│          "avg_ticket": 45.30,
+│          "avg_purchase_hour": 17.5,
+│          "weekly_frequency": 0.8,
+│          "sponsored_ratio": 0.35,
+│          "organic_preference_score": 0.72
+│        }
+│      }
+│
+│   3. AI Service (Python/scikit-learn or external) returns:
+│      {
+│        "segment": "premium_organic",
+│        "confidence": 0.87,
+│        "model_version": "v2.3.1"
+│      }
+│
+│   4. Cache result in Redis: SET segment:{userId} = "premium_organic" EX 86400
+└── Output: { segment: string, confidence: number, modelVersion: string }
+
+Step 5: SEGMENT PERSISTENCE
+├── File: apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts
+├── Method: SegmentRepository.upsert(userId, segment)
+├── Algorithm:
+│   1. UPSERT into consumer_segments table:
+│      INSERT INTO consumer_segments (user_id, segment_name, model_version, classified_at)
+│      VALUES ($1, $2, $3, NOW())
+│      ON CONFLICT (user_id) DO UPDATE SET
+│        segment_name = EXCLUDED.segment_name,
+│        model_version = EXCLUDED.model_version,
+│        classified_at = NOW()
+│
+│   2. Invalidate Redis cache for B2B aggregated queries:
+│      DEL analytics:store:{storeId}:segments
+│      DEL analytics:global:segment-distribution
+└── Side effect: B2B dashboard will see fresh data on next query
+
+Step 6: B2B DATA AVAILABILITY
+├── File: apps/api/src/modules/analytics/application/services/analytics.service.ts
+├── Method: AnalyticsService.getSegmentDistribution(storeId?)
+├── When: B2B partner calls GET /analytics/segments?storeId=X
+├── Response:
+│   {
+│     "segments": [
+│       { "name": "premium_organic", "count": 1250, "percentage": 28.5 },
+│       { "name": "budget_conscious", "count": 2100, "percentage": 47.9 },
+│       { "name": "impulse_buyer", "count": 580, "percentage": 13.2 },
+│       { "name": "brand_loyal", "count": 450, "percentage": 10.3 }
+│     ],
+│     "totalClassifiedUsers": 4380,
+│     "modelVersion": "v2.3.1",
+│     "generatedAt": "2026-06-06T14:30:00Z"
+│   }
+└── Data is anonymized and aggregated — no individual user data is exposed
+```
+```
+// 📁 apps/analytics-worker/src/services/profile-aggregator.service.ts
+
+@Injectable()
+export class ProfileAggregatorService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async aggregateFeatures(userId: string): Promise<BehavioralFeatures> {
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    // Query 1: All purchase transactions in the 90-day window
+    const transactions = await this.prisma.pointsTransaction.findMany({
+      where: {
+        userId,
+        reason: 'PURCHASE',
+        createdAt: { gte: ninetyDaysAgo },
+      },
+      include: {
+        session: {
+          include: {
+            items: { include: { product: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Guard: Need minimum 5 transactions for statistically meaningful classification
+    if (transactions.length < 5) {
+      return BehavioralFeatures.insufficientData();
+    }
+
+    // Feature extraction
+    const categoryFrequency = this.computeCategoryFrequency(transactions);
+    const avgTicket = this.computeAvgTicket(transactions);
+    const avgPurchaseHour = this.computeAvgPurchaseHour(transactions);
+    const weeklyFrequency = this.computeWeeklyFrequency(transactions, ninetyDaysAgo);
+    const sponsoredRatio = this.computeSponsoredRatio(transactions);
+    const organicPreferenceScore = this.computeOrganicScore(categoryFrequency);
+
+    return new BehavioralFeatures({
+      categoryFrequency,
+      avgTicket,
+      avgPurchaseHour,
+      weeklyFrequency,
+      sponsoredRatio,
+      organicPreferenceScore,
+    });
+  }
+
+  private computeCategoryFrequency(
+    transactions: PointsTransactionWithSession[],
+  ): Map<string, number> {
+    const freq = new Map<string, number>();
+    for (const tx of transactions) {
+      for (const item of tx.session?.items ?? []) {
+        const category = item.product?.category ?? 'UNKNOWN';
+        freq.set(category, (freq.get(category) ?? 0) + 1);
+      }
+    }
+    return freq;
+  }
+
+  private computeAvgTicket(transactions: PointsTransactionWithSession[]): number {
+    const tickets = transactions.map(tx => tx.session?.items?.reduce(
+      (sum, item) => sum + (item.product?.price ?? 0),
+      0,
+    ) ?? 0);
+    return tickets.reduce((sum, t) => sum + t, 0) / tickets.length;
+  }
+
+  // ... additional private methods for remaining features
+}
+```
+2. **QR Generation and Validation**
+
+**Business Context**: Shoppers generate a QR code at checkout containing a signed, time-sensitive token that embeds a hash of their session items. The POS operator scans this QR and validates it against the physical cart contents. Any tampering or item mismatch is detected cryptographically.
+
+**Participants**: ``CheckoutService.generateQr()`` (generation), ``QrSigner`` (JWT signing), ``CheckoutService.validateSession()`` (validation), ``ShoppingSession.validateItems()`` (domain comparison).
+
+**Step by step algorithm**
+```
+QR GENERATION (mobile client → backend):
+├── File: apps/api/src/modules/checkout/application/services/checkout.service.ts
+├── Method: CheckoutService.generateQr(sessionId)
+├── Algorithm:
+│   1. Load session from repository
+│   2. Call session.requestCheckout() — domain validation:
+│      a. Guard: status must be ACTIVE
+│      b. Guard: items.length must be > 0
+│      c. Transition status to PENDING_CHECKOUT
+│   3. Compute deterministic item hash:
+│      a. Sort items alphabetically by barcode
+│      b. Concatenate as "barcode:quantity" pairs separated by "|"
+│         Example: "123:1|456:2|789:1"
+│      c. Compute SHA-256 hash of the concatenated string
+│   4. Build JWT payload:
+│      {
+│        sub: sessionId,
+│        uid: userId,
+│        hash: itemHash,
+│        iat: Math.floor(Date.now() / 1000),
+│        exp: Math.floor(Date.now() / 1000) + 300 // 5 minutes
+│      }
+│   5. Sign with HS256 using secret from environment (QR_SIGNING_SECRET)
+│   6. Return QrTicket { token, expiresAt }
+└── Client renders token as QR code using react-native-qrcode-svg
+
+QR VALIDATION (POS → backend):
+├── File: apps/api/src/modules/checkout/application/services/checkout.service.ts
+├── Method: CheckoutService.validateSession(qrToken, scannedItems)
+├── Algorithm:
+│   1. Decode JWT WITHOUT verification first (extract header)
+│   2. Verify signature using QR_SIGNING_SECRET
+│      → If invalid: throw InvalidQrTokenError (tampered or forged)
+│   3. Check exp claim:
+│      → If current time > exp: throw QrTokenExpiredError
+│   4. Extract payload: { sub: sessionId, uid: userId, hash: itemHash }
+│   5. Load session from repository by sessionId
+│   6. Guard: session.status must be PENDING_CHECKOUT
+│      → If COMPLETED: throw SessionAlreadyCompletedError
+│      → If EXPIRED: throw SessionExpiredError
+│   7. Compute hash of scannedItems (from POS):
+│      a. Sort by barcode
+│      b. Concatenate "barcode:quantity"
+│      c. SHA-256 hash
+│   8. Compare scannedHash with itemHash from token:
+│      → If mismatch: throw QrItemMismatchError { sessionItems, scannedItems, sessionHash, scannedHash }
+│   9. If match: proceed to points calculation and transaction commit
+│  10. After commit: emit CheckoutCompletedEvent
+└── Response: { success: true, pointsAwarded: 250 }
+```
+```
+// 📁 apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts
+
+@Injectable()
+export class JwtQrSigner implements IQrSigner {
+  private readonly secret: Buffer;
+
+  constructor() {
+    this.secret = Buffer.from(process.env.QR_SIGNING_SECRET ?? '', 'utf-8');
+    if (this.secret.length < 32) {
+      throw new Error('QR_SIGNING_SECRET must be at least 32 characters');
+    }
+  }
+
+  async sign(payload: QrPayload): Promise<string> {
+    return new Promise((resolve, reject) => {
+      jwt.sign(
+        payload,
+        this.secret,
+        {
+          algorithm: 'HS256',
+          expiresIn: '5m',
+          issuer: 'smartcart-qr',
+          subject: payload.sessionId,
+        },
+        (err, token) => {
+          if (err) reject(new QrSigningFailedError(err.message));
+          else resolve(token!);
+        },
+      );
+    });
+  }
+
+  async verify(token: string): Promise<QrPayload> {
+    return new Promise((resolve, reject) => {
+      jwt.verify(
+        token,
+        this.secret,
+        {
+          algorithms: ['HS256'],
+          issuer: 'smartcart-qr',
+          clockTolerance: 10, // 10-second clock skew tolerance
+        },
+        (err, decoded) => {
+          if (err) {
+            if (err instanceof jwt.TokenExpiredError) {
+              reject(new QrTokenExpiredError(err.expiredAt));
+            } else {
+              reject(new InvalidQrTokenError(err.message));
+            }
+          } else {
+            resolve(decoded as QrPayload);
+          }
+        },
+      );
+    });
+  }
+}
+```
+```
+// 📁 apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts (extract)
+
+// Deterministic hash computation — same input always produces same hash
+computeItemHash(): string {
+  const data = this._items
+    .map(item => item.barcode)
+    .sort() // Alphabetical sort ensures deterministic output
+    .join('|');
+
+  return createHash('sha256').update(data).digest('hex');
+}
+
+// Validation method called during checkout
+validateItems(scannedItems: ScannedItem[]): boolean {
+  const scannedSorted = [...scannedItems]
+    .sort((a, b) => a.barcode.localeCompare(b.barcode));
+
+  const scannedHash = createHash('sha256')
+    .update(scannedSorted.map(i => i.barcode).join('|'))
+    .digest('hex');
+
+  const sessionHash = this.computeItemHash();
+
+  if (scannedHash !== sessionHash) {
+    throw new QrItemMismatchError({
+      sessionId: this.id,
+      expectedHash: sessionHash,
+      receivedHash: scannedHash,
+      sessionItems: this._items.map(i => i.barcode),
+      scannedItems: scannedSorted.map(i => i.barcode),
+    });
+  }
+
+  return true;
+}
+```
+3. **Points calculation**
+
+**Business Context**: Points are awarded per product based on the product's pointsConfig. Three strategies are supported at launch: fixed points per unit (e.g., 50 points per item regardless of price), spend multiplier (e.g., 2 points per dollar spent), and volume tiers (e.g., 10 points/unit for 1-5 units, 20 points/unit for 6+). The system must be extensible for future schemes (weekend bonuses, segment-based multipliers) without modifying the checkout flow.
+
+**Participants**: ``PointsService``, ``PointsStrategyResolver``, ``IPointsCalculationStrategy`` implementations.
+
+Algorithm covered in Strategy Pattern section above. See ``apps/api/src/modules/checkout/application/services/points.service.ts`` and ``apps/api/src/modules/checkout/domain/strategies/*.strategy.ts``.
+
+4. **Session Manager**
+
+**Business Context**: Shopping sessions have a finite state machine (FSM) lifecycle. Transitions are guarded by business rules. Expired sessions must be cleaned up automatically.
+
+**Participants**: ``ShoppingSession`` (domain entity with FSM methods), ``SessionExpirationCron`` (scheduled job), ``ISessionRepository``.
+
+**State machine**:
+```
+                    ┌─────────┐
+                    │  ACTIVE  │
+                    └────┬─────┘
+                         │
+              ┌──────────┼──────────┐
+              │ requestCheckout()    │ expire() (timer or cron)
+              │ (requires items > 0) │
+              ▼                      ▼
+     ┌─────────────────┐    ┌─────────┐
+     │ PENDING_CHECKOUT │    │ EXPIRED │
+     └────────┬────────┘    └─────────┘
+              │
+              ├── validateItems(success) ──▶ COMPLETED
+              │
+              └── validateItems(failure) ──▶ VALIDATION_FAILED
+
+```
+```
+// 📁 apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts (FSM)
+
+export class ShoppingSession {
+  // State transitions — each method guards its transition
+
+  addItem(item: SessionItem): void {
+    if (this._status !== SessionStatus.ACTIVE) {
+      throw new SessionNotActiveError(this.id, this._status);
+    }
+    this._items.push(item);
+  }
+
+  requestCheckout(): void {
+    if (this._status !== SessionStatus.ACTIVE) {
+      throw new InvalidStateTransitionError(this._status, SessionStatus.PENDING_CHECKOUT);
+    }
+    if (this._items.length === 0) {
+      throw new EmptySessionError(this.id);
+    }
+    this._status = SessionStatus.PENDING_CHECKOUT;
+  }
+
+  completeValidation(): void {
+    if (this._status !== SessionStatus.PENDING_CHECKOUT) {
+      throw new InvalidStateTransitionError(this._status, SessionStatus.COMPLETED);
+    }
+    this._status = SessionStatus.COMPLETED;
+  }
+
+  markValidationFailed(): void {
+    if (this._status !== SessionStatus.PENDING_CHECKOUT) {
+      throw new InvalidStateTransitionError(this._status, SessionStatus.VALIDATION_FAILED);
+    }
+    this._status = SessionStatus.VALIDATION_FAILED;
+  }
+
+  expire(): void {
+    if (this._status === SessionStatus.COMPLETED) {
+      return; // Idempotent — completed sessions can't expire
+    }
+    this._status = SessionStatus.EXPIRED;
+  }
+}
+```
+
+```
+// 📁 apps/api/src/modules/checkout/application/services/session-expiration.service.ts
+
+@Injectable()
+export class SessionExpirationService {
+  constructor(
+    @Inject('ISessionRepository') private readonly sessionRepo: ISessionRepository,
+  ) {}
+
+  /**
+   * Runs every 5 minutes via @Cron.
+   * Expires any ACTIVE session older than 2 hours with no activity.
+   */
+  @Cron('*/5 * * * *')
+  async expireStaleSessions(): Promise<void> {
+    const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 hours ago
+
+    const staleSessions = await this.prisma.shoppingSession.findMany({
+      where: {
+        status: 'ACTIVE',
+        createdAt: { lt: cutoff },
+      },
+      select: { id: true },
+    });
+
+    for (const { id } of staleSessions) {
+      await this.sessionRepo.markExpired(id);
+    }
+
+    if (staleSessions.length > 0) {
+      this.logger.log(`Expired ${staleSessions.length} stale sessions`);
+    }
+  }
+}
+```
+**Pattern interaction diagram**
+```
+┌────────────────────────────────────────────────────────────────────────────────┐
+│              PATTERN INTERACTION — Checkout Validation Flow                      │
+│                                                                                │
+│  [Controller]                [Service Layer]           [Domain]                │
+│  POST /validate              CheckoutService           ShoppingSession         │
+│       │                           │                         │                  │
+│       │──── DTO validation ──────▶│                         │                  │
+│       │   (ZodValidationPipe)     │                         │                  │
+│       │                           │──── findById() ────────▶│                  │
+│       │                           │   (Repository Pattern)  │                  │
+│       │                           │◀────────────────────────│                  │
+│       │                           │                         │                  │
+│       │                           │──── verify() ──────────▶│                  │
+│       │                           │   (QrSigner)            │ (Factory         │
+│       │                           │                         │  created         │
+│       │                           │                         │  QrTicket)       │
+│       │                           │                         │                  │
+│       │                           │──── validateItems() ───▶│                  │
+│       │                           │                         │ (Domain logic    │
+│       │                           │                         │  with hash       │
+│       │                           │                         │  comparison)     │
+│       │                           │◀────────────────────────│                  │
+│       │                           │                         │                  │
+│       │                           │──── calculatePoints() ─▶│                  │
+│       │                           │   (PointsService)       │ (Strategy        │
+│       │                           │         │               │  Pattern)        │
+│       │                           │         ▼               │                  │
+│       │                           │   [StrategyResolver]    │                  │
+│       │                           │   → FixedPoints         │                  │
+│       │                           │   → SpendMultiplier     │                  │
+│       │                           │   → VolumeTier          │                  │
+│       │                           │◀────────────────────────│                  │
+│       │                           │                         │                  │
+│       │                           │── $transaction() ───────│                  │
+│       │                           │   (Prisma ACID)         │                  │
+│       │                           │   → markCompleted()     │                  │
+│       │                           │   → creditPoints()      │                  │
+│       │                           │                         │                  │
+│       │                           │── publish(event) ───────│                  │
+│       │                           │   (Observer Pattern)    │                  │
+│       │                           │   → BullMQ Queue        │                  │
+│       │                           │                         │                  │
+│       │◀──── DTO response ────────│                         │                  │
+│       │    (ValidationResponse)   │                         │                  │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Repository reoganization for maintaninability**
+```
+apps/api/src/modules/checkout/
+├── presentation/
+│   ├── controllers/
+│   │   ├── session.controller.ts          # REST endpoints for session CRUD
+│   │   ├── qr.controller.ts               # REST endpoint for QR generation
+│   │   └── validation.controller.ts       # REST endpoint for POS validation
+│   ├── gateways/
+│   │   └── session.gateway.ts             # WebSocket for real-time status push
+│   └── dto/
+│       ├── create-session.dto.ts           # Request DTOs (re-export from shared-types)
+│       ├── add-item.dto.ts
+│       └── validation.dto.ts
+│
+├── application/
+│   ├── services/
+│   │   ├── checkout.service.ts            # Main orchestrator
+│   │   ├── points.service.ts              # Points calculation + crediting
+│   │   ├── session-expiration.service.ts  # Cron job for stale sessions
+│   │   └── qr-generation.service.ts       # QR token orchestration
+│   ├── interfaces/
+│   │   ├── session-repository.interface.ts
+│   │   ├── event-publisher.interface.ts
+│   │   ├── qr-signer.interface.ts
+│   │   ├── points-service.interface.ts
+│   │   └── catalog-service.interface.ts
+│   └── commands/
+│       └── validate-session.command.ts     # CQRS command object
+│
+├── domain/
+│   ├── entities/
+│   │   ├── shopping-session.entity.ts
+│   │   ├── session-item.entity.ts
+│   │   └── qr-ticket.entity.ts
+│   ├── value-objects/
+│   │   ├── session-status.enum.ts
+│   │   ├── points-config.vo.ts
+│   │   ├── points-awarded.vo.ts
+│   │   └── barcode.vo.ts
+│   ├── events/
+│   │   └── checkout-completed.event.ts
+│   ├── strategies/
+│   │   ├── points-calculation-strategy.interface.ts
+│   │   ├── fixed-points.strategy.ts
+│   │   ├── spend-multiplier.strategy.ts
+│   │   ├── volume-tier.strategy.ts
+│   │   └── weekend-bonus.strategy.ts
+│   ├── factories/
+│   │   ├── session.factory.ts
+│   │   └── qr-ticket.factory.ts
+│   ├── errors/
+│   │   ├── session-not-active.error.ts
+│   │   ├── qr-token-expired.error.ts
+│   │   ├── qr-item-mismatch.error.ts
+│   │   └── invalid-state-transition.error.ts
+│   └── state-machine/
+│       ├── session-state-machine.ts
+│       └── transitions.ts
+│
+├── infrastructure/
+│   ├── repositories/
+│   │   └── prisma-session.repository.ts
+│   ├── events/
+│   │   └── bullmq-event.publisher.ts
+│   └── crypto/
+│       └── jwt-qr.signer.ts
+│
+└── checkout.module.ts                     # NestJS module wiring
+
+```
