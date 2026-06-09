@@ -3956,9 +3956,7 @@ export class PrismaPointsRepository implements IPointsRepository {
 ---
 # 2.6 Observability — SISTRA-TEC
 
-> **Reference stack:** React 19 · Supabase (PostgreSQL + Storage + Auth + RPC) · pnpm · Create React App 5 · `@supabase/supabase-js ^2.107`
 
----
 
 ## Tool summary by concern
 
