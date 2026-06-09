@@ -686,6 +686,7 @@ This section documents every design pattern employed in the SmartCart backend, f
 
 ### Pattern Catalog
 1. **Repository Pattern**
+
 | Aspect              | Detail                                                                                                                                                                                                 |
 |---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Classification      | Structural (Domain-Driven Design)                                                                                                                                                                      |
@@ -694,6 +695,7 @@ This section documents every design pattern employed in the SmartCart backend, f
 | Activation          | NestJS DI container injects `PrismaSessionRepository` wherever `ISessionRepository` is requested, as configured in `checkout.module.ts`                                                                       |
 | Interaction         | `CheckoutService` → `ISessionRepository.findById()` → `PrismaSessionRepository` → `PrismaService` → PostgreSQL. The service never sees Prisma types.                                                            |
 | Advantages          | Swap PostgreSQL for DynamoDB by writing a new implementation of the interface. Mock the interface in unit tests without a database. Centralize query logic (e.g., .`findById()` always includes items relation). |
+
 
 **Implementation**:
 ```
@@ -855,7 +857,8 @@ describe('CheckoutService', () => {
 });
 ```
 
-2. **Service layer pattern**
+1. **Service layer pattern**
+
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Classification       | Behavioral (Domain-Driven Design)                                                                                                                                                                      |
@@ -864,6 +867,7 @@ describe('CheckoutService', () => {
 | Activation           | Called directly by Presentation layer (controllers) or scheduled jobs (`@Cron`)                                                                                                                          |
 | Interaction          | Controller → `CheckoutService.addItem()` → `ISessionRepository.findById()` → `ShoppingSession.addItem()` (domain method) → `ISessionRepository.save()`                                                          |
 | Advantages           | Business logic is testable without HTTP. Transaction boundaries are explicit. Multiple controllers can reuse the same service method.                                                                   |
+
 
 **Implementation**:
 ```
@@ -954,7 +958,8 @@ export class CheckoutService {
   }
 }
 ```
-3. **Factory pattern**
+1. **Factory pattern**
+
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Classification       | Creational (GoF)                                                                                                                                                                                       |
@@ -963,6 +968,7 @@ export class CheckoutService {
 | Activation           | Called by `CheckoutService.createSession()` or `CheckoutService.generateQr()`                                                                                                                              |
 | Interaction          | Service → Factory.create() → returns fully-constructed entity with all invariants satisfied                                                                                                             |
 | Advantages           | Domain entities have no public constructors with 7+ parameters. Creation logic is testable in isolation. Default values (e.g., initial status, timestamps) are centralized.                             |
+
 
 **Implementation**
 ```
@@ -1048,7 +1054,8 @@ async createSession(userId: string, storeId: string): Promise<ShoppingSession> {
 }
 ```
 
-4. **Strategy Pattern**
+1. **Strategy Pattern**
+
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Classification       | Behavioral (GoF)                                                                                                                                                                                       |
@@ -1057,6 +1064,7 @@ async createSession(userId: string, storeId: string): Promise<ShoppingSession> {
 | Activation           | `PointsService.calculatePoints()` calls `PointsStrategyResolver.resolve(product.pointsConfig.type)` which returns the correct strategy instance                                                             |
 | Interaction          | `CheckoutService` → `PointsService.calculatePoints()` → `PointsStrategyResolver.resolve(type)` → `Strategy.calculate(item)`                                                                                     |
 | Advantages           | New point schemes (e.g., "double points on weekends", "bonus for premium segment") can be added without modifying `CheckoutService` or `PointsService`. Strategies are unit-testable in isolation.          |
+
 
 **Implementation**:
 ```
@@ -1252,7 +1260,8 @@ export class WeekendBonusStrategy implements IPointsCalculationStrategy {
 this.register(new WeekendBonusStrategy());
 ```
 
-5. **Observer pattern**
+1. **Observer pattern**
+
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Classification       | Behavioral (GoF)                                                                                                                                                                                       |
@@ -1261,6 +1270,8 @@ this.register(new WeekendBonusStrategy());
 | Activation           | `CheckoutService.validateSession()` publishes `CheckoutCompletedEvent` AFTER the Prisma `$transaction` commits successfully                                                                                   |
 | Interaction          | `CheckoutService` → `IEventPublisher.publish(event)` → `BullMqEventPublisher` → BullMQ Queue → Worker picks up → `PushNotificationHandler` / `ProfileUpdateHandler`                                                |
 | Advantages           | The POS validation response is not delayed by notification sending or analytics aggregation. New side effects can be added by writing a new handler without modifying `CheckoutService`.                   |
+
+
 
 **Implementation**:
 ```
@@ -1395,7 +1406,8 @@ async validateSession(qrToken: string, scannedItems: ScannedItemDTO[]): Promise<
   return result;
 }
 ```
-6. **Data transfer object pattern (DTO)**:
+1. **Data transfer object pattern (DTO)**:
+
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Classification       | Structural (Enterprise)                                                                                                                                                                                |
@@ -1404,6 +1416,7 @@ async validateSession(qrToken: string, scannedItems: ScannedItemDTO[]): Promise<
 | Activation           | `ZodValidationPipe` validates incoming HTTP bodies against Zod schemas before they reach the controller method                                                                                            |
 | Interaction          | HTTP Request Body → `ZodValidationPipe.transform(AddItemRequestSchema)` → validated `AddItemRequest` → Controller → Service → Response DTO → HTTP Response                                                  |
 | Advantages           | Frontend and backend share DTO definitions from `packages/shared-types`. Validation is runtime-safe. Domain entities are never leaked to API consumers.                                                   |
+
 
 **Implementation**:
 ```
@@ -2182,12 +2195,15 @@ bootstrap();
 ### Key endpoints
 
 - **Authentication**
+
   | Method | Path          | Description                                                                                   | Auth Required                     | Rate Limit            |
 |--------|---------------|-----------------------------------------------------------------------------------------------|-----------------------------------|-----------------------|
 | `POST`   | `/auth/register`| Register a new shopper account                                                                | No                                | 5 req/min per IP      |
 | `POST`   | `/auth/login`   | Authenticate with email/password, receive `accessToken` and `refreshToken`                        | No                                | 10 req/min per IP     |
 | `POST`   | `/auth/refresh` | Exchange a valid `refreshToken` for a new `accessToken`                                           | Refresh token (HTTP-only cookie)  | 20 req/min per IP     |
 | `POST`   | `/auth/logout`  | Revoke the current refreshToken                                                               | Yes (access token)                | —                     |
+
+
 
 ```
 // 📁 apps/api/src/modules/auth/presentation/controllers/auth.controller.ts
@@ -2273,11 +2289,13 @@ export class AuthController {
 ```
 
 - **User profile** 
+
 | Method | Path                        | Description                                      | Auth Required |
 |--------|-----------------------------|--------------------------------------------------|---------------|
 | `GET`    | `/users/me`                   | Get current user profile with points balance     | Yes (JWT)     |
 | `PATCH`  | `/users/me `                  | Update profile (name, phone)                     | Yes (JWT)     |
 | `GET`    | `/users/me/points/history`    | Paginated points transaction history             | Yes (JWT)     |
+
 
 ```
 // 📁 apps/api/src/modules/users/presentation/controllers/user.controller.ts
@@ -2313,10 +2331,12 @@ export class UserController {
 }
 ```
 - **Product catalog**
+
 | Method | Path                                | Description                        | Auth Required | Cache                               |
 |--------|-------------------------------------|------------------------------------|---------------|-------------------------------------|
 | `GET`    | `/products/:barcode`                  | Lookup product by barcode          | Yes (JWT)     | Redis Cache-Aside, TTL 1h           |
 | `GET`    | `/products/search?q=leche&limit=10`   | Search products by name/brand      | Yes (JWT)     | Redis, TTL 5 min                    |
+
 
 ```
 // 📁 apps/api/src/modules/catalog/presentation/controllers/catalog.controller.ts
@@ -2392,6 +2412,7 @@ export class CatalogService implements ICatalogService {
 ```
 
 - **Shopping sessions**
+
 | Method | Path                          | Description                                              | Auth Required        |
 |--------|-------------------------------|----------------------------------------------------------|----------------------|
 | `POST`   | `/sessions`                     | Create a new shopping session for the authenticated user | Yes (JWT)            |
@@ -2402,19 +2423,24 @@ export class CatalogService implements ICatalogService {
 | `POST`   | `/sessions/:id/validate`        | POS endpoint: Validate QR and credit points              | POS API Key          |
 | `GET`    | `/sessions/:id`                 | Get session details (for receipt/history)                | Yes (JWT)            |
 
+
 - **Rewards** 
+
 | Method | Path                  | Description                                      | Auth Required |
 |--------|-----------------------|--------------------------------------------------|---------------|
 | `GET`    | `/rewards`              | List all active rewards                          | Yes (JWT)     |
 | `GET`    | `/rewards/:id`          | Get reward details                               | Yes (JWT)     |
 | `POST`   | `/rewards/:id/redeem`   | Redeem points for a reward; returns coupon code  | Yes (JWT)     |
 
+
 - **B2B Analytics** 
+
 | Method | Path                               | Description                                                           | Auth Required  |
 |--------|------------------------------------|-----------------------------------------------------------------------|----------------|
 | `GET`    | `/analytics/segments`                | Get consumer segment distribution (optionally filtered by `?storeId=`)  | B2B API Key    |
 | `GET`    | `/analytics/products/:id/insights`   | Get demand predictions and performance metrics for a product          | B2B API Key    |
 | `GET`    | `/analytics/stores/:id/overview`     | Get store-level metrics (avg ticket, peak hours, segment mix)         | B2B API Key    |
+
 
 ```
 // 📁 apps/api/src/modules/analytics/presentation/controllers/analytics.controller.ts
@@ -2801,12 +2827,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 }
 ```
 **Asynchronous communication**
+
 | Mechanism                          | Use Case                                                                                          | Queue / Channel              | Payload                                                                                                      |
 |------------------------------------|---------------------------------------------------------------------------------------------------|------------------------------|--------------------------------------------------------------------------------------------------------------|
 | BullMQ (Redis-backed)              | Consumer profiling pipeline triggered after checkout validation                                   | `analytics-profile-update`     | `{ userId, sessionId, storeId, items[], pointsAwarded, timestamp }`                                            |
 | BullMQ (Redis-backed)              | Push notification to mobile device after points are credited                                      | `push-notifications`           | `{ userId, pointsAwarded, sessionId, pushToken }`                                                              |
 | WebSocket (Socket.IO + Redis adapter) | Real-time QR validation status pushed to mobile client so the screen flips from "Esperando validación…" to the confirmation screen | `session:{sessionId}` room     | `{ event: 'sessionValidated', sessionId, pointsAwarded, timestamp }`                                           |
 | WebSocket (Socket.IO + Redis adapter) | Session expiry notification if the POS does not validate within 5 minutes                        | `session:{sessionId}` room     | `{ event: 'sessionExpired', sessionId, reason: 'QR_TIMEOUT' }`                                                 |
+
 
 - **WebSocket gateway implementation**:
 ```
