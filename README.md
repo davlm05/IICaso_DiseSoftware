@@ -857,7 +857,7 @@ describe('CheckoutService', () => {
 });
 ```
 
-1. **Service layer pattern**
+2. **Service layer pattern**
 
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -958,7 +958,7 @@ export class CheckoutService {
   }
 }
 ```
-1. **Factory pattern**
+3. **Factory pattern**
 
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -1054,7 +1054,7 @@ async createSession(userId: string, storeId: string): Promise<ShoppingSession> {
 }
 ```
 
-1. **Strategy Pattern**
+4. **Strategy Pattern**
 
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -1260,7 +1260,7 @@ export class WeekendBonusStrategy implements IPointsCalculationStrategy {
 this.register(new WeekendBonusStrategy());
 ```
 
-1. **Observer pattern**
+5. **Observer pattern**
 
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -1406,7 +1406,7 @@ async validateSession(qrToken: string, scannedItems: ScannedItemDTO[]): Promise<
   return result;
 }
 ```
-1. **Data transfer object pattern (DTO)**:
+6. **Data transfer object pattern (DTO)**:
 
 | Aspect               | Detail                                                                                                                                                                                                 |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -2196,7 +2196,7 @@ bootstrap();
 
 - **Authentication**
 
-  | Method | Path          | Description                                                                                   | Auth Required                     | Rate Limit            |
+| Method | Path          | Description                                                                                   | Auth Required                     | Rate Limit            |
 |--------|---------------|-----------------------------------------------------------------------------------------------|-----------------------------------|-----------------------|
 | `POST`   | `/auth/register`| Register a new shopper account                                                                | No                                | 5 req/min per IP      |
 | `POST`   | `/auth/login`   | Authenticate with email/password, receive `accessToken` and `refreshToken`                        | No                                | 10 req/min per IP     |
