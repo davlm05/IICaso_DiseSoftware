@@ -3900,6 +3900,7 @@ export class PrismaPointsRepository implements IPointsRepository {
   ```
 
 - **11.PII Handling**:
+
 | Data Element     | Classification        | Handling                                                                                                      |
 |------------------|-----------------------|---------------------------------------------------------------------------------------------------------------|
 | ``email``            | PII                   | Stored encrypted at rest (provider-managed AES-256). Masked in logs: ``j***@example.com``.                        |
