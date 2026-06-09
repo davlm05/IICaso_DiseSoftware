@@ -30,9 +30,9 @@
 
 ## 2.2. Architecture
 
-- **Pattern:** Modular Monolith with Independent Worker Process — SmartCart is built as a single NestJS application with strictly separated modules per functional domain, plus a physically independent BullMQ worker process for the consumer profiling pipeline. This architectural decision is grounded in five concrete technical justifications:
+- **Pattern: Modular Monolith with Independent Worker Process** — SmartCart is built as a single NestJS application with strictly separated modules per functional domain, plus a physically independent BullMQ worker process for the consumer profiling pipeline. This architectural decision is grounded in five concrete technical justifications:
 
-- **Single deployable artifact with logical boundaries:** The entire API runs as one Node.js process, deployed as one Docker container. Module boundaries are enforced at build time via TypeScript path aliases and ESLint import rules (no-restricted-imports), not at runtime via network calls. This means zero serialization/deserialization overhead between modules while maintaining strict separation of concerns. See eslint.config.mjs:
+- **Single deployable artifact with logical boundaries:** The entire API runs as one Node.js process, deployed as one Docker container. Module boundaries are enforced at build time via TypeScript path aliases and ESLint import rules (`no-restricted-imports`), not at runtime via network calls. This means zero serialization/deserialization overhead between modules while maintaining strict separation of concerns. See `eslint.config.mjs`:
 
 ```
 // eslint.config.mjs — Enforces module boundaries at lint level
@@ -49,9 +49,10 @@ export default [
   },
 ];
 ---
-
-**Type-safe contract sharing with the frontend:** The monorepo structure (packages/shared-types/) exports TypeScript interfaces and Zod schemas consumed by both apps/api and the React Native frontend. Changing a DTO breaks both sides at compile time, eliminating contract drift. See packages/shared-types/src/checkout.types.ts:
+```
+**Type-safe contract sharing with the frontend:** The monorepo structure (`packages/shared-types/`) exports TypeScript interfaces and Zod schemas consumed by both `apps/api` and the React Native frontend. Changing a DTO breaks both sides at compile time, eliminating contract drift. See `packages/shared-types/src/checkout.types.ts`:
 ---
+```
 // packages/shared-types/src/checkout.types.ts
 // This file is imported by BOTH NestJS and React Native
 export interface AddItemRequest {
@@ -71,7 +72,7 @@ export const AddItemRequestSchema = z.object({
 });
 ```
 
-- **ACID transactions without distributed complexity:** The checkout validation flow requires atomicity across multiple aggregate roots (session status update, points balance mutation, transaction audit entry). Prisma executes this in a single PostgreSQL transaction. The service method at apps/api/src/modules/checkout/application/services/checkout.service.ts demonstrates this:
+- **ACID transactions without distributed complexity:** The checkout validation flow requires atomicity across multiple aggregate roots (session status update, points balance mutation, transaction audit entry). Prisma executes this in a single PostgreSQL transaction. The service method at `apps/api/src/modules/checkout/application/services/checkout.service.ts` demonstrates this:
 
 ```
 // apps/api/src/modules/checkout/application/services/checkout.service.ts
@@ -103,7 +104,7 @@ export class CheckoutService {
 }
 ```
 
-- **Physical separation where the requirement demands it:** The consumer profiling pipeline (aggregation → feature extraction → AI classification → B2B export) is a long-running process triggered by checkout completion. It must not block the POS validation response. By extracting it to a BullMQ worker in apps/analytics-worker/src/processors/profile-update.processor.ts, we satisfy the "long-running processes" and "asynchronous communication" requirements without fragmenting the transactional domain:
+- **Physical separation where the requirement demands it:** The consumer profiling pipeline (aggregation → feature extraction → AI classification → B2B export) is a long-running process triggered by checkout completion. It must not block the POS validation response. By extracting it to a BullMQ worker in `apps/analytics-worker/src/processors/profile-update.processor.ts`, we satisfy the "long-running processes" and "asynchronous communication" requirements without fragmenting the transactional domain:
 
 ```
 // apps/analytics-worker/src/processors/profile-update.processor.ts
@@ -127,7 +128,7 @@ export class ProfileUpdateProcessor {
 }
 ```
 
-- **Evolutionary path to Serverless without rewrites:** Each module exposes its functionality through a TypeScript interface in the application/ layer. NestJS DI binds the interface to its implementation in *.module.ts. To migrate a module to AWS Lambda, only the binding changes — the domain logic remains untouched:
+- **Evolutionary path to Serverless without rewrites:** Each module exposes its functionality through a TypeScript interface in the `application/` layer. NestJS DI binds the interface to its implementation in `*.module.ts`. To migrate a module to AWS Lambda, only the binding changes — the domain logic remains untouched:
 
 ```
 // apps/api/src/modules/catalog/catalog.module.ts — Current: in-process
@@ -152,15 +153,15 @@ export class CatalogModule {}
 
 | Layer | Responsibility | Path Convention | Example |
 |---|---|---|---|
-| Presentation | Receive HTTP requests and WebSocket connections. Validate input DTOs using Zod schemas and ValidationPipe. Transform application-layer results into HTTP responses or WS events. Must not contain business logic. | src/modules/{domain}/presentation/ | apps/api/src/modules/checkout/presentation/controllers/session.controller.ts |
-| Application | Orchestrate business logic across domain entities and infrastructure services. Publish domain events after transaction commits. Must not access databases or external APIs directly — only through injected interfaces. | src/modules/{domain}/application/ | apps/api/src/modules/checkout/application/services/checkout.service.ts |
-| Domain | Pure TypeScript entities, value objects, domain events, business rules, and strategy interfaces. Must not import from NestJS, Prisma, or any infrastructure package. | src/modules/{domain}/domain/ | apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts |
-| Infrastructure | Concrete implementations of interfaces defined in the application/domain layers: Prisma repositories, BullMQ publishers, S3 storage clients, JWT signers. | src/modules/{domain}/infrastructure/ | apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts |
+| Presentation | Receive HTTP requests and WebSocket connections. Validate input DTOs using Zod schemas and ValidationPipe. Transform application-layer results into HTTP responses or WS events. Must not contain business logic. | `src/modules/{domain}/presentation/` | `apps/api/src/modules/checkout/presentation/controllers/session.controller.ts` |
+| Application | Orchestrate business logic across domain entities and infrastructure services. Publish domain events after transaction commits. Must not access databases or external APIs directly — only through injected interfaces. | `src/modules/{domain}/application/` | `apps/api/src/modules/checkout/application/services/checkout.service.ts` |
+| Domain | Pure TypeScript entities, value objects, domain events, business rules, and strategy interfaces. Must not import from NestJS, Prisma, or any infrastructure package. | `src/modules/{domain}/domain/` | `apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts` |
+| Infrastructure | Concrete implementations of interfaces defined in the application/domain layers: Prisma repositories, BullMQ publishers, S3 storage clients, JWT signers. | `src/modules/{domain}/infrastructure/` | `apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts` |
 
 
 
 **Layer Rules:** The dependency direction is strictly inward. These rules are verified at build time and enforced by the NestJS DI container at runtime.
-- **Domain → Nothing (Pure TypeScript):** The domain layer has zero external dependencies. It cannot import from @nestjs/common, @prisma/client, or any infrastructure/ folder. This is verified by the tsconfig.json paths configuration that blocks certain imports. See apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts:
+- **Domain → Nothing (Pure TypeScript):** The domain layer has zero external dependencies. It cannot import from `@nestjs/common`, `@prisma/client`, or any infrastructure/ folder. This is verified by the tsconfig.json paths configuration that blocks certain imports. See `apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`:
 
 ```
 // apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts
@@ -224,9 +225,9 @@ export class ShoppingSession {
 }
 ```
 
-- **Application → Domain Entities + Infrastructure Interfaces (not implementations):** Application services import domain entities and infrastructure interfaces (ISessionRepository, IEventPublisher). They never import concrete classes from infrastructure/. NestJS DI injects the concrete implementations at runtime. See apps/api/src/modules/checkout/application/services/checkout.service.ts (constructor shown above).
+- **Application → Domain Entities + Infrastructure Interfaces (not implementations):** Application services import domain entities and infrastructure interfaces (`ISessionRepository`, `IEventPublisher`). They never import concrete classes from `infrastructure/`. NestJS DI injects the concrete implementations at runtime. See `apps/api/src/modules/checkout/application/services/checkout.service.ts` (constructor shown above).
 
-- **Infrastructure → Domain Entities + Implements Application Interfaces:** Infrastructure classes import domain entities (to map to/from database rows) and implement interfaces from the application layer. See apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts:
+- **Infrastructure → Domain Entities + Implements Application Interfaces:** Infrastructure classes import domain entities (to map to/from database rows) and implement interfaces from the application layer. See `apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`:
 
 ```
 // apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts
@@ -265,7 +266,7 @@ export class PrismaSessionRepository implements ISessionRepository {
 }
 ```
 
-- **Presentation → Application Services Only:** Controllers inject application services and call their methods. They never access repositories, domain entities, or Prisma directly. They receive raw HTTP data and return DTOs. See apps/api/src/modules/checkout/presentation/controllers/session.controller.ts:
+- **Presentation → Application Services Only:** Controllers inject application services and call their methods. They never access repositories, domain entities, or Prisma directly. They receive raw HTTP data and return DTOs. See `apps/api/src/modules/checkout/presentation/controllers/session.controller.ts`:
 
 ```
 // apps/api/src/modules/checkout/presentation/controllers/session.controller.ts
@@ -297,7 +298,7 @@ export class SessionController {
 }
 ```
 
-- **Dependency Injection as the sole coupling mechanism:** NestJS acts as the inversion-of-control container. Module files bind interfaces to implementations. See apps/api/src/modules/checkout/checkout.module.ts:
+- **Dependency Injection as the sole coupling mechanism:** NestJS acts as the inversion-of-control container. Module files bind interfaces to implementations. See `apps/api/src/modules/checkout/checkout.module.ts`:
 
 ```
 // apps/api/src/modules/checkout/checkout.module.ts
