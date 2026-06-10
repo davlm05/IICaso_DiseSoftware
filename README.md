@@ -3954,358 +3954,790 @@ export class PrismaPointsRepository implements IPointsRepository {
 
 
 ---
-# 2.6 Observability — SISTRA-TEC
 
+## 2.6 Observability
 
+This section defines the three pillars of observability — logging, metrics, and tracing — plus alerting, health checks, and error tracking for the SmartCart backend. The design follows the principle that every component must emit enough telemetry to answer "what is happening right now?" and "what happened during the last incident?" without deploying new code.
 
-## Tool summary by concern
+### Observability Architecture
 
-| Concern | Tool / Approach |
-|---|---|
-| **Structured Logging** | Custom wrapper (`apps/sistra-tec/src/utils/logger.js`) — JSON with `requestId`, `userId`, `severity`, `screen`; replaceable by Sentry Breadcrumbs in production |
-| **Monitoring** | Supabase Dashboard (query latency, RPC errors, storage usage); Web Vitals via `reportWebVitals.js` already bundled in the project |
-| **Distributed Tracing** | Correlation IDs propagated on every Supabase RPC call; forward-compatible with OpenTelemetry |
-| **Alerting** | Supabase Alerts (UI) for database errors and quota thresholds; optional e-mail/webhook for P1 incidents |
-| **Health Checks** | `checkSupabaseHealth()` utility (`apps/sistra-tec/src/utils/healthCheck.js`) that verifies Supabase connectivity; callable from CI/CD pipelines |
-| **Error Tracking** | Sentry SDK (`@sentry/react`) for unhandled exceptions; `console.error` wrapped in the logger to capture service-layer errors |
+```mermaid
+flowchart TD
+    subgraph NestJS_Application["NestJS Application (apps/api)"]
+        Pino["Pino Logger\n(structured JSON logs)\napps/api/src/common/interceptors/logging.interceptor.ts"]
+        Prom["Prometheus Metrics\napps/api/src/common/metrics/prometheus.service.ts"]
+        OTEL["OpenTelemetry SDK (traces)\napps/api/src/common/tracing/otel.module.ts"]
+        Sentry["Sentry (error tracking)\napps/api/src/common/filters/sentry-exception.filter.ts"]
+    end
 
----
+    Pino --> Stdout["Stdout/File → Log Drain"]
+    Prom --> Metrics["/metrics endpoint"]
+    OTEL --> OTLP["OTLP Collector → Jaeger"]
+    Sentry --> SentrySaaS["Sentry SaaS"]
 
-## 1. Structured Logging
+    subgraph Aggregation["Log Aggregation & Visualization"]
+        Loki["Loki (logs)\ndocker-compose.yml → loki service"]
+        Grafana["Grafana Dashboards\ndocker-compose.yml → grafana service"]
+        Prometheus["Prometheus (metrics)\ndocker-compose.yml → prometheus service"]
+        Alertmanager["Alertmanager\napps/api/config/alertmanager.yml"]
+    end
 
-### Design rationale
+    Stdout --> Loki
+    Metrics --> Prometheus
+    OTLP --> Jaeger["Jaeger UI\napps/api/config/otel-collector.yml"]
+    SentrySaaS --> Grafana
 
-SISTRA-TEC is a pure React frontend with no owned Node.js server, so structured logging lives on the client. A thin wrapper emits JSON to the console in development and can be swapped for a Sentry/LogRocket transport in production without touching any call sites.
+    Loki --> Grafana
+    Prometheus --> Grafana
+    Grafana --> Alertmanager
+    Alertmanager --> PagerDuty["PagerDuty Integration\napps/api/config/alertmanager.yml"]
+    Alertmanager --> Slack["Slack Webhook\napps/api/config/alertmanager.yml"]
 
-### Proposed implementation
-
-**`apps/sistra-tec/src/utils/logger.js`**
-```js
-// apps/sistra-tec/src/utils/logger.js
-const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
-const MIN_LEVEL = process.env.NODE_ENV === 'production' ? 1 : 0;
-
-let _requestId = null;
-let _userId    = null;
-
-export const setLogContext = ({ requestId, userId }) => {
-  _requestId = requestId;
-  _userId    = userId;
-};
-
-const emit = (severity, message, extra = {}) => {
-  if (LOG_LEVELS[severity] < MIN_LEVEL) return;
-  const entry = {
-    timestamp:  new Date().toISOString(),
-    severity,
-    message,
-    requestId:  _requestId,
-    userId:     _userId,
-    ...extra,
-  };
-  // Pretty-print in development; flat JSON in production for log ingestion
-  if (process.env.NODE_ENV === 'development') {
-    console[severity === 'error' ? 'error' : 'log'](entry);
-  } else {
-    console.log(JSON.stringify(entry));
-  }
-};
-
-export const logger = {
-  debug: (msg, extra) => emit('debug', msg, extra),
-  info:  (msg, extra) => emit('info',  msg, extra),
-  warn:  (msg, extra) => emit('warn',  msg, extra),
-  error: (msg, extra) => emit('error', msg, extra),
-};
 ```
 
-### Usage in existing services
+#### 1.Structured login
 
-`apps/sistra-tec/src/services/AddDonation.js` currently has a bare `console.error` in its catch block. Replace it with:
+| Concern    | Detail                                                                                                                   |
+|------------|--------------------------------------------------------------------------------------------------------------------------|
+| Library    | nestjs-pino (Pino v9.x) — the fastest Node.js logger with zero-cost structured JSON output                               |
+| Format     | JSON, one log line per event. Every log includes level, time, pid, hostname, correlationId, userId, context              |
+| Transport  | Stdout in development. Sidecar container (Promtail) ships to Loki in production                                          |
+| Redaction  | PII fields (email, password, phone, pushToken) are automatically redacted via a custom Pino transport                    |
 
-```js
-// apps/sistra-tec/src/services/AddDonation.js  (updated catch block)
-import { logger } from '../utils/logger';
+**Instalation and configuration**
 
-} catch (error) {
-  logger.error('AddDonation RPC failed', {
-    service:      'AddDonation',
-    donorId:      loggedInUserId,
-    supabaseCode: error?.code,
-    supabaseMsg:  error?.message,
+```
+npm install nestjs-pino pino pino-http pino-pretty
+```
+
+```
+// 📁 apps/api/src/main.ts — Pino logger setup
+import { NestFactory } from '@nestjs/core';
+import { Logger, LoggerErrorInterceptor } from 'nestjs-pino';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true, // Buffer logs until logger is ready
   });
-  return null;
+
+  // Use Pino as the NestJS logger
+  app.useLogger(app.get(Logger));
+  app.useGlobalInterceptors(new LoggerErrorInterceptor());
+
+  await app.listen(3000);
 }
+bootstrap();
 ```
 
-The same pattern applies to every future service that calls `supabase.rpc(...)` or `supabase.from(...).select(...)`.
-
----
-
-## 2. Monitoring
-
-### Web Vitals (already wired)
-
-The project ships with `apps/sistra-tec/src/reportWebVitals.js` from CRA. To forward metrics to a collector:
-
-```js
-// apps/sistra-tec/src/index.jsx  (snippet)
-import reportWebVitals from './reportWebVitals';
-
-// Development: print to console
-reportWebVitals(console.log);
-
-// Production: send to a Supabase Edge Function or custom endpoint
-// reportWebVitals(({ name, value, id }) =>
-//   fetch('/api/vitals', { method: 'POST', body: JSON.stringify({ name, value, id }) })
-// );
 ```
+// 📁 apps/api/src/config/pino.config.ts
+import { Params } from 'nestjs-pino';
+import { Request, Response } from 'express';
+import { v4 as uuid } from 'uuid';
 
-Captured metrics: CLS, FCP, FID, LCP, TTFB.
+export const pinoConfig: Params = {
+  pinoHttp: {
+    // Log level by environment
+    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
 
-### Supabase Dashboard
+    // Use pino-pretty in development for human-readable logs
+    transport: process.env.NODE_ENV !== 'production'
+      ? { target: 'pino-pretty', options: { colorize: true, singleLine: true } }
+      : undefined,
 
-The following metrics are available without additional instrumentation:
+    // Generate or extract correlation ID for every request
+    genReqId: (req: Request) => {
+      return req.headers['x-correlation-id'] as string ?? uuid();
+    },
 
-| Metric | Dashboard path |
-|---|---|
-| SQL query latency | Database → Query Performance |
-| RPC errors | Database → Logs → Postgres Logs |
-| Storage usage | Storage → Bucket stats |
-| Auth failures | Authentication → Logs |
-| API request quota | Settings → Usage |
+    // Custom serializers to control what gets logged
+    serializers: {
+      req: (req: Request) => ({
+        id: req.id,
+        method: req.method,
+        url: req.url,
+        query: req.query,
+        params: req.params,
+        // NEVER log headers — they contain Authorization tokens
+        remoteAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      }),
+      res: (res: Response) => ({
+        statusCode: res.statusCode,
+      }),
+    },
 
----
+    // Redact sensitive fields from logs
+    redact: {
+      paths: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.body.password',
+        'req.body.email',
+        'req.body.phone',
+        'req.body.pushToken',
+      ],
+      censor: '[REDACTED]',
+    },
 
-## 3. Distributed Tracing
+    // Custom success/error log messages
+    customSuccessMessage: (req, res) => {
+      return `${req.method} ${req.url} ${res.statusCode} - ${res.getHeader('content-length') ?? 0}b`;
+    },
+    customErrorMessage: (req, res, err) => {
+      return `${req.method} ${req.url} failed with ${err.message}`;
+    },
 
-### Correlation IDs on RPC calls
-
-Although SISTRA-TEC has no owned backend, each Supabase RPC call can carry a `requestId` to correlate client-side logs with Postgres logs in the dashboard.
-
-**`apps/sistra-tec/src/utils/tracing.js`**
-```js
-// apps/sistra-tec/src/utils/tracing.js
-import { logger, setLogContext } from './logger';
-
-export const generateRequestId = () =>
-  `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-/**
- * Wraps a supabase.rpc() call with automatic tracing.
- * @param {object} supabase  Supabase client instance
- * @param {string} fnName    RPC function name
- * @param {object} params    RPC parameters
- * @param {string} userId    Authenticated user ID
- */
-export const tracedRpc = async (supabase, fnName, params, userId) => {
-  const requestId = generateRequestId();
-  setLogContext({ requestId, userId });
-
-  const start = performance.now();
-  const result = await supabase.rpc(fnName, params);
-  const duration = Math.round(performance.now() - start);
-
-  if (result.error) {
-    logger.error(`RPC ${fnName} failed`, { requestId, duration, error: result.error });
-  } else {
-    logger.info(`RPC ${fnName} ok`, { requestId, duration });
-  }
-
-  return result;
+    // Attach user info to every log
+    customProps: (req: any) => ({
+      correlationId: req.id,
+      userId: req.user?.sub ?? 'anonymous',
+      userRole: req.user?.role ?? 'anonymous',
+    }),
+  },
 };
 ```
 
-Usage in `apps/sistra-tec/src/services/AddDonation.js`:
-```js
-// Replaces: await supabase.rpc("AddDonation", { ... })
-const { data: trackingId, error } = await tracedRpc(
-  supabase,
-  'AddDonation',
-  { p_donor_id: userId, ... },
-  userId
-);
 ```
+// 📁 apps/api/src/app.module.ts — Import Pino module
+import { LoggerModule } from 'nestjs-pino';
+import { pinoConfig } from './config/pino.config';
 
-### OpenTelemetry — forward compatibility
-
-If the project migrates to an owned backend (Next.js API Routes or an Express proxy), the `requestId` already being propagated makes OpenTelemetry adoption straightforward:
-
-```js
-// Future instrumentation — no structural changes needed
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { WebTracerProvider }  from '@opentelemetry/sdk-trace-web';
-```
-
----
-
-## 4. Alerting
-
-### Supabase Alerts (recommended configuration)
-
-In the Supabase dashboard → Settings → Alerts, enable:
-
-| Alert | Suggested threshold | Channel |
-|---|---|---|
-| Postgres CPU > 80% | Sustained 5 minutes | Team e-mail |
-| Storage > 80% quota | — | Team e-mail |
-| Auth failures > 20/min | — | Team e-mail |
-| RPC error rate > 5% | 5-minute window | E-mail / Webhook |
-
-### Incident classification
-
-| Priority | SISTRA-TEC example | Action |
-|---|---|---|
-| **P1** | `AddDonation` RPC down, Storage inaccessible | Immediate alert + rollback |
-| **P2** | Mock data served in production, latency > 3 s | Team notification within 1 h |
-| **P3** | LCP Web Vital degraded | Backlog issue |
-
----
-
-## 5. Health Checks
-
-### Supabase connectivity check
-
-**`apps/sistra-tec/src/utils/healthCheck.js`**
-```js
-// apps/sistra-tec/src/utils/healthCheck.js
-import { supabase } from '../supabaseClient';
-
-/**
- * Verifies that the Supabase connection is live.
- * Returns { status: 'ok' | 'degraded' | 'down', latencyMs, detail }
- */
-export const checkSupabaseHealth = async () => {
-  const start = performance.now();
-  try {
-    // Minimal query against a public table (no auth required)
-    const { error } = await supabase
-      .from('beneficiaries')
-      .select('id')
-      .limit(1);
-
-    const latencyMs = Math.round(performance.now() - start);
-
-    if (error) {
-      return { status: 'degraded', latencyMs, detail: error.message };
-    }
-    return { status: 'ok', latencyMs };
-
-  } catch (err) {
-    return { status: 'down', latencyMs: null, detail: err.message };
-  }
-};
-```
-
-### Integration in App init (recommended)
-
-```js
-// apps/sistra-tec/src/App.jsx  — run before first route render
-useEffect(() => {
-  checkSupabaseHealth().then(({ status, latencyMs }) => {
-    logger.info('Supabase health check', { status, latencyMs });
-    if (status === 'down') {
-      // Show service-unavailable banner
-    }
-  });
-}, []);
-```
-
-### CI/CD health check step
-
-Add a post-deploy step to the GitHub Actions pipeline:
-
-```yaml
-# apps/sistra-tec/.github/workflows/deploy.yml  (snippet)
-- name: Health check
-  run: |
-    STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-      "https://<project>.supabase.co/rest/v1/beneficiaries?select=id&limit=1" \
-      -H "apikey: $SUPABASE_ANON_KEY")
-    if [ "$STATUS" != "200" ]; then
-      echo "Health check failed with status $STATUS" && exit 1
-    fi
-```
-
----
-
-## 6. Error Tracking
-
-### Sentry (recommended for production)
-
-Install:
-```bash
-pnpm add @sentry/react
-```
-
-Initialize in `apps/sistra-tec/src/index.jsx`:
-```js
-// apps/sistra-tec/src/index.jsx
-import * as Sentry from '@sentry/react';
-
-Sentry.init({
-  dsn:         process.env.REACT_APP_SENTRY_DSN,
-  environment: process.env.NODE_ENV,
-  release:     process.env.REACT_APP_VERSION,  // ties errors to deploy releases
-  enabled:     process.env.NODE_ENV === 'production',
-  integrations: [
-    Sentry.browserTracingIntegration(),
+@Module({
+  imports: [
+    LoggerModule.forRoot(pinoConfig),
+    // ... other modules
   ],
-  tracesSampleRate: 0.1,  // capture 10% of sessions
-});
+})
+export class AppModule {}
 ```
 
-Manual capture in critical services (`apps/sistra-tec/src/services/AddDonation.js`):
-```js
-import * as Sentry from '@sentry/react';
-
-} catch (error) {
-  Sentry.captureException(error, {
-    tags:  { service: 'AddDonation' },
-    extra: { donorId: loggedInUserId, donationData },
-  });
-  logger.error('AddDonation RPC failed', { error });
-  return null;
+**Example log output**:
+```
+{
+  "level": 30,
+  "time": "2026-06-09T14:30:05.123Z",
+  "pid": 42,
+  "hostname": "api-prod-7f8a9b",
+  "correlationId": "ckv8x9y2z00001abcdef1234",
+  "userId": "550e8400-e29b-41d4-a716-446655440000",
+  "userRole": "shopper",
+  "req": {
+    "id": "ckv8x9y2z00001abcdef1234",
+    "method": "POST",
+    "url": "/api/v1/sessions/abc123/items",
+    "remoteAddress": "192.168.1.100"
+  },
+  "res": { "statusCode": 200 },
+  "msg": "POST /api/v1/sessions/abc123/items 200 - 256b",
+  "responseTime": 47
 }
 ```
 
-### Required environment variables
-
-Add to `apps/sistra-tec/.env.local` (and to your production environment — Vercel / Netlify):
+**Application-level logging example**:
 
 ```
-# apps/sistra-tec/.env.local
-REACT_APP_SUPABASE_URL=https://<project>.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=<anon-key>
-REACT_APP_SENTRY_DSN=https://<hash>@o<org>.ingest.sentry.io/<project>
-REACT_APP_VERSION=0.1.0
+// 📁 apps/api/src/modules/checkout/application/services/checkout.service.ts
+import { PinoLogger } from 'nestjs-pino';
+
+@Injectable()
+export class CheckoutService {
+  constructor(
+    private readonly logger: PinoLogger,
+    // ... other dependencies
+  ) {
+    this.logger.setContext('CheckoutService');
+  }
+
+  async validateSession(
+    qrToken: string,
+    scannedItems: ScannedItemDTO[],
+  ): Promise<ValidationResult> {
+    const startTime = Date.now();
+
+    this.logger.info({
+      event: 'validation_started',
+      sessionId: qrPayload.sessionId,
+      itemCount: scannedItems.length,
+    });
+
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // ... validation logic ...
+        return { success: true, pointsAwarded: 250, sessionId: 'abc' };
+      });
+
+      this.logger.info({
+        event: 'validation_completed',
+        sessionId: result.sessionId,
+        pointsAwarded: result.pointsAwarded,
+        durationMs: Date.now() - startTime,
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error({
+        event: 'validation_failed',
+        sessionId: qrPayload?.sessionId,
+        error: error.message,
+        errorCode: error.errorCode,
+        durationMs: Date.now() - startTime,
+      });
+      throw error;
+    }
+  }
+}
 ```
 
-> ⚠️ Never commit `apps/sistra-tec/.env.local`. It is already covered by the project's existing `.gitignore`.
+#### 2.Monitoring-Metrics
 
----
+| Concern           | Detail                                                                                           |
+|-------------------|--------------------------------------------------------------------------------------------------|
+| Library           | @willsoto/nestjs-prometheus — exposes a /metrics endpoint for Prometheus scraping                 |
+| Default Metrics   | CPU, memory, event loop lag, GC pauses, heap usage (via prom-client defaults)                     |
+| HTTP Metrics      | Request duration histogram, request count counter, error rate by status code                      |
+| Business Metrics  | Checkout completions, points awarded, QR generations, AI classification latency                   |
+| Database Metrics  | Prisma query duration, connection pool utilization                                                |
+| Queue Metrics     | BullMQ queue depth, job processing time, job failure rate                                         |
 
-## 7. Current state vs. target state
+**Instalation and configuration**
 
-| Area | Current state (this branch) | Target state |
-|---|---|---|
-| Logging | Bare `console.error` in `AddDonation.js` | `logger.error(...)` with JSON context in all services |
-| Monitoring | Manual Supabase Dashboard | + Web Vitals forwarded to endpoint; automated alerts configured |
-| Tracing | No correlation IDs | `tracedRpc()` wrapping all Supabase calls |
-| Health checks | Not implemented | `checkSupabaseHealth()` in App init + CI/CD step |
-| Error tracking | Not implemented | Sentry enabled in production |
-| Mock services | `AdminUsers`, `AdminBeneficiaries`, `AdminDonations` use `localStorage` | No network instrumentation needed until migrated to Supabase |
+```
+npm install @willsoto/nestjs-prometheus prom-client
+```
 
----
+```
+// 📁 apps/api/src/config/metrics.config.ts
+import { PrometheusModuleOptions } from '@willsoto/nestjs-prometheus';
 
-## File reference map
+export const metricsConfig: PrometheusModuleOptions = {
+  defaultMetrics: {
+    enabled: true,
+    config: {
+      prefix: 'smartcart_',
+    },
+  },
+  defaultLabels: {
+    app: 'smartcart-api',
+    environment: process.env.NODE_ENV ?? 'development',
+  },
+};
+```
 
-| File | Role in observability |
-|---|---|
-| `apps/sistra-tec/src/supabaseClient.js` | Central Supabase client — wrap with `tracedRpc` |
-| `apps/sistra-tec/src/services/AddDonation.js` | Only live Supabase service; primary target for logging and tracing |
-| `apps/sistra-tec/src/services/AdminDonations.js` | Mock with migration comments; logging applies when real block is uncommented |
-| `apps/sistra-tec/src/reportWebVitals.js` | Web Vitals hook already included; only needs a transport configured |
-| `apps/sistra-tec/src/utils/reportUtils.js` | Downloadable report generation; no additional observability required |
-| `supabase/GetAllDonations.sql` | Admin RPC; target for health check and tracing once activated |
-| `apps/sistra-tec/.env.local` (not committed) | `REACT_APP_SUPABASE_URL`, `REACT_APP_SUPABASE_ANON_KEY`, `REACT_APP_SENTRY_DSN` |
+```
+// 📁 apps/api/src/app.module.ts — Import Prometheus module
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+import { metricsConfig } from './config/metrics.config';
+
+@Module({
+  imports: [
+    PrometheusModule.register(metricsConfig),
+    // ... other modules
+  ],
+})
+export class AppModule {}
+```
+
+**Custom business metrics**:
+```
+// 📁 apps/api/src/common/metrics/business-metrics.service.ts
+import { Injectable } from '@nestjs/common';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Counter, Histogram, Gauge } from 'prom-client';
+
+@Injectable()
+export class BusinessMetricsService {
+  constructor(
+    @InjectMetric('smartcart_checkouts_total')
+    private readonly checkoutCounter: Counter<string>,
+
+    @InjectMetric('smartcart_points_awarded_total')
+    private readonly pointsCounter: Counter<string>,
+
+    @InjectMetric('smartcart_checkout_duration_seconds')
+    private readonly checkoutDuration: Histogram<string>,
+
+    @InjectMetric('smartcart_qr_generations_total')
+    private readonly qrCounter: Counter<string>,
+
+    @InjectMetric('smartcart_active_sessions')
+    private readonly activeSessionsGauge: Gauge<string>,
+
+    @InjectMetric('smartcart_bullmq_queue_depth')
+    private readonly queueDepthGauge: Gauge<string>,
+
+    @InjectMetric('smartcart_ai_classification_duration_seconds')
+    private readonly aiDuration: Histogram<string>,
+  ) {}
+
+  recordCheckoutCompleted(pointsAwarded: number, durationMs: number): void {
+    this.checkoutCounter.inc();
+    this.pointsCounter.inc(pointsAwarded);
+    this.checkoutDuration.observe(durationMs / 1000);
+  }
+
+  recordQrGenerated(): void {
+    this.qrCounter.inc();
+  }
+
+  setActiveSessions(count: number): void {
+    this.activeSessionsGauge.set(count);
+  }
+
+  recordQueueDepth(queueName: string, depth: number): void {
+    this.queueDepthGauge.set({ queue: queueName }, depth);
+  }
+
+  recordAiClassification(durationMs: number): void {
+    this.aiDuration.observe(durationMs / 1000);
+  }
+}
+```
+
+```
+// 📁 apps/api/src/common/metrics/metrics.module.ts — Register all custom metrics
+import { Module } from '@nestjs/common';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+
+@Module({
+  imports: [
+    PrometheusModule.register({
+      defaultMetrics: { enabled: true },
+    }),
+  ],
+  providers: [
+    BusinessMetricsService,
+    // Register each metric with its configuration
+    PrometheusModule.registerCounter({
+      name: 'smartcart_checkouts_total',
+      help: 'Total number of successful checkouts',
+      labelNames: ['store_id'],
+    }),
+    PrometheusModule.registerCounter({
+      name: 'smartcart_points_awarded_total',
+      help: 'Total points awarded to shoppers',
+    }),
+    PrometheusModule.registerHistogram({
+      name: 'smartcart_checkout_duration_seconds',
+      help: 'Checkout validation duration in seconds',
+      buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+    }),
+    PrometheusModule.registerCounter({
+      name: 'smartcart_qr_generations_total',
+      help: 'Total QR codes generated',
+    }),
+    PrometheusModule.registerGauge({
+      name: 'smartcart_active_sessions',
+      help: 'Number of currently active shopping sessions',
+    }),
+    PrometheusModule.registerGauge({
+      name: 'smartcart_bullmq_queue_depth',
+      help: 'Number of waiting jobs in BullMQ queues',
+      labelNames: ['queue'],
+    }),
+    PrometheusModule.registerHistogram({
+      name: 'smartcart_ai_classification_duration_seconds',
+      help: 'AI inference duration in seconds',
+      buckets: [0.5, 1, 2, 5, 10, 30],
+    }),
+  ],
+  exports: [BusinessMetricsService],
+})
+export class MetricsModule {}
+```
+
+**Usage in checkout service**:
+
+```
+// 📁 apps/api/src/modules/checkout/application/services/checkout.service.ts (extract)
+async validateSession(qrToken: string, scannedItems: ScannedItemDTO[]): Promise<ValidationResult> {
+  const startTime = Date.now();
+
+  try {
+    const result = await this.prisma.$transaction(async (tx) => {
+      // ... validation logic ...
+      return { success: true, pointsAwarded: 250, sessionId: 'abc', storeId: 'xyz' };
+    });
+
+    // Record business metric
+    this.metrics.recordCheckoutCompleted(result.pointsAwarded, Date.now() - startTime);
+
+    return result;
+  } catch (error) {
+    throw error; // Error metrics recorded by the global exception filter
+  }
+}
+```
+
+**BullMQ Queue Depth Monitor**
+
+```
+// 📁 apps/api/src/common/queues/queue-metrics.service.ts
+import { Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { Cron } from '@nestjs/schedule';
+import { BusinessMetricsService } from '../metrics/business-metrics.service';
+
+@Injectable()
+export class QueueMetricsService {
+  constructor(
+    @InjectQueue('analytics-profile-update') private readonly analyticsQueue: Queue,
+    @InjectQueue('push-notifications') private readonly notificationQueue: Queue,
+    private readonly metrics: BusinessMetricsService,
+  ) {}
+
+  /**
+   * Report queue depth every 30 seconds so Grafana can visualize
+   * backpressure in real time and trigger alerts.
+   */
+  @Cron('*/30 * * * * *')
+  async reportQueueDepths(): Promise<void> {
+    const analyticsDepth = await this.analyticsQueue.getWaitingCount();
+    const notificationDepth = await this.notificationQueue.getWaitingCount();
+
+    this.metrics.recordQueueDepth('analytics-profile-update', analyticsDepth);
+    this.metrics.recordQueueDepth('push-notifications', notificationDepth);
+  }
+}
+```
+
+#### 3.Distributed tracing
+
+| Concern              | Detail                                                                                                                           |
+|----------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| Library              | @opentelemetry/sdk-node with @opentelemetry/instrumentation-http, @opentelemetry/instrumentation-express, @opentelemetry/instrumentation-ioredis, @opentelemetry/instrumentation-bullmq |
+| Exporter             | OTLP gRPC exporter sending to Jaeger (or Grafana Tempo in production)                                                            |
+| Sampling             | 100% in development. Adaptive sampling in production (10% base, 100% for errors).                                                |
+| Context Propagation  | W3C Trace Context headers propagated across HTTP calls and injected into BullMQ job metadata                                     |
+
+**Instalation and configuration**
+
+```
+npm install @opentelemetry/sdk-node \
+  @opentelemetry/api \
+  @opentelemetry/auto-instrumentations-node \
+  @opentelemetry/exporter-trace-otlp-grpc \
+  @opentelemetry/instrumentation-http \
+  @opentelemetry/instrumentation-express \
+  @opentelemetry/instrumentation-ioredis \
+  @opentelemetry/instrumentation-bullmq
+```
+
+**Tracing Initialization (runs before NestJS bootstrap)**:
+
+```
+// 📁 apps/api/src/tracing.ts — MUST be imported before any other module
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
+import { Resource } from '@opentelemetry/resources';
+import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
+import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
+import { BullMQInstrumentation } from '@opentelemetry/instrumentation-bullmq';
+import { PrismaInstrumentation } from '@prisma/instrumentation';
+
+const sdk = new NodeSDK({
+  resource: new Resource({
+    [SemanticResourceAttributes.SERVICE_NAME]: 'smartcart-api',
+    [SemanticResourceAttributes.SERVICE_VERSION]: process.env.npm_package_version ?? '1.0.0',
+    [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: process.env.NODE_ENV ?? 'development',
+  }),
+  spanProcessors: [
+    new BatchSpanProcessor(
+      new OTLPTraceExporter({
+        url: process.env.OTLP_EXPORTER_ENDPOINT ?? 'http://localhost:4317',
+      }),
+    ),
+  ],
+  instrumentations: [
+    new HttpInstrumentation({
+      // Ignore health check endpoints to reduce noise
+      ignoreIncomingPaths: ['/health', '/metrics'],
+    }),
+    new ExpressInstrumentation(),
+    new IORedisInstrumentation(),
+    new BullMQInstrumentation(),
+    new PrismaInstrumentation(),
+  ],
+});
+
+// Start the SDK
+sdk.start();
+
+// Gracefully shut down on process exit
+process.on('SIGTERM', () => {
+  sdk.shutdown()
+    .then(() => console.log('OpenTelemetry SDK shut down'))
+    .catch(err => console.error('Error shutting down OpenTelemetry SDK', err))
+    .finally(() => process.exit(0));
+});
+
+export default sdk;
+```
+
+```
+// 📁 apps/api/src/main.ts — Import tracing BEFORE anything else
+import './tracing'; // ← FIRST import — initializes OpenTelemetry
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(3000);
+}
+bootstrap();
+```
+
+**Manual Span Creation for Business Operations**:
+
+```
+// 📁 apps/api/src/modules/checkout/application/services/checkout.service.ts (extract)
+import { trace, SpanStatusCode } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('smartcart-checkout');
+
+async validateSession(qrToken: string, scannedItems: ScannedItemDTO[]): Promise<ValidationResult> {
+  // Start a custom span for the entire validation flow
+  return tracer.startActiveSpan('checkout.validate', async (span) => {
+    span.setAttribute('smartcart.scanned_items_count', scannedItems.length);
+
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // ... validation logic ...
+        return { success: true, pointsAwarded: 250, sessionId: 'abc' };
+      });
+
+      span.setAttribute('smartcart.points_awarded', result.pointsAwarded);
+      span.setAttribute('smartcart.session_id', result.sessionId);
+      span.setStatus({ code: SpanStatusCode.OK });
+      span.end();
+
+      return result;
+    } catch (error) {
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: error.message,
+      });
+      span.recordException(error);
+      span.end();
+      throw error;
+    }
+  });
+}
+```
+
+#### 4.Alerting
+
+| Concern              | Detail                                                                                                      |
+|----------------------|-------------------------------------------------------------------------------------------------------------|
+| Tool                 | Grafana Alerting (built into Grafana) or Alertmanager + Prometheus Rules                                    |
+| Notification Channels| PagerDuty for P1 (critical), Slack #smartcart-alerts for P2/P3, Email for P4                                |
+| On-Call Rotation     | PagerDuty escalation policy: Primary on-call (5 min) → Secondary (10 min) → Engineering Manager (15 min)    |
+
+**Alert Definitions (Prometheus Rules)**:
+
+```
+# 📁 infra/prometheus/rules/smartcart-alerts.yml
+groups:
+  - name: smartcart-critical
+    rules:
+      # ─── P1: Service is down ──────────────────────────────
+      - alert: ServiceDown
+        expr: up{job="smartcart-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          priority: P1
+        annotations:
+          summary: "SmartCart API is unreachable"
+          description: "The /health endpoint has failed for all instances for more than 1 minute."
+          runbook_url: "https://wiki.smartcart.app/runbooks/service-down"
+
+      # ─── P1: High error rate ──────────────────────────────
+      - alert: HighErrorRate
+        expr: |
+          rate(http_requests_total{status_code=~"5.."}[5m]) /
+          rate(http_requests_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          priority: P1
+        annotations:
+          summary: "Error rate exceeds 1%"
+          description: "5xx error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+          runbook_url: "https://wiki.smartcart.app/runbooks/high-error-rate"
+
+      # ─── P1: Queue backing up ──────────────────────────────
+      - alert: QueueBackpressure
+        expr: smartcart_bullmq_queue_depth > 1000
+        for: 10m
+        labels:
+          severity: critical
+          priority: P2
+        annotations:
+          summary: "BullMQ queue '{{ $labels.queue }}' has {{ $value }} waiting jobs"
+          description: "Analytics or notification queue is not keeping up with demand."
+          runbook_url: "https://wiki.smartcart.app/runbooks/queue-backpressure"
+
+  - name: smartcart-warning
+    rules:
+      # ─── P2: High latency ─────────────────────────────────
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(smartcart_checkout_duration_seconds_bucket[5m])
+          ) > 2.0
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+        annotations:
+          summary: "P95 checkout latency > 2 seconds"
+          description: "Checkout validation is taking {{ $value }}s at P95."
+
+      # ─── P2: Database connection pool near exhaustion ──────
+      - alert: DatabaseConnectionPoolHigh
+        expr: smartcart_prisma_pool_connections_active / smartcart_prisma_pool_connections_total > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+        annotations:
+          summary: "Database connection pool > 80% utilized"
+
+      # ─── P3: AI service degraded ───────────────────────────
+      - alert: AiServiceLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            rate(smartcart_ai_classification_duration_seconds_bucket[5m])
+          ) > 10.0
+        for: 15m
+        labels:
+          severity: info
+          priority: P3
+        annotations:
+          summary: "AI classification P95 > 10s — B2B data may be stale"
+```
+
+#### 5.Health Checks
+
+```
+// 📁 apps/api/src/common/health/health.controller.ts
+import { Controller, Get, HttpStatus, HttpCode } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Public } from '../decorators/public.decorator';
+import {
+  HealthCheckService,
+  HealthCheck,
+  PrismaHealthIndicator,
+  MicroserviceHealthIndicator,
+} from '@nestjs/terminus';
+import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+
+@ApiTags('Health')
+@Controller('health')
+export class HealthController {
+  constructor(
+    private readonly health: HealthCheckService,
+    private readonly prisma: PrismaHealthIndicator,
+    private readonly prismaService: PrismaService,
+    private readonly microservice: MicroserviceHealthIndicator,
+    private readonly redisService: RedisService,
+  ) {}
+
+  /**
+   * Liveness probe — checks if the process is alive.
+   * Used by Kubernetes to know when to restart the container.
+   * Must be lightweight; no external dependencies checked.
+   */
+  @Get('liveness')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  liveness(): { status: string } {
+    return { status: 'alive' };
+  }
+
+  /**
+   * Readiness probe — checks if the application can serve traffic.
+   * Used by Kubernetes to know when to add the pod to the Service.
+   * Checks critical external dependencies (DB, Redis).
+   */
+  @Get('readiness')
+  @Public()
+  @HealthCheck()
+  @ApiOperation({ summary: 'Readiness probe — checks DB + Redis connectivity' })
+  async readiness() {
+    return this.health.check([
+      // Check PostgreSQL connectivity
+      async () =>
+        this.prisma.pingCheck('database', this.prismaService, { timeout: 3000 }),
+      // Check Redis connectivity
+      async () => {
+        const isHealthy = await this.redisService.ping();
+        if (!isHealthy) throw new Error('Redis is unreachable');
+        return { redis: { status: 'up' } };
+      },
+    ]);
+  }
+
+  /**
+   * Full health check — includes all dependencies.
+   * Used by load balancers and monitoring tools.
+   */
+  @Get()
+  @Public()
+  @HealthCheck()
+  @ApiOperation({ summary: 'Full health check' })
+  async fullCheck() {
+    return this.health.check([
+      async () =>
+        this.prisma.pingCheck('database', this.prismaService, { timeout: 3000 }),
+      async () => {
+        const isHealthy = await this.redisService.ping();
+        if (!isHealthy) throw new Error('Redis is unreachable');
+        return { redis: { status: 'up' } };
+      },
+      async () => ({
+        uptime: {
+          status: 'up',
+          seconds: process.uptime(),
+        },
+      }),
+    ]);
+  }
+}
+```
+
+**Kubernetes Pod Configuration (reference)**:
+
+```
+# 📁 infra/kubernetes/api-deployment.yaml — Health check probes
+spec:
+  containers:
+    - name: smartcart-api
+      image: smartcart-api:latest
+      ports:
+        - containerPort: 3000
+      livenessProbe:
+        httpGet:
+          path: /api/v1/health/liveness
+          port: 3000
+        initialDelaySeconds: 10
+        periodSeconds: 15
+        timeoutSeconds: 3
+        failureThreshold: 3
+      readinessProbe:
+        httpGet:
+          path: /api/v1/health/readiness
+          port: 3000
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 2
+```
+
