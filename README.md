@@ -3999,10 +3999,10 @@ flowchart TD
 
 | Concern    | Detail                                                                                                                   |
 |------------|--------------------------------------------------------------------------------------------------------------------------|
-| Library    | nestjs-pino (Pino v9.x) — the fastest Node.js logger with zero-cost structured JSON output                               |
-| Format     | JSON, one log line per event. Every log includes level, time, pid, hostname, correlationId, userId, context              |
+| Library    | `nestjs-pino` (Pino v9.x) — the fastest Node.js logger with zero-cost structured JSON output                               |
+| Format     | JSON, one log line per event. Every log includes `level`, `time`, `pid`, `hostname`, `correlationId`, `userId`, `context`              |
 | Transport  | Stdout in development. Sidecar container (Promtail) ships to Loki in production                                          |
-| Redaction  | PII fields (email, password, phone, pushToken) are automatically redacted via a custom Pino transport                    |
+| Redaction  | PII fields (`email`, `password`, `phone`, `pushToken`) are automatically redacted via a custom Pino transport                    |
 
 **Instalation and configuration**
 
@@ -4194,8 +4194,8 @@ export class CheckoutService {
 
 | Concern           | Detail                                                                                           |
 |-------------------|--------------------------------------------------------------------------------------------------|
-| Library           | @willsoto/nestjs-prometheus — exposes a /metrics endpoint for Prometheus scraping                 |
-| Default Metrics   | CPU, memory, event loop lag, GC pauses, heap usage (via prom-client defaults)                     |
+| Library           | `@willsoto/nestjs-prometheus` — exposes a `/metrics` endpoint for Prometheus scraping                 |
+| Default Metrics   | CPU, memory, event loop lag, GC pauses, heap usage (via `prom-client` defaults)                     |
 | HTTP Metrics      | Request duration histogram, request count counter, error rate by status code                      |
 | Business Metrics  | Checkout completions, points awarded, QR generations, AI classification latency                   |
 | Database Metrics  | Prisma query duration, connection pool utilization                                                |
@@ -4407,7 +4407,7 @@ export class QueueMetricsService {
 
 | Concern              | Detail                                                                                                                           |
 |----------------------|----------------------------------------------------------------------------------------------------------------------------------|
-| Library              | @opentelemetry/sdk-node with @opentelemetry/instrumentation-http, @opentelemetry/instrumentation-express, @opentelemetry/instrumentation-ioredis, @opentelemetry/instrumentation-bullmq |
+| Library              | `@opentelemetry/sdk-node` with `@opentelemetry/instrumentation-http`, `@opentelemetry/instrumentation-express`, `@opentelemetry/instrumentation-ioredis`, `@opentelemetry/instrumentation-bullmq` |
 | Exporter             | OTLP gRPC exporter sending to Jaeger (or Grafana Tempo in production)                                                            |
 | Sampling             | 100% in development. Adaptive sampling in production (10% base, 100% for errors).                                                |
 | Context Propagation  | W3C Trace Context headers propagated across HTTP calls and injected into BullMQ job metadata                                     |
@@ -4535,7 +4535,7 @@ async validateSession(qrToken: string, scannedItems: ScannedItemDTO[]): Promise<
 | Concern              | Detail                                                                                                      |
 |----------------------|-------------------------------------------------------------------------------------------------------------|
 | Tool                 | Grafana Alerting (built into Grafana) or Alertmanager + Prometheus Rules                                    |
-| Notification Channels| PagerDuty for P1 (critical), Slack #smartcart-alerts for P2/P3, Email for P4                                |
+| Notification Channels| PagerDuty for P1 (critical), Slack `#smartcart-alerts` for P2/P3, Email for P4                                |
 | On-Call Rotation     | PagerDuty escalation policy: Primary on-call (5 min) → Secondary (10 min) → Engineering Manager (15 min)    |
 
 **Alert Definitions (Prometheus Rules)**:
@@ -4741,3 +4741,208 @@ spec:
         failureThreshold: 2
 ```
 
+#### 6.Error tracking-sentry
+
+| Concern            | Detail                                                                                                      |
+|--------------------|-------------------------------------------------------------------------------------------------------------|
+| Library            | `@ntegral/nestjs-sentry` (NestJS wrapper) + `@sentry/node`                                                      |
+| What is tracked    | Unhandled exceptions (500 errors), Prisma errors, BullMQ job failures                                       |
+| What is NOT tracked| Expected business errors (404, 422, 409) — these are operational, not defects                               |
+| Context            | Every Sentry event includes `userId`, `correlationId`, `sessionId`, `release` version                               |
+
+**Instalation**:
+
+```
+npm install @ntegral/nestjs-sentry @sentry/node @sentry/profiling-node
+```
+
+```
+// 📁 apps/api/src/config/sentry.config.ts
+import { SentryModuleOptions } from '@ntegral/nestjs-sentry';
+
+export const sentryConfig: SentryModuleOptions = {
+  dsn: process.env.SENTRY_DSN ?? '',
+  environment: process.env.NODE_ENV ?? 'development',
+  release: process.env.npm_package_version ?? '1.0.0',
+  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+  profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+  debug: process.env.NODE_ENV !== 'production',
+  logLevels: ['error', 'warn'],
+  // Only capture 500-level errors; 4xx are operational
+  beforeSend(event, hint) {
+    const exception = hint?.originalException as any;
+    const statusCode = exception?.status ?? exception?.statusCode;
+
+    // Don't send operational errors (4xx) to Sentry
+    if (statusCode && statusCode >= 400 && statusCode < 500) {
+      return null;
+    }
+
+    return event;
+  },
+  // Attach user context to every Sentry event
+  integrations: [
+    new Sentry.Integrations.Http({ tracing: true }),
+    new Sentry.Integrations.Express(),
+    new Sentry.Integrations.Prisma({ client: prisma }),
+  ],
+};
+```
+
+```
+// 📁 apps/api/src/app.module.ts — Import Sentry module
+import { SentryModule } from '@ntegral/nestjs-sentry';
+import { sentryConfig } from './config/sentry.config';
+
+@Module({
+  imports: [
+    SentryModule.forRoot(sentryConfig),
+    // ... other modules
+  ],
+})
+export class AppModule {}
+```
+
+**Manual error reporting context**:
+
+```
+// 📁 apps/api/src/common/filters/global-exception.filter.ts (extract)
+import * as Sentry from '@sentry/node';
+
+@Catch()
+export class GlobalExceptionFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const ctx = host.switchToHttp();
+    const request = ctx.getRequest();
+    const response = ctx.getResponse();
+
+    // Set Sentry context for this error
+    Sentry.setContext('request', {
+      correlationId: request.headers['x-correlation-id'],
+      method: request.method,
+      url: request.url,
+      userId: request.user?.sub,
+    });
+
+    if (exception instanceof HttpException) {
+      const status = exception.getStatus();
+      if (status >= 500) {
+        // Capture 500 errors in Sentry
+        Sentry.captureException(exception, {
+          level: 'error',
+          tags: {
+            statusCode: status.toString(),
+            endpoint: `${request.method} ${request.url}`,
+          },
+        });
+      }
+    } else {
+      // Unhandled exceptions — always capture
+      Sentry.captureException(exception, {
+        level: 'fatal',
+        tags: { endpoint: `${request.method} ${request.url}` },
+      });
+    }
+
+    // ... standard error response ...
+  }
+}
+```
+
+#### 7.Grafana dashboard - key panels
+
+The following constitute the primary operational dashboard for SmartCart
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                      SmartCart — Operations Dashboard                              │
+│                                                                                  │
+│  ┌─────────────────────┐  ┌─────────────────────┐  ┌──────────────────────────┐ │
+│  │ Request Rate        │  │ Error Rate (5xx)    │  │ P95 Latency              │ │
+│  │ (req/sec)           │  │ (%)                 │  │ (ms)                     │ │
+│  │                     │  │                     │  │                          │ │
+│  │  ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁   │  │  ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁   │  │  ▁▂▁▂▁▃▁▂▁▄▁▂▁▃▁▂▁       │ │
+│  └─────────────────────┘  └─────────────────────┘  └──────────────────────────┘ │
+│                                                                                  │
+│  ┌─────────────────────────────────────────────┐  ┌──────────────────────────┐ │
+│  │ Checkouts Completed (counter)               │  │ Points Awarded (counter) │ │
+│  │                                             │  │                          │ │
+│  │  ▁▂▃▅▇█▇▆▄▃▂▁▂▃▄▅▆▇█▇▆▅▄▃▂▁               │  │  ▁▂▃▅▇██▇▆▄▃▂▁▁▂▃▄▅▆▇█▇▆▅▄▃ │ │
+│  └─────────────────────────────────────────────┘  └──────────────────────────┘ │
+│                                                                                  │
+│  ┌─────────────────────────────────────────────┐  ┌──────────────────────────┐ │
+│  │ Queue Depth (analytics)                     │  │ AI Classification Latency │ │
+│  │                                             │  │ (P95, ms)                │ │
+│  │  ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁          │  │  ▁▂▃▅▆▇█▇▆▅▃▂▁▁▂▃▄▅▆▇█▇▆▅▄▃▂ │ │
+│  └─────────────────────────────────────────────┘  └──────────────────────────┘ │
+│                                                                                  │
+│  ┌─────────────────────────────────────────────┐  ┌──────────────────────────┐ │
+│  │ Database Connections (active / total)       │  │ Redis Memory Usage        │ │
+│  │                                             │  │ (%)                      │ │
+│  │  ████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░  │  │  ████████░░░░░░░░░░░░░░  │ │
+│  └─────────────────────────────────────────────┘  └──────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Grafana Dashboard JSON Provisioning**:
+
+```
+// 📁 infra/grafana/dashboards/smartcart-overview.json (excerpt)
+{
+  "dashboard": {
+    "title": "SmartCart — Operations Overview",
+    "tags": ["smartcart", "production"],
+    "refresh": "10s",
+    "panels": [
+      {
+        "title": "Request Rate",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[1m])",
+            "legendFormat": "{{method}} {{path}}"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate (5xx)",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status_code=~\"5..\"}[5m]) / rate(http_requests_total[5m])",
+            "legendFormat": "Error Rate"
+          }
+        ]
+      },
+      {
+        "title": "P95 Checkout Latency",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(smartcart_checkout_duration_seconds_bucket[5m]))",
+            "legendFormat": "P95 Latency"
+          }
+        ]
+      },
+      {
+        "title": "Queue Depth",
+        "targets": [
+          {
+            "expr": "smartcart_bullmq_queue_depth",
+            "legendFormat": "{{queue}}"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Observability Checklist — Production Readiness**
+
+| Check                               | Tool              | Passing Criteria                                                                 |
+|-------------------------------------|-------------------|----------------------------------------------------------------------------------|
+| Logs are structured JSON            | Pino              | Every log line is valid JSON with `correlationId `                                 |
+| PII is redacted from logs           | Pino redact       | No `email`, `password`, or `phone` in raw logs                                         |
+| Metrics are scraped                 | Prometheus        | `/metrics` returns `200 OK` with valid Prometheus format                             |
+| Traces propagate across services    | OpenTelemetry     | Jaeger shows full trace from HTTP → Prisma → Redis                               |
+| Alerts fire within SLA              | Grafana Alerting  | `ServiceDown` fires within 1 minute of `/health` failure                             |
+| Error rate is monitored             | Sentry + Grafana  | Zero unhandled exceptions in Sentry; 5xx rate < 0.1%                             |
+| Dashboard is useful during incidents| Grafana           | On-call engineer can identify root cause within 5 minutes using the dashboard    |
