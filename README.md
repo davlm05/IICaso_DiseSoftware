@@ -7069,3 +7069,62 @@ RATE_LIMIT_MAX=100
 | Prisma Client Generation    | Only the database provider needed (`postgresql`) is generated. `binaryTargets = ["linux-musl-openssl-3.0.x"]` for Alpine. | Reduces Prisma engine size by ~40 MB         |
 | node_modules Pruning        | `pnpm prune --prod` removes dev dependencies from the runner image.                                                 | Saves ~150 MB                                |
 | Alpine Base Image           | `node:20-alpine` (~50 MB) instead of `node:20` (~350 MB).                                                           | Saves ~300 MB in base image                  |
+
+
+## CI/CD Pipeline (Backend)
+
+This section documents the complete continuous integration and continuous delivery pipeline for the SmartCart backend. The pipeline is designed to catch defects as early as possible (shift-left), enforce quality gates automatically, and enable any team member to deploy to production safely with a single click after PR merge.
+
+### Pipeline Overview
+
+```mermaid
+flowchart TD
+    %% Developer Trigger
+    dev["<b>DEVELOPER LOCAL</b><br/>• git checkout -b feat/xxx<br/>• git push origin feat/xxx"]
+    
+    dev -->|Triggers PR Pipeline| ci_1
+
+    %% --- CI PIPELINE SUBGRAPH ---
+    subgraph CI ["GITHUB ACTIONS — CI PIPELINE (Pull Request)"]
+        ci_1["<b>1. Install & Cache Dependencies</b><br/>• pnpm install --frozen-lockfile<br/>• Cache: node_modules, pnpm store"]
+        ci_2["<b>2. Lint & Static Analysis</b><br/>• ESLint (max-warnings=0)<br/>• Prettier --check<br/>• TypeScript tsc --noEmit<br/>• SonarQube Scan"]
+        ci_3["<b>3. Unit Tests</b><br/>• Jest (jest-expo + ts-jest)<br/>• Coverage: statements ≥ 80%<br/>• Coverage: branches ≥ 75%"]
+        ci_4["<b>4. Integration Tests</b><br/>• Jest + Docker (PostgreSQL 16, Redis 7)<br/>• Prisma Migrate Deploy<br/>• Tests against real database"]
+        ci_5["<b>5. API Contract Tests</b><br/>• Generate OpenAPI spec<br/>• Validate against snapshot<br/>• Check for breaking changes"]
+        ci_6["<b>6. Quality Gate Check</b><br/>• Coverage ≥ 80%<br/>• SonarQube Quality Gate: PASS<br/>• No critical/high vulnerabilities<br/>• No duplicate code > 3%<br/>• No security hotspots"]
+        ci_7["<b> All Checks Pass</b><br/>• PR can be merged to main"]
+
+        ci_1 --> ci_2 --> ci_3 --> ci_4 --> ci_5 --> ci_6 --> ci_7
+    end
+
+    ci_7 -->|Merge PR to Main Branch| cd_1
+
+    %% --- CD PIPELINE SUBGRAPH ---
+    subgraph CD ["GITHUB ACTIONS — CD PIPELINE (Main Branch)"]
+        cd_1["<b>7. Build & Push Docker Image</b><br/>• Docker multi-stage build<br/>• Push to GHCR: main-{sha}, latest"]
+        cd_2["<b>8. Deploy Staging (Automatic)</b><br/>• Railway / Render auto-deploy<br/>• Prisma migrate deploy<br/>• Health check + smoke tests"]
+        cd_3["<b>9. Deploy Prod (Manual Gate)</b><br/>• Manual approval required<br/>• Railway / Render deploy<br/>• Post-deploy: 10-min monitoring window"]
+        cd_4["<b> Production Verified</b><br/>• Sentry: zero new errors<br/>• Slack notification"]
+
+        cd_1 --> cd_2 --> cd_3 --> cd_4
+    end
+
+    %% Custom Styling for Visual Clarity
+    style dev fill:#f9f9fb,stroke:#444,stroke-width:1px
+    style CI fill:#f4f8fb,stroke:#0066cc,stroke-width:1px
+    style CD fill:#fdf7f5,stroke:#dd5522,stroke-width:1px
+```
+
+### Quality gates summary
+
+| Gate                     | Tool             | Threshold                                | Blocks Merge? |
+|---------------------------|------------------|------------------------------------------|---------------|
+| ESLint                   | ESLint v9        | 0 warnings, 0 errors                       |  Yes        |
+| Prettier                  | Prettier v3      | All files formatted                       |  Yes        |
+| TypeScript                | tsc v5           | No type errors                            |  Yes        |
+| Unit Test Coverage        | Jest             | Statements ≥ 80%, Branches ≥ 75%          |  Yes        |
+| Integration Tests         | Jest + Docker    | All tests pass                            |  Yes        |
+| API Contract              | OpenAPI Diff     | No breaking changes                       |  Yes        |
+| Security Vulnerabilities  | pnpm audit       | 0 critical, 0 high                        |  Yes        |
+| SonarQube Quality Gate    | SonarQube        | Reliability A, Security A, Coverage ≥ 80% |  Yes        |
+| PR Approvals              | GitHub           | 1 approving review                        |  Yes        |
