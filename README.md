@@ -4964,59 +4964,70 @@ This section defines the quantitative reliability targets for SmartCart and the 
 
 **High availability architecture**
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                    SmartCart High Availability Deployment                             │
-│                                                                                     │
-│                              ┌───────────────────┐                                  │
-│                              │   DNS (Route 53)   │                                  │
-│                              │   api.smartcart.app │                                  │
-│                              └─────────┬─────────┘                                  │
-│                                        │                                            │
-│                    ┌───────────────────┼───────────────────┐                        │
-│                    │                   │                   │                        │
-│                    ▼                   ▼                   ▼                        │
-│  ┌──────────────────────────┐ ┌──────────────────┐ ┌──────────────────────────┐   │
-│  │  Availability Zone A     │ │ Availability Zone│ │  Availability Zone C      │   │
-│  │                          │ │ B                │ │                           │   │
-│  │  ┌────────────────────┐  │ │ ┌──────────────┐ │ │  ┌────────────────────┐   │   │
-│  │  │ Nginx / ALB        │  │ │ │ Nginx / ALB  │ │ │  │ Nginx / ALB        │   │   │
-│  │  │ (Health Checks)    │  │ │ │              │ │ │  │                    │   │   │
-│  │  └────────┬───────────┘  │ │ └──────┬───────┘ │ │  └────────┬───────────┘   │   │
-│  │           │              │ │        │         │ │           │              │   │
-│  │           ▼              │ │        ▼         │ │           ▼              │   │
-│  │  ┌────────────────────┐  │ │ ┌──────────────┐ │ │  ┌────────────────────┐   │   │
-│  │  │ NestJS API         │  │ │ │ NestJS API   │ │ │  │ NestJS API         │   │   │
-│  │  │ (Container 1)      │  │ │ │ (Container 2)│ │ │  │ (Container 3)      │   │   │
-│  │  │ Stateless          │  │ │ │ Stateless    │ │ │  │ Stateless          │   │   │
-│  │  └────────────────────┘  │ │ └──────────────┘ │ │  └────────────────────┘   │   │
-│  └──────────────────────────┘ └──────────────────┘ └──────────────────────────┘   │
-│                    │                   │                   │                        │
-│                    └───────────────────┼───────────────────┘                        │
-│                                        │                                            │
-│                    ┌───────────────────┼───────────────────┐                        │
-│                    │                   │                   │                        │
-│                    ▼                   ▼                   ▼                        │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │                         PostgreSQL (Primary + Replica)                        │   │
-│  │                                                                             │   │
-│  │  ┌──────────────────────────┐       ┌──────────────────────────┐            │   │
-│  │  │ Primary (AZ A)           │  WAL  │ Read Replica (AZ C)      │            │   │
-│  │  │ - All writes             │──────▶│ - Reads for analytics    │            │   │
-│  │  │ - Synchronous commit     │       │ - Failover target        │            │   │
-│  │  └──────────────────────────┘       └──────────────────────────┘            │   │
-│  └─────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                     │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │                    Redis (Sentinel for HA)                                    │   │
-│  │                                                                             │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐                                   │   │
-│  │  │ Redis    │  │ Redis    │  │ Redis    │                                   │   │
-│  │  │ Primary  │──│ Replica 1│──│ Sentinel │                                   │   │
-│  │  │ (AZ A)   │  │ (AZ C)   │  │ (AZ B)   │                                   │   │
-│  │  └──────────┘  └──────────┘  └──────────┘                                   │   │
-│  └─────────────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    %% Global Entrypoint
+    dns["DNS (Route 53)<br/><b>api.smartcart.app</b>"]
+
+    %% Traffic Routing
+    dns --> alb_a
+    dns --> alb_b
+    dns --> alb_c
+
+    %% --- COMPUTE LAYER (AVAILABILITY ZONES) ---
+    subgraph AZ_A ["Availability Zone A"]
+        alb_a["Nginx / ALB<br/>(Health Checks)"]
+        api_a["NestJS API<br/>(Container 1)<br/><i>Stateless</i>"]
+        alb_a --> api_a
+    end
+
+    subgraph AZ_B ["Availability Zone B"]
+        alb_b["Nginx / ALB"]
+        api_b["NestJS API<br/>(Container 2)<br/><i>Stateless</i>"]
+        alb_b --> api_b
+    end
+
+    subgraph AZ_C ["Availability Zone C"]
+        alb_c["Nginx / ALB"]
+        api_c["NestJS API<br/>(Container 3)<br/><i>Stateless</i>"]
+        alb_c --> api_c
+    end
+
+    %% --- DATABASE LAYER ---
+    subgraph PG_Layer ["PostgreSQL (Primary + Replica)"]
+        pg_primary["Primary (AZ A)<br/>• All writes<br/>• Synchronous commit"]
+        pg_replica["Read Replica (AZ C)<br/>• Reads for analytics<br/>• Failover target"]
+        
+        pg_primary -- "WAL Replication" --> pg_replica
+    end
+
+    %% --- CACHING & STATE LAYER ---
+    subgraph Redis_Layer ["Redis (Sentinel for HA)"]
+        rd_primary["Redis Primary<br/>(AZ A)"]
+        rd_replica["Redis Replica 1<br/>(AZ C)"]
+        rd_sentinel["Redis Sentinel<br/>(AZ B)"]
+        
+        rd_primary <--> rd_replica
+        rd_replica <--> rd_sentinel
+        rd_sentinel <--> rd_primary
+    end
+
+    %% --- DATA LAYER INTERACTIONS ---
+    %% API to Postgres Interconnects
+    api_a --> pg_primary
+    api_b --> pg_primary
+    api_c --> pg_primary
+    api_c -.->|Analytics Reads| pg_replica
+
+    %% API to Redis Interconnects
+    api_a --> rd_primary
+    api_b --> rd_primary
+    api_c --> rd_primary
+
+    %% Custom Styling for Visual Distinction
+    style dns fill:#f9f9fb,stroke:#333,stroke-width:1px
+    style PG_Layer fill:#f5fafd,stroke:#0055aa,stroke-width:1px
+    style Redis_Layer fill:#fff5f5,stroke:#cc0000,stroke-width:1px
 ```
 
 **High availability mechanisms**
@@ -5024,11 +5035,11 @@ This section defines the quantitative reliability targets for SmartCart and the 
 | Mechanism                  | Implementation                                                                                                      | Failure Mode Mitigated                                                                 |
 |-----------------------------|---------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------|
 | Multi-AZ API Deployment     | NestJS containers deployed across 3 availability zones. Nginx/ALB distributes traffic with health checks.            | Single AZ outage. If AZ A fails, traffic routes to AZ B and C containers.               |
-| Load Balancer Health Checks | Nginx/ALB probes GET /api/v1/health/readiness every 10 seconds. Unhealthy containers removed after 2 consecutive failures. | Pod crash, memory leak, deadlocked event loop.                                          |
-| Auto-Restart on Crash       | Kubernetes restartPolicy: Always or Docker Compose restart: unless-stopped. PM2 restarts NestJS within 2 seconds.    | Unhandled exception crashes the Node.js process.                                        |
+| Load Balancer Health Checks | Nginx/ALB probes `GET /api/v1/health/readiness`  every 10 seconds. Unhealthy containers removed after 2 consecutive failures. | Pod crash, memory leak, deadlocked event loop.                                          |
+| Auto-Restart on Crash       | Kubernetes `restartPolicy`: Always or Docker Compose `restart: unless-stopped`. PM2 restarts NestJS within 2 seconds.    | Unhandled exception crashes the Node.js process.                                        |
 | Database Replication        | PostgreSQL streaming replication to a read replica in a different AZ. WAL files archived to S3/R2 every 5 minutes.  | Primary database failure. Replica promoted to primary in < 5 minutes.                   |
 | Redis Sentinel              | 3-node Sentinel quorum monitors Redis primary. Automatic failover to replica if primary unreachable for 30 seconds. | Redis primary failure. Session cache and BullMQ continue operating.                     |
-| Graceful Shutdown           | NestJS listens for SIGTERM. Closes HTTP server, drains BullMQ workers, closes Prisma connections.                    | In-flight requests lost during deployment rollover.                                     |
+| Graceful Shutdown           | NestJS listens for `SIGTERM`. Closes HTTP server, drains BullMQ workers, closes Prisma connections.                    | In-flight requests lost during deployment rollover.                                     |
 
 **Graceful Shutdown Implementation**:
 
@@ -5099,10 +5110,10 @@ bootstrap();
 
 | Concern                | Decision                                                                                                                   |
 |-------------------------|----------------------------------------------------------------------------------------------------------------------------|
-| Scaling Model           | Horizontal scaling — multiple stateless API containers behind a load balancer. Each container is identical and can handle any request. |
+| Scaling Model           | **Horizontal scaling** — multiple stateless API containers behind a load balancer. Each container is identical and can handle any request. |
 | Bottleneck Identification | The database is the primary bottleneck. Mitigated by read replicas for analytics queries, Redis Cache-Aside for product lookups, and connection pooling. |
 | Statelessness           | All session state is stored in Redis, not in-process memory. A request can land on any container and find the session. JWT authentication is stateless (no server-side session). |
-| Worker Scaling          | The analytics worker (analytics-worker) scales independently from the API. More worker instances can be added to process the BullMQ queue faster. |
+| Worker Scaling          | The analytics worker (`analytics-worker`) scales independently from the API. More worker instances can be added to process the BullMQ queue faster. |
 
 **Stateless service verification**
 
