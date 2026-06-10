@@ -34,21 +34,7 @@
 
 - **Single deployable artifact with logical boundaries:** The entire API runs as one Node.js process, deployed as one Docker container. Module boundaries are enforced at build time via TypeScript path aliases and ESLint import rules (`no-restricted-imports`), not at runtime via network calls. This means zero serialization/deserialization overhead between modules while maintaining strict separation of concerns. See `eslint.config.mjs`:
 
-```
-// eslint.config.mjs — Enforces module boundaries at lint level
-export default [
-  {
-    rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['../checkout/domain/*'], message: 'Use ICheckoutService interface instead' },
-          { group: ['../catalog/infrastructure/*'], message: 'Infrastructure must be accessed through interfaces' },
-        ],
-      }],
-    },
-  },
-];
-```
+Module boundaries are enforced statically at lint time via no-restricted-imports rules in eslint.config.mjs. Any cross-domain import — for example, a checkout service reaching directly into the catalog infrastructure folder — produces a build error before code reaches CI. The rule patterns are grouped by domain so new modules automatically inherit the same restrictions.
 
 **Type-safe contract sharing with the frontend:** The monorepo structure (`packages/shared-types/`) exports TypeScript interfaces and Zod schemas consumed by both `apps/api` and the React Native frontend. Changing a DTO breaks both sides at compile time, eliminating contract drift. See `packages/shared-types/src/checkout.types.ts`:
 
@@ -66,12 +52,8 @@ export interface AddItemResponse {
   session: SessionDTO;
 }
 
-// Zod schema for runtime validation — used by NestJS ValidationPipe
-export const AddItemRequestSchema = z.object({
-  barcode: z.string().min(8).max(14),
-  sessionId: z.string().uuid(),
-});
-```
+The shared package at packages/shared-types/src/ exports TypeScript interfaces and Zod schemas for every request and response shape. Because both the API and the React Native client import from the same source, a field rename or type change breaks compilation on both sides simultaneously, making contract drift a compile-time error rather than a runtime surprise.
+
 
 - **ACID transactions without distributed complexity:** The checkout validation flow requires atomicity across multiple aggregate roots (session status update, points balance mutation, transaction audit entry). Prisma executes this in a single PostgreSQL transaction. The service method at `apps/api/src/modules/checkout/application/services/checkout.service.ts` demonstrates this:
 
@@ -6932,68 +6914,6 @@ volumes:
 | Database Migrations | Migrations run automatically before the new containers receive traffic. Prisma Migrate is idempotent. Rollback migrations are tested in staging before production deploy. |
 
 ### Environment Configuration
-
-```
-// 📁 apps/api/src/config/env.validation.ts
-// Startup validation — fails fast if any required variable is missing
-import { z } from 'zod';
-
-const envSchema = z.object({
-  // ─── Environment ─────────────────────────────────
-  NODE_ENV: z.enum(['development', 'staging', 'production']),
-  PORT: z.coerce.number().int().default(3000),
-
-  // ─── Database ────────────────────────────────────
-  DATABASE_URL: z.string().url().startsWith('postgresql://'),
-
-  // ─── Redis ───────────────────────────────────────
-  REDIS_URL: z.string().url().startsWith('redis://'),
-
-  // ─── JWT Secrets ─────────────────────────────────
-  JWT_ACCESS_SECRET: z.string().min(32),
-  JWT_REFRESH_SECRET: z.string().min(32),
-  QR_SIGNING_SECRET: z.string().min(32),
-
-  // ─── Security ────────────────────────────────────
-  BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(14).default(12),
-  CORS_ORIGINS: z.string().default('http://localhost:19006'),
-
-  // ─── Rate Limiting ───────────────────────────────
-  RATE_LIMIT_TTL: z.coerce.number().int().default(60),
-  RATE_LIMIT_MAX: z.coerce.number().int().default(100),
-
-  // ─── AI Service ──────────────────────────────────
-  AI_SERVICE_URL: z.string().url().optional(),
-  AI_SERVICE_API_KEY: z.string().optional(),
-
-  // ─── Observability ───────────────────────────────
-  SENTRY_DSN: z.string().url().optional(),
-  OTLP_EXPORTER_ENDPOINT: z.string().url().optional(),
-
-  // ─── Push Notifications ──────────────────────────
-  EXPO_PUSH_API_TOKEN: z.string().optional(),
-
-  // ─── File Storage (S3/R2) ────────────────────────
-  S3_ACCESS_KEY_ID: z.string().optional(),
-  S3_SECRET_ACCESS_KEY: z.string().optional(),
-  S3_BUCKET_NAME: z.string().optional(),
-  S3_REGION: z.string().optional(),
-});
-
-export type EnvConfig = z.infer<typeof envSchema>;
-
-export function validateEnv(): EnvConfig {
-  const result = envSchema.safeParse(process.env);
-  if (!result.success) {
-    console.error('Invalid environment configuration:');
-    for (const issue of result.error.issues) {
-      console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
-    }
-    process.exit(1);
-  }
-  return result.data;
-}
-```
 
 ```
 # 📁 .env.example — Template for local development
