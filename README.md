@@ -3818,68 +3818,12 @@ export const ProductIdParamSchema = z.object({
 - **10. Audit logging**
 
 All security-sensitive operations are logged with structured JSON, including userId, action, resource, IP address, and correlation ID.
-```
-// 📁 apps/api/src/common/interceptors/audit.interceptor.ts
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
-import { Observable, tap } from 'rxjs';
-import { Logger } from '@nestjs/common';
 
-@Injectable()
-export class AuditInterceptor implements NestInterceptor {
-  private readonly auditLogger = new Logger('Audit');
+ Located at apps/api/src/common/interceptors/audit.interceptor.ts. The interceptor sits in the NestJS middleware pipeline and fires on every inbound HTTP request, but only emits an audit record when the handler name matches one of the designated sensitive actions: login, register, logout, refresh, redeemReward, validateSession, updateProfile, and deleteAccount. All other requests pass through without generating an audit entry.
+Each audit record captures the controller and method name as a combined action identifier, the authenticated user's ID and role (falling back to "anonymous" for unauthenticated calls), the client IP address, the User-Agent header, the correlation ID from the request headers, the HTTP method, the request path, and a UTC timestamp. On a successful response the record is written at the INFO level with a SUCCESS status. On a thrown exception the same fields are written at the WARN level alongside the HTTP status code and the error code from the response body.
+Points transaction audit trail
+The financial audit trail lives one layer deeper, in apps/api/src/modules/checkout/infrastructure/repositories/prisma-points.repository.ts. The points_transactions table is designed as an append-only ledger: no row is ever updated or deleted. Every time points are credited, a new row is inserted with the user ID, the session ID, the points delta, the reason (PURCHASE), and a metadata object that breaks down the award by strategy type, individual point totals, and base values. This design means the current balance is always derived by aggregating the delta column across all rows for a user — it is never stored as a mutable field — which makes the balance tamper-evident and fully auditable at any point in time.
 
-  private readonly SENSITIVE_ACTIONS = [
-    'login', 'register', 'logout', 'refresh',
-    'redeemReward', 'validateSession',
-    'updateProfile', 'deleteAccount',
-  ];
-
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest();
-    const handlerName = context.getHandler().name;
-    const controllerName = context.getClass().name;
-
-    // Only audit sensitive actions
-    const isSensitive = this.SENSITIVE_ACTIONS.some(
-      action => handlerName.toLowerCase().includes(action.toLowerCase()),
-    );
-
-    if (!isSensitive) return next.handle();
-
-    const auditEntry = {
-      action: `${controllerName}.${handlerName}`,
-      userId: request.user?.sub ?? 'anonymous',
-      userRole: request.user?.role ?? 'anonymous',
-      ip: request.ip,
-      userAgent: request.headers['user-agent'],
-      correlationId: request.headers['x-correlation-id'],
-      method: request.method,
-      path: request.url,
-      timestamp: new Date().toISOString(),
-    };
-
-    return next.handle().pipe(
-      tap({
-        next: (response) => {
-          this.auditLogger.log({
-            ...auditEntry,
-            status: 'SUCCESS',
-            responseStatus: 200,
-          });
-        },
-        error: (error) => {
-          this.auditLogger.warn({
-            ...auditEntry,
-            status: 'FAILURE',
-            responseStatus: error.status ?? 500,
-            errorCode: error.response?.errorCode,
-          });
-        },
-      }),
-    );
-  }
-}
-```
   **Points transaction audit trail**:
   ```
 // 📁 apps/api/src/modules/checkout/infrastructure/repositories/prisma-points.repository.ts
