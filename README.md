@@ -4946,3 +4946,397 @@ The following constitute the primary operational dashboard for SmartCart
 | Alerts fire within SLA              | Grafana Alerting  | `ServiceDown` fires within 1 minute of `/health` failure                             |
 | Error rate is monitored             | Sentry + Grafana  | Zero unhandled exceptions in Sentry; 5xx rate < 0.1%                             |
 | Dashboard is useful during incidents| Grafana           | On-call engineer can identify root cause within 5 minutes using the dashboard    |
+---
+
+## 2.7 Availability and scalability
+
+This section defines the quantitative reliability targets for SmartCart and the architectural mechanisms that achieve them. Every design decision — from stateless services to connection pooling — is traced back to a specific availability or scalability requirement derived from the business context: a mobile POS system where checkout validation downtime directly blocks in-store revenue.
+
+### Availability
+
+| Metric                 | Target             | Justification                                                                                                                   |
+|-------------------------|--------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| Annual Uptime SLA       | 99.9% ("three nines") | Equates to 8.76 hours of permitted downtime per year. SmartCart is a POS-adjacent system: if QR validation fails, shoppers cannot complete their purchases. 99.9% balances business criticality with the cost of achieving 99.99% (which would require multi-region active-active). |
+| RTO (Recovery Time Objective) | < 15 minutes      | From the moment a P1 alert fires to full service restoration. Achievable because the entire infrastructure is defined as code (Docker Compose for dev, Terraform for production) and can be redeployed in under 10 minutes. Database failover to a read replica is automated and completes in under 5 minutes. |
+| RPO (Recovery Point Objective) | < 5 minutes       | Maximum data loss in a catastrophic failure. Achieved via PostgreSQL continuous WAL (Write-Ahead Log) archiving to S3/R2 every 5 minutes. Points transactions — the financial record — are never lost because they are committed synchronously to PostgreSQL before the API responds. |
+| Mean Time To Detect (MTTD) | < 2 minutes        | From fault occurrence to PagerDuty alert. Achieved via Prometheus scraping every 15 seconds and Grafana alert evaluation every 60 seconds. |
+| Mean Time To Recover (MTTR) | < 10 minutes       | For known failure modes with existing runbooks. Achieved via automated rollback (Kubernetes/ECS rollback to previous deployment) and database replica promotion. |
+
+**High availability architecture**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                    SmartCart High Availability Deployment                             │
+│                                                                                     │
+│                              ┌───────────────────┐                                  │
+│                              │   DNS (Route 53)   │                                  │
+│                              │   api.smartcart.app │                                  │
+│                              └─────────┬─────────┘                                  │
+│                                        │                                            │
+│                    ┌───────────────────┼───────────────────┐                        │
+│                    │                   │                   │                        │
+│                    ▼                   ▼                   ▼                        │
+│  ┌──────────────────────────┐ ┌──────────────────┐ ┌──────────────────────────┐   │
+│  │  Availability Zone A     │ │ Availability Zone│ │  Availability Zone C      │   │
+│  │                          │ │ B                │ │                           │   │
+│  │  ┌────────────────────┐  │ │ ┌──────────────┐ │ │  ┌────────────────────┐   │   │
+│  │  │ Nginx / ALB        │  │ │ │ Nginx / ALB  │ │ │  │ Nginx / ALB        │   │   │
+│  │  │ (Health Checks)    │  │ │ │              │ │ │  │                    │   │   │
+│  │  └────────┬───────────┘  │ │ └──────┬───────┘ │ │  └────────┬───────────┘   │   │
+│  │           │              │ │        │         │ │           │              │   │
+│  │           ▼              │ │        ▼         │ │           ▼              │   │
+│  │  ┌────────────────────┐  │ │ ┌──────────────┐ │ │  ┌────────────────────┐   │   │
+│  │  │ NestJS API         │  │ │ │ NestJS API   │ │ │  │ NestJS API         │   │   │
+│  │  │ (Container 1)      │  │ │ │ (Container 2)│ │ │  │ (Container 3)      │   │   │
+│  │  │ Stateless          │  │ │ │ Stateless    │ │ │  │ Stateless          │   │   │
+│  │  └────────────────────┘  │ │ └──────────────┘ │ │  └────────────────────┘   │   │
+│  └──────────────────────────┘ └──────────────────┘ └──────────────────────────┘   │
+│                    │                   │                   │                        │
+│                    └───────────────────┼───────────────────┘                        │
+│                                        │                                            │
+│                    ┌───────────────────┼───────────────────┐                        │
+│                    │                   │                   │                        │
+│                    ▼                   ▼                   ▼                        │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         PostgreSQL (Primary + Replica)                        │   │
+│  │                                                                             │   │
+│  │  ┌──────────────────────────┐       ┌──────────────────────────┐            │   │
+│  │  │ Primary (AZ A)           │  WAL  │ Read Replica (AZ C)      │            │   │
+│  │  │ - All writes             │──────▶│ - Reads for analytics    │            │   │
+│  │  │ - Synchronous commit     │       │ - Failover target        │            │   │
+│  │  └──────────────────────────┘       └──────────────────────────┘            │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                    Redis (Sentinel for HA)                                    │   │
+│  │                                                                             │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐                                   │   │
+│  │  │ Redis    │  │ Redis    │  │ Redis    │                                   │   │
+│  │  │ Primary  │──│ Replica 1│──│ Sentinel │                                   │   │
+│  │  │ (AZ A)   │  │ (AZ C)   │  │ (AZ B)   │                                   │   │
+│  │  └──────────┘  └──────────┘  └──────────┘                                   │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**High availability mechanisms**
+
+| Mechanism                  | Implementation                                                                                                      | Failure Mode Mitigated                                                                 |
+|-----------------------------|---------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------|
+| Multi-AZ API Deployment     | NestJS containers deployed across 3 availability zones. Nginx/ALB distributes traffic with health checks.            | Single AZ outage. If AZ A fails, traffic routes to AZ B and C containers.               |
+| Load Balancer Health Checks | Nginx/ALB probes GET /api/v1/health/readiness every 10 seconds. Unhealthy containers removed after 2 consecutive failures. | Pod crash, memory leak, deadlocked event loop.                                          |
+| Auto-Restart on Crash       | Kubernetes restartPolicy: Always or Docker Compose restart: unless-stopped. PM2 restarts NestJS within 2 seconds.    | Unhandled exception crashes the Node.js process.                                        |
+| Database Replication        | PostgreSQL streaming replication to a read replica in a different AZ. WAL files archived to S3/R2 every 5 minutes.  | Primary database failure. Replica promoted to primary in < 5 minutes.                   |
+| Redis Sentinel              | 3-node Sentinel quorum monitors Redis primary. Automatic failover to replica if primary unreachable for 30 seconds. | Redis primary failure. Session cache and BullMQ continue operating.                     |
+| Graceful Shutdown           | NestJS listens for SIGTERM. Closes HTTP server, drains BullMQ workers, closes Prisma connections.                    | In-flight requests lost during deployment rollover.                                     |
+
+**Graceful Shutdown Implementation**:
+
+```
+// 📁 apps/api/src/main.ts — Graceful shutdown handler
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(3000);
+
+  // ─── Graceful Shutdown ───────────────────────────────────
+  // Kubernetes sends SIGTERM 30s before SIGKILL.
+  // We use this window to drain connections cleanly.
+
+  const gracefulShutdown = async (signal: string) => {
+    console.log(`Received ${signal}. Starting graceful shutdown...`);
+    const shutdownStart = Date.now();
+
+    // 1. Stop accepting new HTTP requests
+    await app.close();
+    console.log('HTTP server closed');
+
+    // 2. Close Prisma connection pool
+    const prismaService = app.get(PrismaService);
+    await prismaService.$disconnect();
+    console.log('Database connections closed');
+
+    // 3. Close Redis connections
+    const redisService = app.get(RedisService);
+    await redisService.quit();
+    console.log('Redis connections closed');
+
+    // 4. Close BullMQ queues gracefully (wait for active jobs to complete)
+    const analyticsQueue = app.get('BullQueue_analytics-profile-update');
+    const notificationQueue = app.get('BullQueue_push-notifications');
+    await Promise.all([
+      analyticsQueue.close(),
+      notificationQueue.close(),
+    ]);
+    console.log('BullMQ queues closed');
+
+    const duration = Date.now() - shutdownStart;
+    console.log(`Graceful shutdown completed in ${duration}ms`);
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+}
+bootstrap();
+```
+
+**Failure Mode Analysis (Top 5 Risks)**
+
+| Failure Mode             | Impact                                                                 | Probability                          | Mitigation                                                                 | RTO Contribution          |
+|---------------------------|------------------------------------------------------------------------|--------------------------------------|----------------------------------------------------------------------------|---------------------------|
+| Single container crash    | 1/Nth of traffic affected (N=3). Health check removes unhealthy pod in 20s. | Medium (weekly in early production)   | Auto-restart (Kubernetes). PM2 inside container.                            | < 30 seconds              |
+| Database primary failure  | All writes blocked. Reads continue via replica.                        | Low (managed PostgreSQL 99.95% SLA)   | Automatic failover to read replica. DNS updated to new primary.             | < 5 minutes               |
+| Redis primary failure     | Session cache lost (cold cache for ~30s). BullMQ pauses.               | Low (Redis is stable)                 | Sentinel automatic failover. Sessions rebuild from PostgreSQL.              | < 1 minute                |
+| AZ outage                 | All containers in one AZ become unreachable.                           | Very Low                              | Multi-AZ deployment. Load balancer routes to remaining AZs.                 | < 2 minutes (DNS propagation) |
+| Full region outage        | All AZs in the region are down.                                        | Extremely Low                         | (Mitigation strategy not specified — typically multi-region active-active). | (Not defined)             |
+
+### Scalability
+
+#### Scalability strategy
+
+| Concern                | Decision                                                                                                                   |
+|-------------------------|----------------------------------------------------------------------------------------------------------------------------|
+| Scaling Model           | Horizontal scaling — multiple stateless API containers behind a load balancer. Each container is identical and can handle any request. |
+| Bottleneck Identification | The database is the primary bottleneck. Mitigated by read replicas for analytics queries, Redis Cache-Aside for product lookups, and connection pooling. |
+| Statelessness           | All session state is stored in Redis, not in-process memory. A request can land on any container and find the session. JWT authentication is stateless (no server-side session). |
+| Worker Scaling          | The analytics worker (analytics-worker) scales independently from the API. More worker instances can be added to process the BullMQ queue faster. |
+
+**Stateless service verification**
+
+Every API container must be able to handle any request without local state:
+
+```
+// 📁 apps/api/src/modules/checkout/application/services/checkout.service.ts
+// PROOF OF STATELESSNESS: Session state is externalized to Redis
+
+@Injectable()
+export class CheckoutService {
+  async addItem(sessionId: string, barcode: string): Promise<AddItemResult> {
+    // 1. Load session from Redis (or PostgreSQL fallback)
+    //    NOT from an in-memory Map or local variable
+    const session = await this.sessionRepo.findById(sessionId);
+    //    ↑ This could hit Redis on Container A, PostgreSQL on Container B.
+    //    Both return the same data. The container is stateless.
+
+    // 2. Apply business logic (pure computation — no external state)
+    const product = await this.catalogService.findByBarcode(barcode);
+    const item = new SessionItem(crypto.randomUUID(), barcode, 1, product.pointsConfig, product.isSponsored);
+    session.addItem(item);
+
+    // 3. Persist session back to Redis (and PostgreSQL)
+    //    The next request for this session can land on Container C
+    await this.sessionRepo.save(session);
+
+    return { item, session };
+  }
+}
+```
+
+```
+// 📁 apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts
+// Session Repository: Redis write-through cache with PostgreSQL persistence
+
+@Injectable()
+export class PrismaSessionRepository implements ISessionRepository {
+  async findById(id: string): Promise<ShoppingSession | null> {
+    // 1. Try Redis first (shared across all containers)
+    const cached = await this.redis.get(`session:${id}`);
+    if (cached) return JSON.parse(cached);
+
+    // 2. Fallback to PostgreSQL (shared across all containers)
+    const row = await this.prisma.shoppingSession.findUnique({
+      where: { id },
+      include: { items: { include: { product: true } } },
+    });
+
+    if (!row) return null;
+
+    const session = this.toDomain(row);
+
+    // 3. Populate Redis for next request (from any container)
+    await this.redis.set(`session:${id}`, JSON.stringify(session), 'EX', 7200);
+
+    return session;
+  }
+
+  async save(session: ShoppingSession): Promise<void> {
+    // Write-through: update Redis immediately
+    await this.redis.set(`session:${session.id}`, JSON.stringify(session), 'EX', 7200);
+
+    // Persist to PostgreSQL asynchronously
+    await this.prisma.shoppingSession.upsert({
+      where: { id: session.id },
+      create: this.toPersistence(session),
+      update: this.toPersistence(session),
+    });
+  }
+}
+```
+
+##### Auto-scaling configuration
+
+**Kubernetes Horizontal Pod Autoscaler (HPA)**:
+
+```
+# 📁 infra/kubernetes/api-hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: smartcart-api-hpa
+  namespace: smartcart
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: smartcart-api
+  minReplicas: 3      # Minimum 3 pods for HA across AZs
+  maxReplicas: 20     # Maximum 20 pods during peak (Saturday 11 AM)
+  metrics:
+    # Primary scaling metric: CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # Secondary scaling metric: Memory utilization
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+
+    # Custom metric: HTTP request rate per pod
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "100"  # Scale up if > 100 req/s per pod
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60   # Wait 60s before scaling up
+      policies:
+        - type: Percent
+          value: 100                   # Double the number of pods
+          periodSeconds: 60
+        - type: Pods
+          value: 4                     # Or add up to 4 pods
+          periodSeconds: 60
+      selectPolicy: Max                # Use the more aggressive policy
+
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down
+      policies:
+        - type: Percent
+          value: 10                    # Remove at most 10% of pods
+          periodSeconds: 60
+```
+
+**Analytics Worker Auto-Scaling**:
+
+```
+# 📁 infra/kubernetes/analytics-worker-hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: analytics-worker-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: analytics-worker
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Primary: BullMQ queue depth (custom metric)
+    - type: Pods
+      pods:
+        metric:
+          name: smartcart_bullmq_queue_depth
+          selector:
+            matchLabels:
+              queue: analytics-profile-update
+        target:
+          type: AverageValue
+          averageValue: "100"  # Scale up if > 100 jobs waiting
+```
+
+#### Connection pooling
+
+Prisma connection pool configuration prevents database connection exhaustion under load:
+
+```
+// 📁 prisma/schema.prisma — Connection pool configuration
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Prisma connection pool is configured via environment variables
+```
+
+```
+# 📁 .env.production — Connection pool environment variables
+
+# Prisma connection pool size
+# Each API container gets 10 connections. With 3 min pods = 30 total connections.
+# PostgreSQL max_connections is set to 100 (headroom for admin tools).
+PRISMA_CONNECTION_LIMIT=10
+
+# PgBouncer transaction pooling in front of PostgreSQL
+# (Pgbouncer pools connections from multiple API containers efficiently)
+DATABASE_URL=postgresql://app_user:pass@pgbouncer:6432/smartcart?schema=public&connection_limit=10
+```
+
+**PgBouncer Configuration (transaction pooling)**:
+
+```
+# 📁 infra/pgbouncer/pgbouncer.ini
+[databases]
+smartcart = host=postgres-primary.internal port=5432 dbname=smartcart
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = 6432
+auth_type = scram-sha-256
+auth_file = /etc/pgbouncer/userlist.txt
+
+# Transaction pooling mode: each connection is returned to the pool after each transaction.
+# This allows 10 Prisma connections per container to serve hundreds of concurrent requests.
+pool_mode = transaction
+
+# Maximum PostgreSQL connections from PgBouncer to the database
+default_pool_size = 25
+
+# Maximum client connections from API containers to PgBouncer
+max_client_conn = 200
+
+# Timeout idle connections (prevents connection leaks)
+server_idle_timeout = 600
+client_idle_timeout = 600
+```
+
+**Scaling Trigger Metrics — Summary**
+
+| Metric                               | Threshold                  | Duration   | Action                                                                 |
+|--------------------------------------|-----------------------------|------------|------------------------------------------------------------------------|
+| CPU Utilization                      | > 70% average               | 5 minutes  | Scale up API pods (max 2x current)                                     |
+| Memory Utilization                   | > 75% average               | 3 minutes  | Scale up API pods                                                      |
+| HTTP Request Rate                    | > 100 req/s per pod         | 2 minutes  | Scale up API pods                                                      |
+| BullMQ Queue Depth (analytics)       | > 100 waiting jobs          | 5 minutes  | Scale up analytics worker pods                                         |
+| BullMQ Queue Depth (notifications)   | > 500 waiting jobs          | 5 minutes  | Scale up notification worker pods                                      |
+| PostgreSQL Connections               | > 80% of max_connections    | 5 minutes  | Alert P2; increase pool size or add read replica                       |
+| Redis Memory                         | > 70% of maxmemory          | 10 minutes | Alert P3; increase Redis instance size or add eviction policy           |
+
+---
+
+
+
