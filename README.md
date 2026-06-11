@@ -1103,43 +1103,164 @@ Analytics worker uses [Link to `/docker/Dockerfile.worker`] with same pattern.
 - **Root:** [`/backend/apps`](/backend/apps/)
 
 ```
-# Scaffold: backend/
-
 backend/
+├── .env.example
+├── package.json
+├── pnpm-lock.yaml
+├── .github/
+│   ├── settings.yml
+│   └── workflows/
+│       ├── ci.yml
+│       └── deploy.yml
 ├── apps/
 │   ├── api/
+│   │   ├── eslint.config.mjs
+│   │   ├── jest.unit.config.ts
+│   │   ├── jest.integration.config.ts
 │   │   ├── docker/
-│   │   ├── src/
-│   │   │   ├── common/
-│   │   │   │   ├── decorators/
-│   │   │   │   └── pipes/
-│   │   │   └── modules/
-│   │   │       ├── analytics/
-│   │   │       ├── auth/
-│   │   │       ├── catalog/
-│   │   │       ├── checkout/
-│   │   │       │   ├── application/
-│   │   │       │   ├── domain/
-│   │   │       │   ├── infrastructure/
-│   │   │       │   └── presentation/
-│   │   │       ├── rewards/
-│   │   │       └── (otros módulos)
-│   │   └── test/
+│   │   ├── test/
+│   │   └── src/
+│   │       ├── main.ts
+│   │       ├── tracing.ts
+│   │       ├── config/
+│   │       │   ├── env.validation.ts
+│   │       │   ├── pino.config.ts
+│   │       │   └── sentry.config.ts
+│   │       ├── common/
+│   │       │   ├── decorators/
+│   │       │   │   └── current-user.decorator.ts
+│   │       │   ├── filters/
+│   │       │   │   └── global-exception.filter.ts
+│   │       │   ├── guards/
+│   │       │   │   ├── api-key.guard.ts
+│   │       │   │   ├── resource-ownership.guard.ts
+│   │       │   │   └── roles.guard.ts
+│   │       │   ├── health/
+│   │       │   │   └── health.controller.ts
+│   │       │   ├── interceptors/
+│   │       │   │   └── audit.interceptor.ts
+│   │       │   ├── metrics/
+│   │       │   │   └── business-metrics.service.ts
+│   │       │   ├── middleware/
+│   │       │   │   └── rate-limiter.middleware.ts
+│   │       │   ├── pipes/
+│   │       │   │   └── zod-validation.pipe.ts
+│   │       │   └── queues/
+│   │       │       ├── queue.config.ts
+│   │       │       └── queue-metrics.service.ts
+│   │       ├── infrastructure/
+│   │       │   └── messaging/
+│   │       │       └── analytics-queue.producer.ts
+│   │       └── modules/
+│   │           ├── analytics/
+│   │           │   ├── application/
+│   │           │   │   └── services/
+│   │           │   │       └── analytics.service.ts
+│   │           │   └── presentation/
+│   │           │       └── controllers/
+│   │           │           └── analytics.controller.ts
+│   │           ├── auth/
+│   │           │   ├── application/
+│   │           │   │   └── services/
+│   │           │   │       └── auth.service.ts
+│   │           │   └── infrastructure/
+│   │           │       └── crypto/
+│   │           │           ├── jwt.service.ts
+│   │           │           └── password.service.ts
+│   │           ├── catalog/
+│   │           │   ├── catalog.module.ts
+│   │           │   └── application/
+│   │           │       └── interfaces/
+│   │           │           └── catalog-service.interface.ts
+│   │           ├── checkout/
+│   │           │   ├── checkout.module.ts
+│   │           │   ├── application/
+│   │           │   │   ├── interfaces/
+│   │           │   │   │   ├── event-publisher.interface.ts
+│   │           │   │   │   ├── qr-signer.interface.ts
+│   │           │   │   │   └── session-repository.interface.ts
+│   │           │   │   └── services/
+│   │           │   │       ├── checkout.service.ts
+│   │           │   │       ├── points-strategy-resolver.ts
+│   │           │   │       ├── points.service.ts
+│   │           │   │       └── session-expiration.service.ts
+│   │           │   ├── domain/
+│   │           │   │   ├── entities/
+│   │           │   │   │   └── shopping-session.entity.ts
+│   │           │   │   ├── factories/
+│   │           │   │   │   └── qr-ticket.factory.ts
+│   │           │   │   ├── state-machine/
+│   │           │   │   │   └── session-state-machine.ts
+│   │           │   │   └── strategies/
+│   │           │   │       ├── points-calculation-strategy.interface.ts
+│   │           │   │       ├── fixed-points.strategy.ts
+│   │           │   │       ├── spend-multiplier.strategy.ts
+│   │           │   │       ├── volume-tier.strategy.ts
+│   │           │   │       └── weekend-bonus.strategy.ts
+│   │           │   ├── infrastructure/
+│   │           │   │   ├── crypto/
+│   │           │   │   │   └── jwt-qr.signer.ts
+│   │           │   │   ├── events/
+│   │           │   │   │   └── bullmq-event.publisher.ts
+│   │           │   │   ├── mappers/
+│   │           │   │   │   └── session.mapper.ts
+│   │           │   │   └── repositories/
+│   │           │   │       ├── prisma-points.repository.ts
+│   │           │   │       └── prisma-session.repository.ts
+│   │           │   └── presentation/
+│   │           │       ├── controllers/
+│   │           │       │   ├── qr.controller.ts
+│   │           │       │   ├── session.controller.ts
+│   │           │       │   └── validation.controller.ts
+│   │           │       └── gateways/
+│   │           │           └── session.gateway.ts
+│   │           ├── notifications/
+│   │           └── rewards/
+│   │
 │   └── analytics-worker/
-│       ├── src/
-│       │   ├── infrastructure/
-│       │   ├── processors/
-│       │   └── services/
-│       └── test/
+│       ├── test/
+│       └── src/
+│           ├── infrastructure/
+│           │   ├── ai/
+│           │   │   └── ai-inference.client.ts
+│           │   └── repositories/
+│           │       └── segment.repository.ts
+│           ├── processors/
+│           │   └── profile-update.processor.ts
+│           └── services/
+│               └── profile-aggregator.service.ts
+│
 ├── packages/
 │   └── shared-types/
-│       ├── src/
-│       │   ├── dto/
-│       │   └── validation/
-│       └── test/
+│       ├── test/
+│       └── src/
+│           ├── dto/
+│           └── validation/
+│
 ├── infra/
 │   ├── docker/
+│   │   ├── Dockerfile.api
+│   │   ├── Dockerfile.worker
+│   │   ├── docker-compose.yml
+│   │   └── nginx/
+│   │       └── default.conf
+│   ├── grafana/
+│   │   └── dashboards/
+│   │       └── smartcart-overview.json
+│   ├── kubernetes/
+│   │   ├── analytics-worker-hpa.yaml
+│   │   └── api-hpa.yaml
+│   ├── pgbouncer/
+│   │   └── pgbouncer.ini
+│   ├── prometheus/
+│   │   └── rules/
+│   │       └── smartcart-alerts.yml
 │   └── terraform/
-└── .github/
-    └── workflows/
+│       └── environments/
+│           └── production/
+│               └── main.tf
+│
+└── docs/
+    └── api/
+        └── openapi.yaml
 ```
