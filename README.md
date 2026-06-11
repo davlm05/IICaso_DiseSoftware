@@ -9,24 +9,13 @@
 | Framework | NestJS | 10.4 | DI + modules map to template's layered design + Repository/Service/DTO patterns out-of-box |
 | ORM/DB | Prisma 5.20 / PostgreSQL | 16 | Template schema is relational; Prisma migrations + type-safety |
 | Async | BullMQ | 5.x | Analytics profiling + push notif queues (template 2.4) |
-| Cache | Redis | 7.4 | Session state (stateless API), profile cache invalidation |
+| Cache | Redis | 7.2 | Session state (stateless API), profile cache invalidation |
 | File storage | Cloudflare R2 / AWS S3 | — | Product images |
 | AI segment | External inference (OpenAI / local sklearn microservice) | — | Consumer profiling classifier |
 | Hosting | Railway / Render / AWS ECS | — | Docker; cheap demo, scalable |
 | Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
 
-### This next technology stack is the final evolution for a production deployment:
-
-| Concern | Choice | Version | Justification |
-|---------|--------|---------|---------------|
-| **API Style** | REST API | — | Standart comunication method between Client and Server with well defined contracts via Open AI |
-| **Language** | Typescript | 6.0.3 | Static typing, less execution errors, great maintanability for big projects, excelent support for the AWS CDK ecosystem |
-| **Framework** | AWS Lambda + API gateway | — | AWS native serverless framework, and API gateway to expose REST endpoints and WebSockets |
-| **Database** | Amazon Aurora Postgre SQL | 17.0 + | Compatible database with PostgreSQL, scalable, high availability and completely manageable. Ideal for transactionable data such as sessions, products, user profiles |
-| **Hosting** | AWS | — | Allows for a serverless architecture with automatic scalability. Complete integration with the services: Lambda, API Gateway, DynamoDB, SQS, SNS, S3, SageMaker. |
-| **Async Processing** | AWS SQS + SNS | — | SQS for message queues and SNS for push notifications|
-| **Caching** | Amazon Elasticache for Redis | 7.0 + | Low latency cache for active data sessions, user profiles and constant analytical queries |
-| **File Storage** | Amazon S3 | — | Object storage, B2B reports and CI/CD artifacts |
+> For the target production serverless architecture (AWS Lambda, Aurora PostgreSQL, SQS/SNS), see [§2.11 — Production Evolution Roadmap](#211-production-evolution-roadmap).
 
 ## 2.2. Architecture — Implementation Guide
 
@@ -40,7 +29,7 @@
 | API Framework         | Single NestJS application (`apps/api`)                                   |
 | Worker Process        | Standalone BullMQ consumer (`apps/analytics-worker`)                     |
 | Module Separation     | Enforced at build time via ESLint import rules                           |
-| Type Sharing          | Monorepo package `@smartcart/shared-types` consumed by both frontend and backend |
+| Type Sharing          | Monorepo package `@smartcart/shared-types` at repo root, consumed by both `frontend/` and `backend/apps/api` |
 | Transaction Strategy  | Prisma `$transaction` with interactive callback for ACID operations      |
 | Async Processing      | BullMQ queues for long-running analytics pipeline                        |
 | Serverless Evolution  | Interface-based DI bindings — swap implementations, not domain logic     |
@@ -51,7 +40,7 @@
 | Concern                       | What to Build                                                                 | How to Build It                                                                                                                                                | Key Principle                                           | Source Location                                                                                                                                                                                                 |
 |-------------------------------|-------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Module Boundary Enforcement   | ESLint `no-restricted-imports` rules blocking cross-module domain and infrastructure imports | Configure flat config in `eslint.config.mjs` with forbidden patterns. Run in CI as quality gate — builds fail on boundary violations.                           | Boundaries are compile-time, not runtime                | [Link to `/apps/api/eslint.config.mjs`] — ESLint rules with restricted import patterns                                                                                                                          |
-| Type-Safe Contract Sharing    | Shared TypeScript interfaces and Zod schemas in a workspace package           | Create `packages/shared-types/` exporting DTO interfaces and Zod validation schemas. Both `apps/api` and `apps/mobile` import from `@smartcart/shared-types`. NestJS uses `ZodValidationPipe` for runtime validation. | Change a DTO → both sides break at compile time. No contract drift. | [Link to `/packages/shared-types/src/`] — Shared interfaces and Zod schemas by domain<br>[Link to `/apps/api/src/common/pipes/zod-validation.pipe.ts`] — Generic validation pipe                                |
+| Type-Safe Contract Sharing    | Shared TypeScript interfaces and Zod schemas in a workspace package           | Create `packages/shared-types/` at the **repo root** exporting DTO interfaces and Zod validation schemas. Both `backend/apps/api` and `frontend/` import from `@smartcart/shared-types`. NestJS uses `ZodValidationPipe` for runtime validation. | Change a DTO → both sides break at compile time. No contract drift. | [Link to `/packages/shared-types/src/`] — Shared interfaces and Zod schemas by domain<br>[Link to `/apps/api/src/common/pipes/zod-validation.pipe.ts`] — Generic validation pipe                                |
 | ACID Transactions             | Atomic updates across session status, points balance, and audit trail         | Use Prisma `$transaction` with interactive callback. Pass `tx` client to all repository methods within the boundary. Repositories accept optional `Prisma.TransactionClient`. Publish events only after commit resolves. | Everything inside the transaction succeeds or fails together. No I/O inside the callback. | [Link to `/apps/api/src/modules/checkout/application/services/checkout.service.ts`] — `validateSession()` method<br>[Link to `/apps/api/src/modules/checkout/application/interfaces/session-repository.interface.ts`] — Repository interface with `tx` parameter |
 | Long-Running Process Separation | Independent BullMQ worker for consumer profiling pipeline                   | Create `apps/analytics-worker/` with `@Processor` decorator. Main API publishes `CheckoutCompletedEvent` to queue after transaction commit. Worker handles aggregation queries, feature extraction, AI inference, and segment upsert. Deploy as separate Docker container. | Non-blocking side effects. Worker scales independently | [Link to `/apps/analytics-worker/src/processors/profile-update.processor.ts`] — Job processor<br>[Link to `/apps/analytics-worker/src/services/profile-aggregator.service.ts`] — Aggregation logic<br>[Link to `/apps/api/src/infrastructure/messaging/analytics-queue.producer.ts`] — Queue producer |
 | Serverless Evolution Path     | Interface-based module design allowing implementation swaps                   | Define TypeScript interfaces in `application/interfaces/`. Bind to implementations via NestJS DI in `*.module.ts` providers array. To migrate: create new implementation class (e.g., `HttpCatalogServiceClient`), swap binding — domain logic untouched. | The interface is the contract. The implementation is configuration. | [Link to `/apps/api/src/modules/catalog/catalog.module.ts`] — In-process binding example<br>[Link to `/apps/api/src/modules/catalog/application/interfaces/catalog-service.interface.ts`] — Interface definition |
@@ -668,7 +657,10 @@ The Checkout module component diagram illustrates:
 | 1    | Presentation | DTO               | `ZodValidationPipe` validates `ValidationRequestSchema` against request body |
 | 2    | Application → Domain | Service Layer, Repository | `CheckoutService` calls `ISessionRepository.findById()` |
 | 3    | Infrastructure → Domain | Repository, Factory | `PrismaSessionRepository` maps row to entity via `SessionFactory.reconstitute()` |
-| 4    | Application → Infrastructure | Service Layer | `CheckoutService
+| 4    | Application → Infrastructure | Service Layer, Transaction | `CheckoutService` opens Prisma `$transaction`; calls `ISessionRepository.save()` with COMPLETED status, credits points via `IPointsRepository`, inserts immutable ledger record |
+| 5    | Domain | State Machine | `ShoppingSession.completeValidation()` transitions status `PENDING_CHECKOUT → COMPLETED` |
+| 6    | Application | Event Publisher | After `$transaction` commits, `IEventPublisher.publish(CheckoutCompletedEvent)` enqueues analytics job |
+| 7    | Presentation | WebSocket Gateway | `SessionGateway` emits `sessionStatusChanged` to subscribed client |
 
 ---
 
@@ -741,7 +733,7 @@ All errors follow a consistent structure:
 
 | Concern              | Strategy                                                                                                                                                                                                                                                                                                                                 |
 |----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Transport            | HTTPS enforced via Nginx reverse proxy; all HTTP requests 301-redirected to HTTPS. TLS 1.3 minimum (TLS 1.2 accepted for legacy Android API < 26). HSTS header set to `max-age=31536000; includeSubDomains; preload` via Helmet middleware. Let's Encrypt certificates auto-renewed via Certbot. Config: [Link to `/docker/nginx/default.conf`]. |
+| Transport            | HTTPS enforced via Nginx reverse proxy; all HTTP requests 301-redirected to HTTPS. TLS 1.3 minimum (TLS 1.2 accepted for legacy Android API < 26). HSTS header set to `max-age=31536000; includeSubDomains; preload` via Helmet middleware. Let's Encrypt certificates auto-renewed via Certbot. Config: [Link to `/infra/docker/nginx/default.conf`]. |
 | Authentication       | JWT `accessToken` (HS256, 15-min expiry) sent in `Authorization: Bearer` header. `refreshToken` (7-day expiry) stored in HTTP-only, Secure, SameSite=Strict cookie. Passwords hashed with `bcrypt` (cost factor 12). Account lockout after 5 failed attempts within 15 minutes (30-min lockout) via Redis. Token rotation on refresh; old tokens invalidated. JWT service: [Link to `/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts`]. Password service: [Link to `/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts`]. Auth service: [Link to `/apps/api/src/modules/auth/application/services/auth.service.ts`]. |
 | Authorization        | Role-Based Access Control (RBAC) with five roles: `shopper`, `pos_operator`, `customer_service`, `b2b_partner`, `admin`. Endpoints decorated with `@Roles()` and enforced by `RolesGuard`. Resource ownership verified by `ResourceOwnershipGuard` (compares JWT `sub` with resource IDs). POS and B2B endpoints secured with separate API Key authentication (`X-API-Key` header), hashed with SHA-256 and stored in DB. Roles guard: [Link to `/apps/api/src/common/guards/roles.guard.ts`]. Resource ownership guard: [Link to `/apps/api/src/common/guards/resource-ownership.guard.ts`]. API key guard: [Link to `/apps/api/src/common/guards/api-key.guard.ts`]. |
 | Database Encryption  | Encryption at rest: AES-256 provider-managed (Railway/Render/GCP Cloud SQL). Encryption in transit: TLS 1.3 enforced for all connections; Prisma client configured with `sslmode=require`. Connection strings never hardcoded; sourced from `DATABASE_URL` environment variable. |
@@ -859,7 +851,7 @@ This section details the two most critical workflows beyond basic CRUD: the **QR
 1. **POS Terminal Request:** `POST /api/v1/sessions/{id}/validate` with `qrToken` and `scannedItems[]`. Requires valid POS API Key in `X-API-Key`.
 2. **Security Verification (Infrastructure Layer):**
    - API Key validated by `ApiKeyGuard` ([Link to `/apps/api/src/common/guards/api-key.guard.ts`]).
-   - DTO validated via `ZodValidationPipe` against `ValidateSessionRequestSchema` ([Link to `/packages/shared-types/src/session.types.ts`]).
+   - DTO validated via `ZodValidationPipe` against `ValidateSessionRequestSchema` ([Link to `/packages/shared-types/src/validation/session.schemas.ts`]).
    - QR token verified by `JwtQrSigner.verify()` ([Link to `/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`]).
 3. **Session Retrieval & Domain Validation:**
    - Session loaded via `ISessionRepository.findById()` ([Link to `/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`]).
@@ -993,7 +985,7 @@ The pipeline is triggered on every push to a pull request targeting `main`. It e
 - **Artifacts:** Upload coverage report (`apps/api/coverage/lcov.info`).
 
 #### Integration Tests
-- **What to do:** Spin up `postgres:16-alpine` and `redis:7-alpine` via GitHub Actions `services`.  
+- **What to do:** Spin up `postgres:17-alpine` and `redis:7.2-alpine` via GitHub Actions `services`.  
 - **Database Setup:** Run `pnpm prisma migrate deploy`.  
 - **Execution:** Run `pnpm test:integration` (config: [Link to `/apps/api/jest.integration.config.ts`]).  
 - **Health Checks:** Use `pg_isready` and `redis-cli ping`.
@@ -1032,7 +1024,7 @@ Deployment is triggered automatically by a push to `main` and defined in [Link t
 
 #### Build & Push Docker Image
 
-- **Action:** `docker/build-push-action@v5` using multi-stage `Dockerfile` ([Link to `/docker/Dockerfile.api`]).  
+- **Action:** `docker/build-push-action@v5` using multi-stage `Dockerfile` ([Link to `/infra/docker/Dockerfile.api`]).  
 - **Tagging:** `docker/metadata-action` generates tags (`main-{sha}`).  
 - **Registry:** Push to `ghcr.io`.
 
@@ -1044,8 +1036,16 @@ Deployment is triggered automatically by a push to `main` and defined in [Link t
 
 #### Deploy to Production (Manual Gate)
 
-- **Approval:** GitHub Environment "production" with manual approval.  
-- **Execution:** Deploy via `railwayapp/railway-deploy@v1` with `RAILWAY_PRODUCTION_TOKEN`.
+- **Approval:** GitHub Environment "production" with manual approval.
+- **Execution:** Apply Kubernetes manifests via `kubectl apply -f infra/kubernetes/` against the production cluster (AWS EKS). Rolling update strategy: `maxSurge: 1, maxUnavailable: 0`. HPA resources: [Link to `/infra/kubernetes/api-hpa.yaml`] and [Link to `/infra/kubernetes/analytics-worker-hpa.yaml`].
+- **Migrations:** Run `prisma migrate deploy` against the production Aurora PostgreSQL instance before traffic shifts.
+
+> **Deployment targets by environment:**
+> | Environment | Platform | Config |
+> |---|---|---|
+> | Local dev | Docker Compose | `infra/docker/docker-compose.yml` |
+> | Staging | Railway (auto-deploy on merge to `main`) | `RAILWAY_STAGING_TOKEN` |
+> | Production | Kubernetes on AWS EKS (manual gate) | `infra/kubernetes/` + `infra/terraform/` |
 
 #### Post-Deploy Monitoring
 
@@ -1058,7 +1058,7 @@ Deployment is triggered automatically by a push to `main` and defined in [Link t
 ### Environment Configuration & Local Development
 
 - Copy [Link to `/.env.example`] → `.env`.  
-- Run `pnpm docker:up` (Compose file: [Link to `/docker/docker-compose.yml`]).  
+- Run `pnpm docker:up` (Compose file: [Link to `/infra/docker/docker-compose.yml`]).  
 - Run `pnpm prisma:migrate`.  
 - Run `pnpm dev`.
 
@@ -1067,7 +1067,7 @@ Deployment is triggered automatically by a push to `main` and defined in [Link t
 - **Stage 1 (Builder):** Install deps, generate Prisma client, compile TS → JS.  
 - **Stage 2 (Runner):** Base `node:20-alpine`. Non-root `nestjs` user. Copy production artifacts. `HEALTHCHECK` → `/api/v1/health/liveness`. Start with `node --require ./dist/tracing.js dist/main.js`.
 
-Analytics worker uses [Link to `/docker/Dockerfile.worker`] with same pattern.
+Analytics worker uses [Link to `/infra/docker/Dockerfile.worker`] with same pattern.
 
 ---
 
@@ -1100,18 +1100,42 @@ Analytics worker uses [Link to `/docker/Dockerfile.worker`] with same pattern.
 
 ## 2.10 Project scaffold
 
-- **Root:** [`/backend/apps`](/backend/apps/)
+> **Shared packages and CI/CD config live at the repository root**, outside `backend/`, so both `frontend/` and `backend/apps/api` can consume them as equal workspace members. `.github/` is read by GitHub Actions only from the repo root.
+
+### Repository Root
+
+```
+/ (repo root)
+├── .github/
+│   ├── settings.yml
+│   └── workflows/
+│       ├── ci.yml
+│       └── deploy.yml
+├── packages/
+│   └── shared-types/
+│       ├── test/
+│       └── src/
+│           ├── dto/
+│           │   ├── session.dto.ts
+│           │   ├── auth.dto.ts
+│           │   └── analytics.dto.ts
+│           └── validation/
+│               ├── session.schemas.ts
+│               ├── auth.schemas.ts
+│               └── analytics.schemas.ts
+├── frontend/
+│   └── (React Native / Expo app — existing)
+└── backend/
+    └── (see below)
+```
+
+### `backend/`
 
 ```
 backend/
 ├── .env.example
 ├── package.json
 ├── pnpm-lock.yaml
-├── .github/
-│   ├── settings.yml
-│   └── workflows/
-│       ├── ci.yml
-│       └── deploy.yml
 ├── apps/
 │   ├── api/
 │   │   ├── eslint.config.mjs
@@ -1230,13 +1254,6 @@ backend/
 │           └── services/
 │               └── profile-aggregator.service.ts
 │
-├── packages/
-│   └── shared-types/
-│       ├── test/
-│       └── src/
-│           ├── dto/
-│           └── validation/
-│
 ├── infra/
 │   ├── docker/
 │   │   ├── Dockerfile.api
@@ -1264,3 +1281,44 @@ backend/
     └── api/
         └── openapi.yaml
 ```
+
+---
+
+## 2.11. Production Evolution Roadmap
+
+This section describes the target serverless architecture for production deployment. The implementation in §2.2–§2.10 uses a NestJS modular monolith (Stack 1) designed with interface-based DI to enable migration to this model with minimal domain-logic changes — swap implementations, not business rules.
+
+### Target Technology Stack
+
+| Concern | Choice | Version | Justification |
+|---------|--------|---------|---------------|
+| **API Style** | REST API + OpenAPI 3.1 | — | Standard communication contract; consistent with current Stack 1 interface |
+| **Language** | TypeScript | 5.x (latest) | Static typing, AWS CDK ecosystem support, compatible with existing codebase |
+| **Framework** | AWS Lambda + API Gateway | — | Serverless compute; API Gateway exposes REST endpoints and WebSockets; no container management |
+| **Database** | Amazon Aurora PostgreSQL | 17.0+ | PostgreSQL-compatible, fully managed, high availability with automatic multi-AZ failover; ideal for transactional data (sessions, products, user profiles) |
+| **Hosting** | AWS | — | Serverless architecture with automatic scalability; native integration with Lambda, API Gateway, SQS, SNS, S3, SageMaker |
+| **Async Processing** | AWS SQS + SNS | — | SQS replaces BullMQ for message queues; SNS replaces Expo Push direct calls for push notifications |
+| **Caching** | Amazon ElastiCache for Redis | 7.2+ | Low-latency cache for active sessions, user profiles, and analytics queries; drop-in replacement for current Redis layer |
+| **File Storage** | Amazon S3 | — | Object storage for product images, B2B reports, and CI/CD artifacts; replaces Cloudflare R2 |
+
+### Migration Path from Stack 1
+
+The interface-based DI architecture in §2.2 makes this migration possible without rewriting domain logic:
+
+| Stack 1 (Current) | Stack 2 (Target) | Migration Action |
+|---|---|---|
+| NestJS `@Controller` handlers | AWS Lambda handlers | Wrap NestJS app with `@vendia/serverless-express`, or rewrite handlers as thin Lambda functions delegating to existing application services |
+| BullMQ + Redis queues | AWS SQS | Implement `SqsEventPublisher` replacing `BullMqEventPublisher` — swap binding in `checkout.module.ts` only |
+| `SessionExpirationService` `@Cron` | AWS EventBridge Scheduler | Replace cron with a scheduled Lambda rule; domain expiration logic (`session-state-machine.ts`) unchanged |
+| PostgreSQL 16 (Docker / Railway) | Aurora PostgreSQL 17 | Update `DATABASE_URL`; run `prisma migrate deploy`; no schema changes required |
+| Redis self-managed | ElastiCache Redis 7.2 | Update connection string; no application code changes |
+| Railway / Kubernetes deployment | AWS CDK / Terraform (AWS provider) | Replace `infra/terraform/` Railway provider with `hashicorp/aws`; manifests in same `environments/production/` structure |
+| Cloudflare R2 | Amazon S3 | Implement `S3StorageClient` replacing R2 client — swap binding in module |
+| PgBouncer self-managed | RDS Proxy | Update `DATABASE_URL` to RDS Proxy endpoint; `pool_mode = transaction` equivalent is automatic |
+
+### Key Differences from Stack 1
+
+- **No persistent containers:** Lambda functions are stateless by design — the stateless session architecture enforced in §2.7 (all session state in Redis) is already compatible.
+- **Cold starts:** Provisioned concurrency required for the POS validation Lambda (`POST /sessions/:id/validate`) to meet the <500ms P95 SLA defined in §2.8.
+- **BullMQ → SQS:** SQS does not support repeatable jobs natively. The `SessionExpirationService` cron (§2.3) must be replaced with an EventBridge Scheduler rule targeting a dedicated expiration Lambda.
+- **IaC:** Terraform AWS provider (`hashicorp/aws`) replaces the Railway provider. Same file structure: `infra/terraform/environments/production/main.tf`.
