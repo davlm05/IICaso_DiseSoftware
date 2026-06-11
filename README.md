@@ -15,7 +15,7 @@
 | Hosting | Railway / Render / AWS ECS | — | Docker; cheap demo, scalable |
 | Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
 
-### El siguiente stack es la evolución hacia un despliegue completo:
+### This next technology stack is the final evolution for a production deployment:
 
 | Concern | Choice | Version | Justification |
 |---------|--------|---------|---------------|
@@ -28,660 +28,332 @@
 | **Caching** | Amazon Elasticache for Redis | 7.0 + | Low latency cache for active data sessions, user profiles and constant analytical queries |
 | **File Storage** | Amazon S3 | — | Object storage, B2B reports and CI/CD artifacts |
 
-## 2.2. Architecture
+## 2.2. Architecture — Implementation Guide
 
-- **Pattern: Modular Monolith with Independent Worker Process** — SmartCart is built as a single NestJS application with strictly separated modules per functional domain, plus a physically independent BullMQ worker process for the consumer profiling pipeline. This architectural decision is grounded in five concrete technical justifications:
+**Pattern**: Modular Monolith with Independent Worker Process
 
-- **Single deployable artifact with logical boundaries:** The entire API runs as one Node.js process, deployed as one Docker container. Module boundaries are enforced at build time via TypeScript path aliases and ESLint import rules (`no-restricted-imports`), not at runtime via network calls. This means zero serialization/deserialization overhead between modules while maintaining strict separation of concerns. See `eslint.config.mjs`:
+### Architectural Decision
 
-```
-// eslint.config.mjs — Enforces module boundaries at lint level
-export default [
-  {
-    rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['../checkout/domain/*'], message: 'Use ICheckoutService interface instead' },
-          { group: ['../catalog/infrastructure/*'], message: 'Infrastructure must be accessed through interfaces' },
-        ],
-      }],
-    },
-  },
-];
-```
+SmartCart is built as a single NestJS application with strictly separated modules per functional domain, plus a physically independent BullMQ worker process for the consumer profiling pipeline.
 
-**Type-safe contract sharing with the frontend:** The monorepo structure (`packages/shared-types/`) exports TypeScript interfaces and Zod schemas consumed by both `apps/api` and the React Native frontend. Changing a DTO breaks both sides at compile time, eliminating contract drift. See `packages/shared-types/src/checkout.types.ts`:
+**What to implement**: One `apps/api` NestJS application containing all domain modules, and one `apps/analytics-worker` standalone Node.js process consuming BullMQ jobs.
 
+**Why this pattern**:
 
-```
-// packages/shared-types/src/checkout.types.ts
-// This file is imported by BOTH NestJS and React Native
-export interface AddItemRequest {
-  barcode: string;
-  sessionId: string;
-}
+- Single deployable artifact eliminates inter-service serialization overhead
+- Module boundaries enforced at build time via ESLint import rules
+- ACID transactions across aggregates without distributed complexity
+- Physical separation only where requirements demand it (long-running analytics pipeline)
+- Evolutionary path to Serverless via interface swaps, not rewrites
 
-export interface AddItemResponse {
-  item: ProductDTO;
-  session: SessionDTO;
-}
+### Module Boundary Enforcement
 
-// Zod schema for runtime validation — used by NestJS ValidationPipe
-export const AddItemRequestSchema = z.object({
-  barcode: z.string().min(8).max(14),
-  sessionId: z.string().uuid(),
-});
-```
+**What**: Prevent developers from importing across module boundaries in ways that violate the layered architecture.
 
-- **ACID transactions without distributed complexity:** The checkout validation flow requires atomicity across multiple aggregate roots (session status update, points balance mutation, transaction audit entry). Prisma executes this in a single PostgreSQL transaction. The service method at `apps/api/src/modules/checkout/application/services/checkout.service.ts` demonstrates this:
+How to implement:
 
-```
-// apps/api/src/modules/checkout/application/services/checkout.service.ts
-@Injectable()
-export class CheckoutService {
-  constructor(
-    private readonly prisma: PrismaService, // Transaction host
-    private readonly sessionRepo: ISessionRepository,
-    private readonly pointsService: IPointsService,
-    private readonly eventPublisher: IEventPublisher,
-  ) {}
+1. Configure ESLint `no-restricted-imports` rule in `apps/api/eslint.config.mjs`
+2. Define forbidden import patterns:
+3. Cross-module domain imports (use application-layer interfaces instead)
+4. Direct infrastructure imports from other modules (use DI-injected interfaces)
+5. Run ESLint in CI pipeline as a quality gate — builds fail on boundary violations
 
-  async validateSession(
-    qrToken: string,
-    scannedItems: ScannedItemDTO[],
-  ): Promise<ValidationResult> {
-    // Single ACID transaction across session + points aggregates
-    return this.prisma.$transaction(async (tx) => {
-      const session = await this.sessionRepo.findById(qrPayload.sessionId, tx);
-      session.validateItems(scannedItems); // Domain method — throws on mismatch
-      const points = this.pointsService.calculatePoints(session.items);
-      await this.sessionRepo.markCompleted(session.id, tx);
-      await this.pointsService.creditPoints(session.userId, points, session.id, tx);
-      return { success: true, sessionId: session.id, pointsAwarded: points };
-    });
-    // After commit — non-blocking side effect
-    await this.eventPublisher.publish(new CheckoutCompletedEvent(/*...*/));
-  }
-}
-```
+**Configuration location**: [Link to `/apps/api/eslint.config.mjs`] — ESLint flat config with module boundary rules.
 
-- **Physical separation where the requirement demands it:** The consumer profiling pipeline (aggregation → feature extraction → AI classification → B2B export) is a long-running process triggered by checkout completion. It must not block the POS validation response. By extracting it to a BullMQ worker in `apps/analytics-worker/src/processors/profile-update.processor.ts`, we satisfy the "long-running processes" and "asynchronous communication" requirements without fragmenting the transactional domain:
+### Type-Safe Contract Sharing
 
-```
-// apps/analytics-worker/src/processors/profile-update.processor.ts
-@Processor('analytics-profile-update')
-export class ProfileUpdateProcessor {
-  constructor(
-    private readonly aggregator: ProfileAggregatorService,
-    private readonly aiClient: AiInferenceClient,
-    private readonly segmentRepo: SegmentRepository,
-  ) {}
+**What**: Share TypeScript interfaces and Zod validation schemas between backend and frontend to eliminate contract drift.
 
-  @Process('profile-update')
-  async handleProfileUpdate(job: Job<CheckoutCompletedEvent>): Promise<void> {
-    // Step 1: Aggregate 90-day window (heavy query, runs async)
-    const features = await this.aggregator.aggregateFeatures(job.data.userId);
-    // Step 2: Call external AI (network call, could be slow)
-    const segment = await this.aiClient.classify(features);
-    // Step 3: Persist result
-    await this.segmentRepo.upsert(job.data.userId, segment);
-  }
-}
-```
+**How to implement**:
 
-- **Evolutionary path to Serverless without rewrites:** Each module exposes its functionality through a TypeScript interface in the `application/` layer. NestJS DI binds the interface to its implementation in `*.module.ts`. To migrate a module to AWS Lambda, only the binding changes — the domain logic remains untouched:
+1. Create `packages/shared-types/` as a workspace package in the monorepo
+2. Export TypeScript interfaces for all DTOs (request/response shapes)
+3. Export matching Zod schemas for runtime validation
+4. Both `apps/api` and `apps/mobile` import from `@smartcart/shared-types`
+5. NestJS ValidationPipe uses Zod schemas via a custom `ZodValidationPipe`
 
-```
-// apps/api/src/modules/catalog/catalog.module.ts — Current: in-process
-@Module({
-  providers: [
-    { provide: 'ICatalogService', useClass: PrismaCatalogService }, // ← Local
-  ],
-})
-export class CatalogModule {}
+**Key principle**: Changing a DTO breaks both frontend and backend at compile time. No runtime surprises.
 
-// Evolution — Future: remote Lambda via HTTP
-@Module({
-  providers: [
-    { provide: 'ICatalogService', useClass: HttpCatalogServiceClient }, // ← Remote
-    { provide: 'CATALOG_SERVICE_URL', useValue: process.env.CATALOG_SERVICE_URL },
-  ],
-})
-export class CatalogModule {}
-```
+**Source locations**:
 
-- **Layered Design:** The architecture employs a strict four-layer structure within each NestJS module, enforced by folder conventions and TypeScript compilation checks.
+- `[Link to /packages/shared-types/src/]` — All shared interfaces and Zod schemas organized by domain
+- `[Link to /apps/api/src/common/pipes/zod-validation.pipe.ts]` — Generic pipe that validates against any Zod schema
 
-| Layer | Responsibility | Path Convention | Example |
-|---|---|---|---|
-| Presentation | Receive HTTP requests and WebSocket connections. Validate input DTOs using Zod schemas and ValidationPipe. Transform application-layer results into HTTP responses or WS events. Must not contain business logic. | `src/modules/{domain}/presentation/` | `apps/api/src/modules/checkout/presentation/controllers/session.controller.ts` |
-| Application | Orchestrate business logic across domain entities and infrastructure services. Publish domain events after transaction commits. Must not access databases or external APIs directly — only through injected interfaces. | `src/modules/{domain}/application/` | `apps/api/src/modules/checkout/application/services/checkout.service.ts` |
-| Domain | Pure TypeScript entities, value objects, domain events, business rules, and strategy interfaces. Must not import from NestJS, Prisma, or any infrastructure package. | `src/modules/{domain}/domain/` | `apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts` |
-| Infrastructure | Concrete implementations of interfaces defined in the application/domain layers: Prisma repositories, BullMQ publishers, S3 storage clients, JWT signers. | `src/modules/{domain}/infrastructure/` | `apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts` |
+### ACID Transactions Without Distributed Complexity
 
+**What**: The checkout validation flow must atomically update session status, calculate and credit points, and record the audit trail — all in one database transaction.
 
+**How to implement**:
 
-**Layer Rules:** The dependency direction is strictly inward. These rules are verified at build time and enforced by the NestJS DI container at runtime.
-- **Domain → Nothing (Pure TypeScript):** The domain layer has zero external dependencies. It cannot import from `@nestjs/common`, `@prisma/client`, or any infrastructure/ folder. This is verified by the tsconfig.json paths configuration that blocks certain imports. See `apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`:
+1. Use Prisma's `$transaction` API with an interactive transaction callback
+2. Pass the transaction client (`tx`) to all repository methods within the boundary
+3. All repository interfaces must accept an optional `Prisma.TransactionClient` parameter
+4. After the transaction commits, publish domain events for async side effects (analytics, notifications)
 
-```
-// apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts
-// ZERO imports from NestJS, Prisma, or infrastructure
+**Critical rule**: Never perform I/O (HTTP calls, queue publishes, file writes) inside the transaction callback. Publish events only after `$transaction` resolves.
 
-import { SessionItem } from './session-item.entity';
-import { SessionStatus } from '../value-objects/session-status.enum';
-import { ValidationFailedError } from '../errors/validation-failed.error';
+Design principle: The transaction is the consistency boundary. Everything inside it succeeds or fails together. Everything outside it is eventually consistent.
 
-export class ShoppingSession {
-  private _status: SessionStatus;
-  private readonly _items: SessionItem[] = [];
+Source locations:
 
-  constructor(
-    public readonly id: string,
-    public readonly userId: string,
-    public readonly storeId: string,
-    public readonly createdAt: Date,
-  ) {
-    this._status = SessionStatus.ACTIVE;
-  }
+- `[Link to /apps/api/src/modules/checkout/application/services/checkout.service.ts]` — validateSession() method demonstrating the pattern
+- `[Link to /apps/api/src/modules/checkout/application/interfaces/session-repository.interface.ts]` — Repository interface with optional tx parameter
 
-  // Business rule: Only ACTIVE sessions can accept items
-  addItem(item: SessionItem): void {
-    if (this._status !== SessionStatus.ACTIVE) {
-      throw new SessionNotActiveError(this.id, this._status);
-    }
-    this._items.push(item);
-  }
+### Physical Separation for Long-Running Processes
 
-  // Business rule: Transition to PENDING_CHECKOUT requires at least 1 item
-  requestCheckout(): void {
-    if (this._items.length === 0) {
-      throw new EmptySessionError(this.id);
-    }
-    this._status = SessionStatus.PENDING_CHECKOUT;
-  }
+**What**: The consumer profiling pipeline (aggregation → feature extraction → AI classification → B2B export) must not block the POS validation response. Extract it to a BullMQ worker.
 
-  // Business rule: Validation compares item hashes
-  validateItems(scannedItems: ScannedItem[]): boolean {
-    const sessionHash = this.computeItemHash();
-    const scannedHash = this.computeScannedHash(scannedItems);
-    if (sessionHash !== scannedHash) {
-      throw new ValidationFailedError(this.id, sessionHash, scannedHash);
-    }
-    this._status = SessionStatus.COMPLETED;
-    return true;
-  }
+**How to implement**:
 
-  // Pure domain logic — no side effects, no I/O
-  private computeItemHash(): string {
-    const data = this._items
-      .sort((a, b) => a.barcode.localeCompare(b.barcode))
-      .map(i => `${i.barcode}:${i.quantity}`)
-      .join('|');
-    return createHash('sha256').update(data).digest('hex');
-  }
+1. Create `apps/analytics-worker/` as a separate Node.js application
+2. Use `@nestjs/bull` `@Processor` decorator to define job handlers
+3. The main API publishes jobs to the `analytics-profile-update` queue after checkout commit
+4. The worker consumes jobs, performing heavy aggregation queries and external AI calls
+5. Worker runs as a separate Docker container, independently scalable
 
-  get status(): SessionStatus { return this._status; }
-  get items(): ReadonlyArray<SessionItem> { return this._items; }
-}
-```
+**What goes in the worker**:
 
-- **Application → Domain Entities + Infrastructure Interfaces (not implementations):** Application services import domain entities and infrastructure interfaces (`ISessionRepository`, `IEventPublisher`). They never import concrete classes from `infrastructure/`. NestJS DI injects the concrete implementations at runtime. See `apps/api/src/modules/checkout/application/services/checkout.service.ts` (constructor shown above).
+- 90-day behavioral aggregation queries
+- Feature extraction computations
+- External AI inference HTTP calls
+- Segment upsert operations
 
-- **Infrastructure → Domain Entities + Implements Application Interfaces:** Infrastructure classes import domain entities (to map to/from database rows) and implement interfaces from the application layer. See `apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`:
+**What stays in the main API**:
 
-```
-// apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts
-import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { ISessionRepository } from '../../application/interfaces/session-repository.interface';
-import { ShoppingSession } from '../../domain/entities/shopping-session.entity';
-import { SessionItem } from '../../domain/entities/session-item.entity';
-import { SessionMapper } from '../mappers/session.mapper';
+- Publishing the `CheckoutCompletedEvent` to the queue (non-blocking, after transaction commit)
 
-@Injectable()
-export class PrismaSessionRepository implements ISessionRepository {
-  constructor(private readonly prisma: PrismaService) {}
+**Source locations**:
 
-  async findById(
-    id: string,
-    tx?: Prisma.TransactionClient,
-  ): Promise<ShoppingSession | null> {
-    const client = tx ?? this.prisma;
-    const row = await client.shoppingSession.findUnique({
-      where: { id },
-      include: { items: true },
-    });
-    return row ? SessionMapper.toDomain(row) : null; // Row → Domain Entity
-  }
+- `[Link to /apps/analytics-worker/src/processors/profile-update.processor.ts]` — BullMQ job processor
+- `[Link to /apps/analytics-worker/src/services/profile-aggregator.service.ts]` — Aggregation logic
+- `[Link to /apps/api/src/infrastructure/messaging/analytics-queue.producer.ts]` — Queue producer in main API
 
-  async save(session: ShoppingSession, tx?: Prisma.TransactionClient): Promise<void> {
-    const client = tx ?? this.prisma;
-    const data = SessionMapper.toPersistence(session); // Domain Entity → Row
-    await client.shoppingSession.upsert({
-      where: { id: session.id },
-      create: data,
-      update: data,
-    });
-  }
-}
-```
+### Evolutionary Path to Serverless
 
-- **Presentation → Application Services Only:** Controllers inject application services and call their methods. They never access repositories, domain entities, or Prisma directly. They receive raw HTTP data and return DTOs. See `apps/api/src/modules/checkout/presentation/controllers/session.controller.ts`:
+**What**: Each module must be designed so it can be extracted to AWS Lambda without rewriting domain logic.
 
-```
-// apps/api/src/modules/checkout/presentation/controllers/session.controller.ts
-import { Controller, Post, Body, Param, UseGuards } from '@nestjs/common';
-import { CheckoutService } from '../../application/services/checkout.service';
-import { AddItemRequestSchema, AddItemRequest } from '@smartcart/shared-types';
-import { ZodValidationPipe } from '../../../../common/pipes/zod-validation.pipe';
-import { CurrentUser } from '../../../../common/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../../../../common/guards/jwt-auth.guard';
+**How to implement**:
 
-@Controller('sessions')
-@UseGuards(JwtAuthGuard)
-export class SessionController {
-  constructor(
-    private readonly checkoutService: CheckoutService, // ← Application service only
-  ) {}
+1. Every module exposes its functionality through a TypeScript interface in the application/interfaces/ folder
+2. NestJS DI binds the interface to its implementation in the module's *.module.ts providers array
+3. To migrate: create a new implementation class (e.g., HttpCatalogServiceClient) that calls the Lambda via HTTP
+4. Swap the binding in the module — domain logic remains untouched
 
-  @Post(':id/items')
-  async addItem(
-    @Param('id') sessionId: string,
-    @Body(new ZodValidationPipe(AddItemRequestSchema)) body: AddItemRequest,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    // Presentation: validate input, extract auth context, delegate
-    const result = await this.checkoutService.addItem(sessionId, body.barcode);
-    // Presentation: map to HTTP response
-    return { item: result.item, session: result.session };
-  }
-}
-```
+**Key principle**: The interface is the contract. The implementation is a configuration detail.
 
-- **Dependency Injection as the sole coupling mechanism:** NestJS acts as the inversion-of-control container. Module files bind interfaces to implementations. See `apps/api/src/modules/checkout/checkout.module.ts`:
+**Source locations**:
 
-```
-// apps/api/src/modules/checkout/checkout.module.ts
-import { Module } from '@nestjs/common';
-import { PrismaModule } from '../../common/prisma/prisma.module';
-import { SessionController } from './presentation/controllers/session.controller';
-import { ValidationController } from './presentation/controllers/validation.controller';
-import { CheckoutService } from './application/services/checkout.service';
-import { PrismaSessionRepository } from './infrastructure/repositories/prisma-session.repository';
-import { BullMqEventPublisher } from './infrastructure/events/bullmq-event.publisher';
-import { JwtQrSigner } from './infrastructure/crypto/jwt-qr.signer';
-import { PointsService } from './application/services/points.service';
+- `[Link to /apps/api/src/modules/catalog/catalog.module.ts]` — Example of in-process binding
+- `[Link to /apps/api/src/modules/catalog/application/interfaces/catalog-service.interface.ts]` — Interface definition
 
-@Module({
-  imports: [PrismaModule],
-  controllers: [SessionController, ValidationController],
-  providers: [
-    CheckoutService,
-    PointsService,
-    // Interface bindings — swap implementations here to evolve to Serverless
-    { provide: 'ISessionRepository', useClass: PrismaSessionRepository },
-    { provide: 'IEventPublisher', useClass: BullMqEventPublisher },
-    { provide: 'IQrSigner', useClass: JwtQrSigner },
-  ],
-  exports: ['ISessionRepository'], // Available to other modules if needed
-})
-export class CheckoutModule {}
-```
+### Layered design
 
-#### Cross-Layer Dependency Flow (Visual)
+#### Overview
+
+Each NestJS module follows a strict four-layer structure. Layers are enforced by folder conventions and TypeScript compilation checks — never by runtime guards.
+
+#### Layer definitions
+
+| Layer          | Location                                | Responsibility                                                                 | Allowed Imports                                                                 | Forbidden Imports                     |
+|----------------|-----------------------------------------|---------------------------------------------------------------------------------|---------------------------------------------------------------------------------|---------------------------------------|
+| Presentation   | `src/modules/{domain}/presentation/`    | Receive HTTP/WS requests, validate input DTOs, transform to HTTP responses      | Application services, shared DTOs, NestJS decorators                            | Domain entities, repositories, Prisma |
+| Application    | `src/modules/{domain}/application/`     | Orchestrate business logic, publish domain events after commits                 | Domain entities, infrastructure interfaces (not implementations)                 | Concrete repository classes, PrismaClient, HTTP clients |
+| Domain         | `src/modules/{domain}/domain/`          | Pure business rules, entities, value objects, domain events, strategy interfaces | Standard TypeScript libraries only                                              | NestJS, Prisma, any infrastructure package |
+| Infrastructure | `src/modules/{domain}/infrastructure/`  | Implement interfaces: Prisma repositories, queue publishers, storage clients, JWT signers | Domain entities, application interfaces, PrismaClient, external SDKs | Other modules' internals              |
+
+#### Layer Rules — Implementation Guide
+
+##### Rule 1: Domain Layer — Zero External Dependencies
+
+**What**: Domain entities and value objects must be pure TypeScript with no framework imports.
+
+**How to implement**:
+
+- Create entity classes in `domain/entities/` using plain TypeScript
+- Encapsulate state with private fields and public getters
+- Implement business rules as methods that throw domain-specific errors on violations
+- Use Value Objects for concepts with validation (e.g., `QrToken`, `CouponCode`)
+- Never import from `@nestjs/common`, `@prisma/client`, or any `infrastructure/` folder
+
+**Example entity structure (what to build)**:
+
+- Private mutable state with public readonly accessors
+- Constructor that establishes invariants
+- Methods that enforce state transitions (e.g., `addItem()` only when status is ACTIVE)
+- Pure computation methods (e.g., `computeItemHash()`) with zero side effects
+- Domain errors thrown for business rule violations
+
+**Source location**: `[Link to /apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts]` — Reference implementation of a pure domain entity.
+
+##### Rule 2: Application Layer — Interfaces Only, Never Implementations
+
+**What**: Application services orchestrate business logic using domain entities and infrastructure interfaces, never concrete classes.
+
+**How to implement**:
+
+- Define interfaces in application/interfaces/ for every infrastructure dependency
+- Inject interfaces via constructor (NestJS DI resolves them)
+- Use @Injectable() decorator on service classes
+- Accept Prisma.TransactionClient as optional parameter for transaction support
+- Publish domain events AFTER transaction commits, never inside them
+- Never import from infrastructure/ folders directly
+- Interface naming convention: Prefix with I — e.g., ISessionRepository, IEventPublisher, IQrSigner
+
+**Source locations**:
+
+- `[Link to /apps/api/src/modules/checkout/application/services/checkout.service.ts]` — Application service with transaction boundary
+- `[Link to /apps/api/src/modules/checkout/application/interfaces/session-repository.interface.ts]` — Repository interface example
+
+##### Rule 3: Infrastructure Layer — Implement Interfaces, Map to Domain
+
+**What**: Infrastructure classes implement application-layer interfaces, mapping between domain entities and database rows.
+
+**How to implement**:
+
+- Create classes that `implements` the corresponding application interface
+- Use dedicated Mapper classes to convert between Prisma rows and domain entities
+- Accept optional `Prisma.TransactionClient` to participate in transactions
+- Use `@Injectable()` decorator for DI registration
+- Never expose Prisma types outside the infrastructure layer — return domain entities
+
+**Mapper pattern**:
+
+- `toDomain(row: PrismaModel): DomainEntity` — converts DB row to domain entity
+- `toPersistence(entity: DomainEntity): PrismaCreateInput` — converts domain entity to DB shape
+
+**Source locations**:
+
+- `[Link to /apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts]` — Repository implementation
+- `[Link to /apps/api/src/modules/checkout/infrastructure/mappers/session.mapper.ts]` — Entity-row mapping
+
+##### Rule 4: Presentation Layer — Delegate, Don't Implement
+
+**What**: Controllers receive HTTP requests, delegate to application services, and return HTTP responses.
+
+**How to implement**:
+
+- Use NestJS decorators (`@Controller`, `@Post`, `@Get`, `@Body`, `@Param`)
+- Apply `ZodValidationPipe` with the corresponding Zod schema from `@smartcart/shared-types`
+- Extract authenticated user from request via `@CurrentUser()` custom decorator
+- Call application service methods — never access repositories or Prisma directly
+- Transform service results to response DTOs before returning
+- Keep controller methods thin — all logic in application services
+
+**Source location**: `[Link to /apps/api/src/modules/checkout/presentation/controllers/session.controller.ts]` — Reference controller implementation.
+
+#### Dependency Injection Configuration
+
+**What**: NestJS modules bind interfaces to implementations. This is the single point where concrete classes are wired together.
+
+**How to implement**:
+
+- In each `*.module.ts file`, configure the `providers` array
+- Use `{ provide: 'INTERFACE_TOKEN', useClass: ConcreteImplementation }` for interface bindings
+- Use string tokens for interfaces (e.g., `'ISessionRepository'`) or `@Inject()` decorators
+- Export providers that other modules need via the exports array
+- To swap implementations (e.g., for testing or Serverless migration), change only this file
+
+**Source location**: `[Link to /apps/api/src/modules/checkout/checkout.module.ts]`— Module definition with DI bindings.
+
+#### Cross-Layer Dependency Flow
+
+**Visual reference**: The dependency direction is strictly inward. Domain is the core with zero outgoing dependencies.
+
 ```mermaid
 flowchart TD
-    %% Core Nodes
-    P["Presentation<br/>(controllers, gateways)"]
-    A["Application<br/>(services)"]
-    D["Domain<br/>(entities, value objects, events, interfaces)"]
-    I["Infrastructure<br/>(Prisma repos, BullMQ, S3, JWT)"]
+    subgraph Presentation
+        P[Presentation Layer]
+    end
 
-    %% Standard Relationships
-    P -- "imports" --> A
-    A -- "imports domain entities" --> D
-    I -- "implements" --> D
+    subgraph Application
+        A[Application Layer]
+    end
 
-    %% Negative Constraints
-    P -. "❌ NEVER imports domain directly" .-> D
+    subgraph Domain
+        D[Domain Layer]
+    end
 
-    %% Key Rule Node
-    KR["**KEY RULE:**<br/>All arrows point inward toward Domain.<br/>Domain has NO outgoing arrows to external packages."]
+    subgraph Infrastructure
+        I[Infrastructure Layer]
+    end
 
-    %% Layout positioning
-    D ~~~ KR
-    I ~~~ KR
+    %% Dependency arrows
+    P -->|imports| A
+    A -->|imports| D
+    P -->|imports interfaces| I
+    I -->|implements| D[Domain Interfaces]
 
-    %% Styles
-    classDef default fill:#f8f9fa,stroke:#ced4da,stroke-width:2px,color:#212529;
-    classDef domain fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
-    classDef rule fill:#fff3cd,stroke:#856404,stroke-width:2px,stroke-dasharray: 5 5;
-
-    class D domain;
-    class KR rule;
 ```
 
-#### Nest JS dependency injection container
-```mermaid
-flowchart TD
-    subgraph DI ["NestJS DI Container at Runtime"]
-        direction TD
-        
-        SC["SessionController<br/><i>constructor(CheckoutService)</i>"]
-        CS["CheckoutService<br/><i>constructor(ISessionRepository, IEventPublisher, IQrSigner)</i>"]
-        
-        %% Concrete Implementations
-        PSR["PrismaSessionRepository"]
-        BEP["BullMqEventPublisher"]
-        JQS["JwtQrSigner"]
-        PTS["PointsService"]
-        
-        %% Deep Dependencies
-        Prisma["PrismaService<br/>(connection pool to PostgreSQL)"]
-        
-        %% Dependency Tree
-        SC --> CS
-        
-        CS -- "resolves ISessionRepository" --> PSR
-        CS -- "resolves IEventPublisher" --> BEP
-        CS -- "resolves IQrSigner" --> JQS
-        CS --> PTS
-        
-        PSR --> Prisma
-    end
+**Enforcement mechanisms**:
 
-    %% Module Resolution Note
-    Bindings["<b>Bindings resolved from checkout.module.ts providers:</b><br/>'ISessionRepository' → PrismaSessionRepository<br/>'IEventPublisher' → BullMqEventPublisher<br/>'IQrSigner' → JwtQrSigner"]
+1. ESLint rules — Block restricted imports at lint time
+2. TypeScript path aliases — Configure tsconfig.json to make incorrect paths hard to import
+3. Code review checklist — Reviewers verify layer violations before merge
+4. CI pipeline — eslint runs on every PR; build fails on violations
 
-    %% Invisible link to place the note below the container
-    DI ~~~ Bindings
+#### Architecture Diagrams
 
-    %% Styles
-    classDef default fill:#f8f9fa,stroke:#ced4da,stroke-width:2px,color:#212529;
-    classDef controller fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
-    classDef service fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100;
-    classDef infra fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
-    classDef note fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,stroke-dasharray: 5 5,color:#212529;
+##### Level 1 — System Context Diagram
 
-    class SC controller;
-    class CS,PTS service;
-    class PSR,BEP,JQS,Prisma infra;
-    class Bindings note;
-  ```
+**Where to maintain**: [Link to `/docs/architecture/c4-level1-system-context.md`]
 
+The system context diagram shows SmartCart as a single system with four external actors:
 
+- Shopper (Mobile) — Scans products, generates checkout QR codes, redeems rewards
+- Cashier (POS) — Validates QR codes against physical cart contents, confirms checkout
+- Admin / B2B Partner — Downloads aggregated consumer segment reports and product insights
+- Customer Service Rep — Manually deducts points from user accounts for reward fulfillment
 
-### Architecture Diagrams
+##### Level 2 — Container Diagram
 
-#### Level 1 — System Context Diagram
-```mermaid
-graph LR
-    %% Central System wrapped in a subgraph to represent the context boundary
-    subgraph Context["SmartCart System Context"]
-        SmartCart(SmartCart System)
-    end
+Where to maintain: [Link to `/docs/architecture/c4-level2-container.md`]
 
-    %% Actors defined as round-edged nodes
-    Shopper(Shopper Mobile)
-    Cashier(Cashier POS)
-    Admin(Admin / B2B Partner)
-    CSR(Customer Service Rep)
+The container diagram shows five runtime containers:
 
-    %% Relationships and Interactions with labels
-    Shopper -- "Scans products, generates QR, redeems rewards" --> SmartCart
-    Cashier -- "Validates QR, confirms checkout" --> SmartCart
-    Admin -- "Downloads consumer reports, segments" --> SmartCart
-    CSR -- "Deducts points from user account" --> SmartCart
+- **Mobile App (React Native/Expo)** — Consumer-facing native app with camera, GPS, and push notifications
+- **API Gateway (Nginx/Cloud LB)** — Routes REST to NestJS API, WebSocket connections for real-time status
+- **NestJS Modular Monolith** — Single Node.js process containing Auth, Catalog, Checkout, Rewards, and Analytics modules with strict layer separation
+- **Analytics Worker** — Independent BullMQ consumer for long-running consumer profiling pipeline
+- **Data Stores** — PostgreSQL (primary), Redis (cache/sessions), BullMQ (job queue), S3/R2 (file storage)
+- **AI Inference Service (External)** — HTTP endpoint that classifies consumer behavior into segments
 
-    %% Styling to make it look cleaner
-    style SmartCart fill:#f9f,stroke:#333,stroke-width:2px,font-weight:bold
-    style Context fill:#fff,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
-```
+##### Level 3 — Component Diagram (Checkout Module)
 
-#### Level 2 — Container Diagram
-```mermaid
-flowchart TD
-    %% Styling Classes
-    classDef mobile fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
-    classDef gateway fill:#e0f7fa,stroke:#006064,stroke-width:2px,color:#004d40;
-    classDef module fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100;
-    classDef layer fill:#fafafa,stroke:#e65100,stroke-width:2px,stroke-dasharray: 5 5,color:#212529;
-    classDef db fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
-    classDef worker fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#4a148c;
-    classDef external fill:#ffebee,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5,color:#b71c1c;
+**Where to maintain**: [Link to `/docs/architecture/c4-level3-checkout-component.md`]
 
-    %% 1. Mobile App Container
-    subgraph MobileApp ["📱 Mobile App (React Native / Expo)"]
-        direction LR
-        Lobby[Lobby<br/>Screen]:::mobile
-        Scan[Scan<br/>Screen]:::mobile
-        Cart[Cart<br/>Screen]:::mobile
-        QR[QR Code<br/>Screen]:::mobile
-        Rewards[Rewards<br/>Screen]:::mobile
-    end
+The Checkout module component diagram illustrates:
 
-    %% 2. API Gateway
-    Gateway["<b>API Gateway (Nginx / Cloud Load Balancer)</b><br/>Routes: /api/* → NestJS API | /ws → NestJS WebSocket | /health → Health"]:::gateway
+**Presentation components**:
 
-    %% Connection: Mobile to Gateway
-    MobileApp -- "HTTPS (REST) + WSS (WebSocket)" --> Gateway
+- `SessionController` — REST endpoints for session creation and item management
+- `QrController` — QR generation endpoint
+- `ValidationController` — POS validation endpoint
+- `SessionGateway` — WebSocket gateway for real-time validation status
 
-    %% 3. NestJS Monolith Container
-    subgraph NestJS ["⚙️ NestJS Modular Monolith (API Container)"]
-        direction TB
-        
-        subgraph Modules [" "]
-            direction LR
-            Auth["<b>AuthModule</b><br/>- Login<br/>- Register<br/>- JWT Issue"]:::module
-            Catalog["<b>CatalogModule</b><br/>- Search<br/>- Barcode Lookup"]:::module
-            Checkout["<b>CheckoutModule</b><br/>- Session CRUD<br/>- QR Gen<br/>- Validate<br/>- Points Calc"]:::module
-            Rew["<b>RewardsModule</b><br/>- List<br/>- Redeem<br/>- Deduct"]:::module
-        end
-        
-        Domain["<b>Domain Layer (Pure TS)</b><br/>Entities, Value Objects, Events"]:::layer
-        Infrastructure["<b>Infrastructure Layer</b><br/>PrismaRepos, BullMqPublisher, S3Store"]:::layer
+**Application components**:
 
-        Modules --> Domain
-        Domain --> Infrastructure
-    end
+- `CheckoutService` — Orchestrates session lifecycle and validation
+- `PointsService` — Calculates and credits points using strategy pattern
+- `AppQrSigner` — Signs and verifies QR tokens
+- `SessionStateMachine` — Enforces valid session state transitions
 
-    %% Connection: Gateway to Monolith
-    Gateway --> NestJS
+**Domain components**:
 
-    %% 4. Data Stores
-    subgraph DataStores ["🗄️ Data Stores & Infrastructure"]
-        direction LR
-        DB[("<b>PostgreSQL</b><br/>(Primary DB)")]:::db
-        Cache[("<b>Redis</b><br/>(Cache + Sessions)")]:::db
-        Queue[["<b>BullMQ</b><br/>(Job Queue)"]]:::db
-        Storage[("<b>S3 / R2</b><br/>(Images + Reports)")]:::db
-    end
+- `ShoppingSession` aggregate root with composed SessionItem entities
+- `QrTicket` value object
+- `CheckoutCompletedEvent` domain event
+- `PointsCalculationStrategy` interface with `FixedPointsStrategy` and `MultiplierStrategy` implementations
 
-    %% Connections: Monolith to Data Stores
-    Infrastructure --> DB
-    Infrastructure --> Cache
-    Infrastructure --> Queue
-    Infrastructure --> Storage
+**Infrastructure components**:
 
-    %% 5. Analytics Worker Container
-    subgraph Worker ["🔄 Analytics Worker (BullMQ Consumer)"]
-        direction LR
-        PA["<b>ProfileAggregator</b><br/>(90-day window)"]:::worker
-        FE["<b>FeatureExtractor</b><br/>(Category freq,<br/>avg ticket, hour)"]:::worker
-        SS["<b>SegmentationService</b><br/>(Calls AI inference,<br/>upserts segments)"]:::worker
-        
-        PA --> FE --> SS
-    end
+- `PrismaSessionRepository` — Implements `ISessionRepository` with Prisma and Redis caching
+- `BullMqEventPublisher` — Implements `IEventPublisher` for async event publishing
+- `JwtQrSigner` — Implements `IQrSigner` for QR token cryptography
 
-    %% Connection: Queue to Worker
-    Queue --> Worker
+**Key design pattern to implement**: The Dependency Inversion Principle is visible throughout — application services depend on interfaces, infrastructure classes implement them. This is wired at runtime by the NestJS DI container configured in `checkout.module.ts`.
 
-    %% 6. External AI Service
-    AIService["<b>AI Inference Service (External)</b><br/>POST /classify → { segment: 'premium_lover', confidence: 0.87 }"]:::external
-
-    %% Connection: Worker to AI
-    SS --> AIService
-```
-
-#### Level 3 — Component Diagram (per service/module)
-```mermaid
-classDiagram
-    %% ==========================================
-    %% PRESENTATION LAYER
-    %% ==========================================
-    class SessionController {
-        <<REST>>
-        +POST /sessions
-        +POST /sessions/:id/items
-    }
-    class QrController {
-        <<REST>>
-        +POST /sessions/:id/qr
-    }
-    class ValidationController {
-        <<REST>>
-        +POST /sessions/validate
-    }
-    class SessionGateway {
-        <<WebSocket>>
-        +emit(sessionStatusChanged)
-    }
-
-    %% ==========================================
-    %% APPLICATION LAYER
-    %% ==========================================
-    class CheckoutService {
-        +createSession(userId, storeId) Session
-        +addItem(sessionId, barcode) AddItemResult
-        +generateQr(sessionId) QrTicket
-        +validateSession(qrToken, scannedItems) ValidationResult
-    }
-    class PointsService {
-        +calculate(items, userId) Points[]
-        +credit(points) void
-    }
-    class AppQrSigner {
-        +sign(session, items) string
-        +verify(token) QrPayload
-    }
-    class SessionStateMachine {
-        <<StateMachine>>
-        +transition(session, event) Session
-    }
-
-    %% INJECTED INTERFACES (Ports)
-    class ISessionRepository {
-        <<Interface>>
-    }
-    class ICatalogService {
-        <<Interface>>
-    }
-    class IPointsService {
-        <<Interface>>
-    }
-    class IEventPublisher {
-        <<Interface>>
-    }
-    class IQrSigner {
-        <<Interface>>
-    }
-
-    %% ==========================================
-    %% DOMAIN LAYER
-    %% ==========================================
-    class ShoppingSession {
-        +String id
-        +String userId
-        +String storeId
-        +String status
-        +Array items
-        +Int totalPoints
-    }
-    class SessionItem {
-        +String productId
-        +String barcode
-        +Int quantity
-        +Int pointsValue
-    }
-    class QrTicket {
-        +String token
-        +Date expiresAt
-        +String sessionId
-        +String itemHash
-    }
-    class CheckoutCompletedEvent {
-        <<Event>>
-        +String sessionId
-        +String userId
-        +Int pointsAwarded
-        +Array items
-        +Date timestamp
-    }
-    class PointsCalculationStrategy {
-        <<Interface>>
-        +calculate() PointsAwarded
-    }
-    class FixedPointsStrategy {
-        +rate: 50 pts/unit
-    }
-    class MultiplierStrategy {
-        +multiplier: 2x spend
-    }
-
-    %% ==========================================
-    %% INFRASTRUCTURE LAYER (Adapters)
-    %% ==========================================
-    class PrismaSessionRepository {
-        <<Adapter>>
-        -PrismaService prisma
-        -Redis cache
-    }
-    class BullMqEventPublisher {
-        <<Adapter>>
-        -Queue analyticsQueue
-    }
-    class JwtQrSigner {
-        <<Adapter>>
-        -String secret
-    }
-
-    %% ==========================================
-    %% RELATIONSHIPS
-    %% ==========================================
-    
-    %% Presentation -> Application
-    SessionController --> CheckoutService
-    QrController --> CheckoutService
-    ValidationController --> CheckoutService
-    SessionGateway --> CheckoutService
-
-    %% Application internal helper usage
-    CheckoutService --> PointsService
-    CheckoutService --> AppQrSigner
-    CheckoutService --> SessionStateMachine
-
-    %% Dependency Inversion (Application depends on Interfaces)
-    CheckoutService ..> ISessionRepository : injects
-    CheckoutService ..> ICatalogService : injects
-    CheckoutService ..> IPointsService : injects
-    CheckoutService ..> IEventPublisher : injects
-    CheckoutService ..> IQrSigner : injects
-
-    %% Infrastructure fulfills Interfaces
-    PrismaSessionRepository ..|> ISessionRepository : implements
-    BullMqEventPublisher ..|> IEventPublisher : implements
-    JwtQrSigner ..|> IQrSigner : implements
-
-    %% Domain Patterns & Aggregates
-    PointsCalculationStrategy <|-- FixedPointsStrategy : implements
-    PointsCalculationStrategy <|-- MultiplierStrategy : implements
-    PointsService ..> PointsCalculationStrategy : uses
-    
-    ShoppingSession "1" *-- "*" SessionItem : composition
-    CheckoutService ..> ShoppingSession : mutates
-    CheckoutCompletedEvent ..> BullMqEventPublisher : sent via
-```
+---
 
 ## 2.3. Business Logic & Design Patterns
 This section documents every design pattern employed in the SmartCart backend, following the Gang of Four classification where applicable. Each pattern includes its technical implementation, participating classes, activation mechanism, and the specific business problem it solves. All code paths reference the monorepo structure established in Section 2.2.
