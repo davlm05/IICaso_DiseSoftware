@@ -34,117 +34,27 @@
 
 ### Architectural Decision
 
-SmartCart is built as a single NestJS application with strictly separated modules per functional domain, plus a physically independent BullMQ worker process for the consumer profiling pipeline.
+| Aspect               | Decision                                                                 |
+|-----------------------|--------------------------------------------------------------------------|
+| Pattern               | Modular Monolith with Independent Worker Process                        |
+| API Framework         | Single NestJS application (`apps/api`)                                   |
+| Worker Process        | Standalone BullMQ consumer (`apps/analytics-worker`)                     |
+| Module Separation     | Enforced at build time via ESLint import rules                           |
+| Type Sharing          | Monorepo package `@smartcart/shared-types` consumed by both frontend and backend |
+| Transaction Strategy  | Prisma `$transaction` with interactive callback for ACID operations      |
+| Async Processing      | BullMQ queues for long-running analytics pipeline                        |
+| Serverless Evolution  | Interface-based DI bindings — swap implementations, not domain logic     |
 
-**What to implement**: One `apps/api` NestJS application containing all domain modules, and one `apps/analytics-worker` standalone Node.js process consuming BullMQ jobs.
 
-**Why this pattern**:
+#### Implementation directives by concern
 
-- Single deployable artifact eliminates inter-service serialization overhead
-- Module boundaries enforced at build time via ESLint import rules
-- ACID transactions across aggregates without distributed complexity
-- Physical separation only where requirements demand it (long-running analytics pipeline)
-- Evolutionary path to Serverless via interface swaps, not rewrites
-
-### Module Boundary Enforcement
-
-**What**: Prevent developers from importing across module boundaries in ways that violate the layered architecture.
-
-How to implement:
-
-1. Configure ESLint `no-restricted-imports` rule in `apps/api/eslint.config.mjs`
-2. Define forbidden import patterns:
-3. Cross-module domain imports (use application-layer interfaces instead)
-4. Direct infrastructure imports from other modules (use DI-injected interfaces)
-5. Run ESLint in CI pipeline as a quality gate — builds fail on boundary violations
-
-**Configuration location**: [Link to `/apps/api/eslint.config.mjs`] — ESLint flat config with module boundary rules.
-
-### Type-Safe Contract Sharing
-
-**What**: Share TypeScript interfaces and Zod validation schemas between backend and frontend to eliminate contract drift.
-
-**How to implement**:
-
-1. Create `packages/shared-types/` as a workspace package in the monorepo
-2. Export TypeScript interfaces for all DTOs (request/response shapes)
-3. Export matching Zod schemas for runtime validation
-4. Both `apps/api` and `apps/mobile` import from `@smartcart/shared-types`
-5. NestJS ValidationPipe uses Zod schemas via a custom `ZodValidationPipe`
-
-**Key principle**: Changing a DTO breaks both frontend and backend at compile time. No runtime surprises.
-
-**Source locations**:
-
-- `[Link to /packages/shared-types/src/]` — All shared interfaces and Zod schemas organized by domain
-- `[Link to /apps/api/src/common/pipes/zod-validation.pipe.ts]` — Generic pipe that validates against any Zod schema
-
-### ACID Transactions Without Distributed Complexity
-
-**What**: The checkout validation flow must atomically update session status, calculate and credit points, and record the audit trail — all in one database transaction.
-
-**How to implement**:
-
-1. Use Prisma's `$transaction` API with an interactive transaction callback
-2. Pass the transaction client (`tx`) to all repository methods within the boundary
-3. All repository interfaces must accept an optional `Prisma.TransactionClient` parameter
-4. After the transaction commits, publish domain events for async side effects (analytics, notifications)
-
-**Critical rule**: Never perform I/O (HTTP calls, queue publishes, file writes) inside the transaction callback. Publish events only after `$transaction` resolves.
-
-Design principle: The transaction is the consistency boundary. Everything inside it succeeds or fails together. Everything outside it is eventually consistent.
-
-Source locations:
-
-- `[Link to /apps/api/src/modules/checkout/application/services/checkout.service.ts]` — validateSession() method demonstrating the pattern
-- `[Link to /apps/api/src/modules/checkout/application/interfaces/session-repository.interface.ts]` — Repository interface with optional tx parameter
-
-### Physical Separation for Long-Running Processes
-
-**What**: The consumer profiling pipeline (aggregation → feature extraction → AI classification → B2B export) must not block the POS validation response. Extract it to a BullMQ worker.
-
-**How to implement**:
-
-1. Create `apps/analytics-worker/` as a separate Node.js application
-2. Use `@nestjs/bull` `@Processor` decorator to define job handlers
-3. The main API publishes jobs to the `analytics-profile-update` queue after checkout commit
-4. The worker consumes jobs, performing heavy aggregation queries and external AI calls
-5. Worker runs as a separate Docker container, independently scalable
-
-**What goes in the worker**:
-
-- 90-day behavioral aggregation queries
-- Feature extraction computations
-- External AI inference HTTP calls
-- Segment upsert operations
-
-**What stays in the main API**:
-
-- Publishing the `CheckoutCompletedEvent` to the queue (non-blocking, after transaction commit)
-
-**Source locations**:
-
-- `[Link to /apps/analytics-worker/src/processors/profile-update.processor.ts]` — BullMQ job processor
-- `[Link to /apps/analytics-worker/src/services/profile-aggregator.service.ts]` — Aggregation logic
-- `[Link to /apps/api/src/infrastructure/messaging/analytics-queue.producer.ts]` — Queue producer in main API
-
-### Evolutionary Path to Serverless
-
-**What**: Each module must be designed so it can be extracted to AWS Lambda without rewriting domain logic.
-
-**How to implement**:
-
-1. Every module exposes its functionality through a TypeScript interface in the application/interfaces/ folder
-2. NestJS DI binds the interface to its implementation in the module's *.module.ts providers array
-3. To migrate: create a new implementation class (e.g., HttpCatalogServiceClient) that calls the Lambda via HTTP
-4. Swap the binding in the module — domain logic remains untouched
-
-**Key principle**: The interface is the contract. The implementation is a configuration detail.
-
-**Source locations**:
-
-- `[Link to /apps/api/src/modules/catalog/catalog.module.ts]` — Example of in-process binding
-- `[Link to /apps/api/src/modules/catalog/application/interfaces/catalog-service.interface.ts]` — Interface definition
+| Concern                       | What to Build                                                                 | How to Build It                                                                                                                                                | Key Principle                                           | Source Location                                                                                                                                                                                                 |
+|-------------------------------|-------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Module Boundary Enforcement   | ESLint `no-restricted-imports` rules blocking cross-module domain and infrastructure imports | Configure flat config in `eslint.config.mjs` with forbidden patterns. Run in CI as quality gate — builds fail on boundary violations.                           | Boundaries are compile-time, not runtime                | [Link to `/apps/api/eslint.config.mjs`] — ESLint rules with restricted import patterns                                                                                                                          |
+| Type-Safe Contract Sharing    | Shared TypeScript interfaces and Zod schemas in a workspace package           | Create `packages/shared-types/` exporting DTO interfaces and Zod validation schemas. Both `apps/api` and `apps/mobile` import from `@smartcart/shared-types`. NestJS uses `ZodValidationPipe` for runtime validation. | Change a DTO → both sides break at compile time. No contract drift. | [Link to `/packages/shared-types/src/`] — Shared interfaces and Zod schemas by domain<br>[Link to `/apps/api/src/common/pipes/zod-validation.pipe.ts`] — Generic validation pipe                                |
+| ACID Transactions             | Atomic updates across session status, points balance, and audit trail         | Use Prisma `$transaction` with interactive callback. Pass `tx` client to all repository methods within the boundary. Repositories accept optional `Prisma.TransactionClient`. Publish events only after commit resolves. | Everything inside the transaction succeeds or fails together. No I/O inside the callback. | [Link to `/apps/api/src/modules/checkout/application/services/checkout.service.ts`] — `validateSession()` method<br>[Link to `/apps/api/src/modules/checkout/application/interfaces/session-repository.interface.ts`] — Repository interface with `tx` parameter |
+| Long-Running Process Separation | Independent BullMQ worker for consumer profiling pipeline                   | Create `apps/analytics-worker/` with `@Processor` decorator. Main API publishes `CheckoutCompletedEvent` to queue after transaction commit. Worker handles aggregation queries, feature extraction, AI inference, and segment upsert. Deploy as separate Docker container. | Non-blocking side effects. Worker scales independently | [Link to `/apps/analytics-worker/src/processors/profile-update.processor.ts`] — Job processor<br>[Link to `/apps/analytics-worker/src/services/profile-aggregator.service.ts`] — Aggregation logic<br>[Link to `/apps/api/src/infrastructure/messaging/analytics-queue.producer.ts`] — Queue producer |
+| Serverless Evolution Path     | Interface-based module design allowing implementation swaps                   | Define TypeScript interfaces in `application/interfaces/`. Bind to implementations via NestJS DI in `*.module.ts` providers array. To migrate: create new implementation class (e.g., `HttpCatalogServiceClient`), swap binding — domain logic untouched. | The interface is the contract. The implementation is configuration. | [Link to `/apps/api/src/modules/catalog/catalog.module.ts`] — In-process binding example<br>[Link to `/apps/api/src/modules/catalog/application/interfaces/catalog-service.interface.ts`] — Interface definition |
 
 ### Layered design
 
