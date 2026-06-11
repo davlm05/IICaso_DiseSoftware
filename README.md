@@ -539,89 +539,9 @@ The Checkout module component diagram illustrates:
 ---
 
 ## 2.3. Business Logic & Design Patterns
-This section documents every design pattern employed in the SmartCart backend. Each pattern includes its technical implementation directive, participating classes, and the specific business problem it solves. All paths reference the monorepo structure established in Section 2.2.
 
-### Pattern Catalog Summary
-| # | Pattern       | Classification       | Business Problem Solved                                                                 |
-|---|---------------|----------------------|-----------------------------------------------------------------------------------------|
-| 1 | Repository    | Structural (DDD)     | Abstract database access behind interfaces so domain logic never depends on ORM          |
-| 2 | Service Layer | Behavioral (DDD)     | Orchestrate use cases by coordinating entities, repositories, and infrastructure         |
-| 3 | Factory       | Creational (GoF)     | Encapsulate complex object creation with invariants and default values                   |
-| 4 | Strategy      | Behavioral (GoF)     | Allow points calculation algorithms to vary independently from checkout flow             |
-| 5 | Observer      | Behavioral (GoF)     | Decouple side effects (notifications, analytics) from core transactions                  |
-| 6 | DTO           | Structural (Enterprise) | Define exact data shapes crossing process boundaries; decouple entities from serialization |
+### 1. Consumer Profiling Pipeline
 
----
-
-#### 1. Repository Pattern
-| Aspect       | Implementation Directive |
-|--------------|---------------------------|
-| What         | Abstract database access behind a TypeScript interface so the application layer never depends on Prisma or raw SQL directly. |
-| How          | Define an interface in `application/interfaces/` (e.g., `ISessionRepository`). Implement it in `infrastructure/repositories/` using `PrismaClient`. Register binding in the module’s providers array using a string token. Inject via `@Inject('TOKEN')`. |
-| Participants | Interface (`ISessionRepository`), Concrete (`PrismaSessionRepository`), Domain entity (`ShoppingSession`), Mapper (`SessionMapper`) |
-| Key Rules    | Interface must accept optional `Prisma.TransactionClient`. Methods return domain entities, never Prisma row types. Use dedicated Mapper for transformations. |
-| Testing      | Mock the interface in unit tests — no DB required. See [Link to `/apps/api/src/modules/checkout/application/services/checkout.service.spec.ts`] |
-| Source Files | Interface: [Link to `/apps/api/src/modules/checkout/application/interfaces/session-repository.interface.ts`] <br> Implementation: [Link to `/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`] <br> Mapper: [Link to `/apps/api/src/modules/checkout/infrastructure/mappers/session.mapper.ts`] |
-
----
-
-#### 2. Service Layer Pattern
-| Aspect       | Implementation Directive |
-|--------------|---------------------------|
-| What         | Application services orchestrating use cases by coordinating domain entities, repositories, and infrastructure. Each public method = one business operation. |
-| How          | Create `@Injectable()` classes in `application/services/`. Inject interfaces via constructor. Use `Prisma.$transaction` for atomic ops. Publish domain events after commit. |
-| Participants | `CheckoutService`, `PointsService`, `SessionExpirationService` |
-| Key Rules    | Services never access `PrismaClient` directly. Transaction boundaries explicit. Side effects only after `$transaction` resolves. |
-| Testing      | Services testable without HTTP. Instantiate with mocked repositories. |
-| Source Files | [Link to `/apps/api/src/modules/checkout/application/services/checkout.service.ts`] <br> [Link to `/apps/api/src/modules/checkout/application/services/points.service.ts`] <br> [Link to `/apps/api/src/modules/checkout/application/services/session-expiration.service.ts`] |
-
----
-
-#### 3. Factory Pattern
-| Aspect       | Implementation Directive |
-|--------------|---------------------------|
-| What         | Encapsulate complex object creation with invariants and defaults. |
-| How          | Create factory classes in `domain/factories/`. `Factory.create()` returns fully constructed entity. `Factory.reconstitute()` used only by mappers. |
-| Participants | `SessionFactory`, `QrTicketFactory` |
-| Key Rules    | Factories control IDs, timestamps, states. `create()` generates UUIDs internally. `reconstitute()` only for persistence. |
-| Source Files | [Link to `/apps/api/src/modules/checkout/domain/factories/session.factory.ts`] <br> [Link to `/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts`] |
-
----
-
-#### 4. Strategy Pattern
-| Aspect       | Implementation Directive |
-|--------------|---------------------------|
-| What         | Allow points calculation algorithms to vary independently from checkout flow. |
-| How          | Define `IPointsCalculationStrategy` in `domain/strategies/`. Implement concrete strategies. Resolver in `application/services/` registers and resolves by type. |
-| Participants | Interface: `IPointsCalculationStrategy`, Concrete: `FixedPointsStrategy`, `SpendMultiplierStrategy`, `VolumeTierStrategy`, Resolver: `PointsStrategyResolver`, Orchestrator: `PointsService` |
-| Key Rules    | Strategies return `PointsAwarded` value object. Pure functions only. New strategies added by class + resolver registration. |
-| Source Files | Interface: [Link to `/apps/api/src/modules/checkout/domain/strategies/points-calculation-strategy.interface.ts`] <br> Concrete: [Link to `/apps/api/src/modules/checkout/domain/strategies/`] <br> Resolver: [Link to `/apps/api/src/modules/checkout/application/services/points-strategy-resolver.ts`] <br> Orchestrator: [Link to `/apps/api/src/modules/checkout/application/services/points.service.ts`] |
-
----
-
-#### 5. Observer Pattern
-| Aspect       | Implementation Directive |
-|--------------|---------------------------|
-| What         | Decouple side effects (notifications, analytics) from core transactions. |
-| How          | Define `IEventPublisher` in `application/interfaces/`. Implement `BullMqEventPublisher` in `infrastructure/events/`. Publish events after commit. Subscribers consume asynchronously. |
-| Participants | Interface: `IEventPublisher`, Producer: `BullMqEventPublisher`, Domain Event: `CheckoutCompletedEvent`, Subscribers: `ProfileUpdateProcessor`, `PointsCreditedHandler` |
-| Key Rules    | Events published after commit. Failures handled by BullMQ retries. New side effects = new subscriber. |
-| Source Files | Domain Event: [Link to `/apps/api/src/modules/checkout/domain/events/checkout-completed.event.ts`] <br> Interface: [Link to `/apps/api/src/modules/checkout/application/interfaces/event-publisher.interface.ts`] <br> Producer: [Link to `/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts`] <br> Subscriber (Analytics): [Link to `/apps/analytics-worker/src/processors/profile-update.processor.ts`] <br> Subscriber (Notifications): [Link to `/apps/api/src/modules/notifications/handlers/points-credited.handler.ts`] |
-
----
-
-#### 6. Data Transfer Object (DTO) Pattern
-| Aspect       | Implementation Directive |
-|--------------|---------------------------|
-| What         | Define exact data shapes crossing process boundaries. Decouple entities from serialization/validation. |
-| How          | Define interfaces + Zod schemas in `packages/shared-types/src/`. Import in `apps/api` and `apps/mobile`. Controllers use `ZodValidationPipe`. Map domain → DTO before returning. |
-| Participants | Input DTOs (`AddItemRequest`), Output DTOs (`AddItemResponse`), Zod schemas (`AddItemRequestSchema`), Validation pipe (`ZodValidationPipe`) |
-| Key Rules    | Input DTOs validated with Zod. Output DTOs are plain TS interfaces. Domain entities never exposed in API responses. |
-| Source Files | Shared types: [Link to `/packages/shared-types/src/checkout.types.ts`] <br> Validation pipe: [Link to `/apps/api/src/common/pipes/zod-validation.pipe.ts`] <br> Controller usage: [Link to `/apps/api/src/modules/checkout/presentation/controllers/session.controller.ts`] |
-
-### Complex business logic
- 
-#### 1. Consumer Profiling Pipeline
 | Aspect | Implementation Directive |
 |--------|---------------------------|
 | What   | After each validated checkout, update a rolling 90-day behavioral profile, extract features, classify the user into a consumer segment via AI, and make aggregated anonymized data available to B2B partners. |
@@ -630,7 +550,8 @@ This section documents every design pattern employed in the SmartCart backend. E
 | Worker  | `ProfileUpdateProcessor` in `apps/analytics-worker/` |
 | Algorithm Steps | See detailed breakdown below |
 
-##### Algorithm Breakdown
+#### Algorithm Breakdown
+
 | Step | Location | Action |
 |------|----------|--------|
 | 1. Event Emission | [Link to `/apps/api/src/modules/checkout/application/services/checkout.service.ts`] | After `$transaction` commits, publish `CheckoutCompletedEvent` with `userId`, `storeId`, `items[]`, `pointsAwarded`, `timestamp` |
@@ -641,6 +562,7 @@ This section documents every design pattern employed in the SmartCart backend. E
 | 6. B2B Data Availability | [Link to `/apps/api/src/modules/analytics/application/services/analytics.service.ts`] | B2B partners query `GET /analytics/segments?storeId=X`. Response includes segment distribution with counts and percentages. All data is anonymized and aggregated — no individual user data exposed. |
 
 **Key Rules:**
+
 - Guard: Minimum 5 transactions required for statistically meaningful classification  
 - Cache: AI results cached for 24 hours to avoid redundant API calls  
 - Data Privacy: B2B endpoints return only aggregated, anonymized data  
@@ -648,7 +570,8 @@ This section documents every design pattern employed in the SmartCart backend. E
 
 ---
 
-#### 2. QR Generation and Validation
+### 2. QR Generation and Validation
+
 | Aspect | Implementation Directive |
 |--------|---------------------------|
 | What   | Generate a signed, time-sensitive JWT token embedding a deterministic hash of session items. At checkout, validate the token signature, expiration, and item hash against physical cart contents. |
@@ -657,24 +580,28 @@ This section documents every design pattern employed in the SmartCart backend. E
 | Participants | `CheckoutService`, `JwtQrSigner` (infrastructure), `ShoppingSession.computeItemHash()` (domain), `ShoppingSession.validateItems()` (domain) |
 
 **Deterministic Hash Algorithm:**
+
 1. Sort session items alphabetically by barcode  
 2. Concatenate as `"barcode1|barcode2|barcode3"`  
 3. Compute SHA-256 hash of the concatenated string  
 
 **Key Rules:**
+
 - QR tokens expire after 5 minutes (JWT `exp` claim + factory enforcement)  
 - 10-second clock skew tolerance for validation  
 - `QR_SIGNING_SECRET` must be at least 32 characters  
 - Tampered tokens fail signature verification; modified items fail hash comparison  
 
 **Source Files:**
+
 - Signer: [Link to `/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`]  
 - Domain hash logic: [Link to `/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`]  
 - Factory: [Link to `/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts`]  
 
 ---
 
-#### 3. Points Calculation
+### 3. Points Calculation
+
 | Aspect | Implementation Directive |
 |--------|---------------------------|
 | What   | Award points based on product's `pointsConfig`. Three strategies at launch: fixed per unit, spend multiplier, volume tiers. Extensible for future schemes without modifying checkout flow. |
@@ -682,6 +609,7 @@ This section documents every design pattern employed in the SmartCart backend. E
 | Participants | `PointsService`, `PointsStrategyResolver`, `IPointsCalculationStrategy` implementations |
 
 **Strategy Types:**
+
 | Strategy        | strategyType       | Config Shape | Calculation |
 |-----------------|-------------------|--------------|-------------|
 | Fixed Points    | `FIXED_PER_UNIT`  | `{ type: "FIXED_PER_UNIT", value: 50 }` | `50 * quantity` |
@@ -690,11 +618,13 @@ This section documents every design pattern employed in the SmartCart backend. E
 | Weekend Bonus   | `WEEKEND_BONUS`   | `{ type: "WEEKEND_BONUS", basePoints, weekendMultiplier }` | `basePoints * quantity * (isWeekend ? multiplier : 1)` |
 
 **Adding a New Strategy (Open/Closed Principle):**
+
 - Create new class in `domain/strategies/` implementing `IPointsCalculationStrategy`  
 - Register in `PointsStrategyResolver` constructor: `this.register(new NewStrategy())`  
 - No existing code changes required  
 
 **Source Files:**
+
 - Interface: [Link to `/apps/api/src/modules/checkout/domain/strategies/points-calculation-strategy.interface.ts`]  
 - Strategies: [Link to `/apps/api/src/modules/checkout/domain/strategies/`]  
 - Resolver: [Link to `/apps/api/src/modules/checkout/application/services/points-strategy-resolver.ts`]  
@@ -702,7 +632,8 @@ This section documents every design pattern employed in the SmartCart backend. E
 
 ---
 
-#### 4. Session State Machine
+### 4. Session State Machine
+
 | Aspect | Implementation Directive |
 |--------|---------------------------|
 | What   | Shopping sessions follow a finite state machine lifecycle. Transitions are guarded by business rules. Expired sessions are cleaned up automatically via cron. |
@@ -711,6 +642,7 @@ This section documents every design pattern employed in the SmartCart backend. E
 | Cron Cleanup | `SessionExpirationService` runs every 5 minutes (`@Cron('*/5 * * * *')`). Queries for ACTIVE sessions older than 2 hours and marks them EXPIRED. |
 
 **State Transition Rules:**
+
 | From State | Event                  | To State           | Guard Condition |
 |------------|------------------------|--------------------|-----------------|
 | ACTIVE     | addItem()              | ACTIVE             | Status must be ACTIVE |
@@ -722,6 +654,7 @@ This section documents every design pattern employed in the SmartCart backend. E
 | COMPLETED  | expire()               | COMPLETED          | Idempotent — no transition |
 
 **Source Files:**
+
 - Entity FSM: [Link to `/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`]  
 - State machine: [Link to `/apps/api/src/modules/checkout/domain/state-machine/session-state-machine.ts`]  
 - Cron service: [Link to `/apps/api/src/modules/checkout/application/services/session-expiration.service.ts`]  
@@ -729,6 +662,7 @@ This section documents every design pattern employed in the SmartCart backend. E
 ---
 
 #### Pattern Interaction — Checkout Validation Flow
+
 | Step | Layer        | Pattern(s) Active | Action |
 |------|--------------|-------------------|--------|
 | 1    | Presentation | DTO               | `ZodValidationPipe` validates `ValidationRequestSchema` against request body |
