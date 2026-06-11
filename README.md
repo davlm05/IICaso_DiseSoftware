@@ -15,7 +15,7 @@
 | Hosting | Railway / Render / AWS ECS | — | Docker; cheap demo, scalable |
 | Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
 
-> For the target production serverless architecture (AWS Lambda, Aurora PostgreSQL, SQS/SNS), see [§2.11 — Production Evolution Roadmap](#211-production-evolution-roadmap).
+The stack above covers the current implementation. For the target production serverless architecture (AWS Lambda, Aurora PostgreSQL, SQS/SNS), see §2.11 — Production Evolution Roadmap.
 
 ## 2.2. Architecture — Implementation Guide
 
@@ -533,7 +533,7 @@ The Checkout module component diagram illustrates:
 
 | Aspect | Implementation Directive |
 |--------|---------------------------|
-| What   | After each validated checkout, update a rolling 90-day behavioral profile, extract features, classify the user into a consumer segment via AI, and make aggregated anonymized data available to B2B partners. |
+| Purpose | After each validated checkout, update a rolling 90-day behavioral profile, extract features, classify the user into a consumer segment via AI, and make aggregated anonymized data available to B2B partners. |
 | Trigger | `CheckoutCompletedEvent` published by `CheckoutService.validateSession()` after transaction commit |
 | Queue   | `analytics-profile-update` (BullMQ) — event routed by `BullMqEventPublisher` |
 | Worker  | `ProfileUpdateProcessor` in `apps/analytics-worker/` |
@@ -563,7 +563,7 @@ The Checkout module component diagram illustrates:
 
 | Aspect | Implementation Directive |
 |--------|---------------------------|
-| What   | Generate a signed, time-sensitive JWT token embedding a deterministic hash of session items. At checkout, validate the token signature, expiration, and item hash against physical cart contents. |
+| Purpose | Generate a signed, time-sensitive JWT token embedding a deterministic hash of session items. At checkout, validate the token signature, expiration, and item hash against physical cart contents. |
 | Generation | Called by `CheckoutService.generateQr()`. Domain validation: session must be ACTIVE with ≥ 1 item. Compute deterministic item hash (sort barcodes alphabetically, concatenate with `|`, SHA-256). Sign JWT with HS256, 5-minute expiry. |
 | Validation | Called by `CheckoutService.validateSession()`. Verify JWT signature. Check expiration. Compute hash of POS-scanned items using same algorithm. Compare hashes — mismatch throws `QrItemMismatchError`. |
 | Participants | `CheckoutService`, `JwtQrSigner` (infrastructure), `ShoppingSession.computeItemHash()` (domain), `ShoppingSession.validateItems()` (domain) |
@@ -593,7 +593,7 @@ The Checkout module component diagram illustrates:
 
 | Aspect | Implementation Directive |
 |--------|---------------------------|
-| What   | Award points based on product's `pointsConfig`. Three strategies at launch: fixed per unit, spend multiplier, volume tiers. Extensible for future schemes without modifying checkout flow. |
+| Purpose | Award points based on product's `pointsConfig`. Three strategies at launch: fixed per unit, spend multiplier, volume tiers. Extensible for future schemes without modifying checkout flow. |
 | How    | `PointsService.calculatePoints()` filters sponsored items, then delegates each item to `PointsStrategyResolver.resolve(config.type)` which returns the correct strategy. Strategy `calculate()` returns a `PointsAwarded` value object. |
 | Participants | `PointsService`, `PointsStrategyResolver`, `IPointsCalculationStrategy` implementations |
 
@@ -625,7 +625,7 @@ The Checkout module component diagram illustrates:
 
 | Aspect | Implementation Directive |
 |--------|---------------------------|
-| What   | Shopping sessions follow a finite state machine lifecycle. Transitions are guarded by business rules. Expired sessions are cleaned up automatically via cron. |
+| Purpose | Shopping sessions follow a finite state machine lifecycle. Transitions are guarded by business rules. Expired sessions are cleaned up automatically via cron. |
 | States | `ACTIVE → PENDING_CHECKOUT → COMPLETED or VALIDATION_FAILED`. Any non-COMPLETED state can transition to `EXPIRED`. |
 | Guards | `addItem()` only in ACTIVE. `requestCheckout()` requires ACTIVE + items > 0. `completeValidation()` and `markValidationFailed()` only from PENDING_CHECKOUT. `expire()` idempotent for COMPLETED. |
 | Cron Cleanup | `SessionExpirationService` runs every 5 minutes (`@Cron('*/5 * * * *')`). Queries for ACTIVE sessions older than 2 hours and marks them EXPIRED. |
@@ -1040,12 +1040,13 @@ Deployment is triggered automatically by a push to `main` and defined in [Link t
 - **Execution:** Apply Kubernetes manifests via `kubectl apply -f infra/kubernetes/` against the production cluster (AWS EKS). Rolling update strategy: `maxSurge: 1, maxUnavailable: 0`. HPA resources: [Link to `/infra/kubernetes/api-hpa.yaml`] and [Link to `/infra/kubernetes/analytics-worker-hpa.yaml`].
 - **Migrations:** Run `prisma migrate deploy` against the production Aurora PostgreSQL instance before traffic shifts.
 
-> **Deployment targets by environment:**
-> | Environment | Platform | Config |
-> |---|---|---|
-> | Local dev | Docker Compose | `infra/docker/docker-compose.yml` |
-> | Staging | Railway (auto-deploy on merge to `main`) | `RAILWAY_STAGING_TOKEN` |
-> | Production | Kubernetes on AWS EKS (manual gate) | `infra/kubernetes/` + `infra/terraform/` |
+**Deployment targets by environment:**
+
+| Environment | Platform | Config |
+|---|---|---|
+| Local dev | Docker Compose | `infra/docker/docker-compose.yml` |
+| Staging | Railway (auto-deploy on merge to `main`) | `RAILWAY_STAGING_TOKEN` |
+| Production | Kubernetes on AWS EKS (manual gate) | `infra/kubernetes/` + `infra/terraform/` |
 
 #### Post-Deploy Monitoring
 
@@ -1100,7 +1101,7 @@ Analytics worker uses [Link to `/infra/docker/Dockerfile.worker`] with same patt
 
 ## 2.10 Project scaffold
 
-> **Shared packages and CI/CD config live at the repository root**, outside `backend/`, so both `frontend/` and `backend/apps/api` can consume them as equal workspace members. `.github/` is read by GitHub Actions only from the repo root.
+Shared packages and CI/CD config live at the repository root, outside `backend/`, so both `frontend/` and `backend/apps/api` can consume them as equal workspace members. `.github/` is read by GitHub Actions only from the repo root.
 
 ### Repository Root
 
@@ -1307,18 +1308,18 @@ The interface-based DI architecture in §2.2 makes this migration possible witho
 
 | Stack 1 (Current) | Stack 2 (Target) | Migration Action |
 |---|---|---|
-| NestJS `@Controller` handlers | AWS Lambda handlers | Wrap NestJS app with `@vendia/serverless-express`, or rewrite handlers as thin Lambda functions delegating to existing application services |
-| BullMQ + Redis queues | AWS SQS | Implement `SqsEventPublisher` replacing `BullMqEventPublisher` — swap binding in `checkout.module.ts` only |
-| `SessionExpirationService` `@Cron` | AWS EventBridge Scheduler | Replace cron with a scheduled Lambda rule; domain expiration logic (`session-state-machine.ts`) unchanged |
-| PostgreSQL 16 (Docker / Railway) | Aurora PostgreSQL 17 | Update `DATABASE_URL`; run `prisma migrate deploy`; no schema changes required |
-| Redis self-managed | ElastiCache Redis 7.2 | Update connection string; no application code changes |
-| Railway / Kubernetes deployment | AWS CDK / Terraform (AWS provider) | Replace `infra/terraform/` Railway provider with `hashicorp/aws`; manifests in same `environments/production/` structure |
-| Cloudflare R2 | Amazon S3 | Implement `S3StorageClient` replacing R2 client — swap binding in module |
-| PgBouncer self-managed | RDS Proxy | Update `DATABASE_URL` to RDS Proxy endpoint; `pool_mode = transaction` equivalent is automatic |
+| NestJS `@Controller` handlers ([Link to `/apps/api/src/modules/checkout/presentation/controllers/`]) | AWS Lambda handlers | Wrap NestJS app with `@vendia/serverless-express`, or rewrite handlers as thin Lambda functions delegating to existing application services |
+| BullMQ + Redis queues ([Link to `/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts`]) | AWS SQS | Implement `SqsEventPublisher` replacing `BullMqEventPublisher` — swap binding in `checkout.module.ts` ([Link to `/apps/api/src/modules/checkout/checkout.module.ts`]) only |
+| `SessionExpirationService` `@Cron` ([Link to `/apps/api/src/modules/checkout/application/services/session-expiration.service.ts`]) | AWS EventBridge Scheduler | Replace cron with a scheduled Lambda rule; domain expiration logic in `session-state-machine.ts` ([Link to `/apps/api/src/modules/checkout/domain/state-machine/session-state-machine.ts`]) unchanged |
+| PostgreSQL 16 (Docker / Railway) ([Link to `/infra/docker/docker-compose.yml`]) | Aurora PostgreSQL 17 | Update `DATABASE_URL`; run `prisma migrate deploy`; no schema changes required |
+| Redis self-managed ([Link to `/infra/docker/docker-compose.yml`]) | ElastiCache Redis 7.2 | Update connection string in `env.validation.ts` ([Link to `/apps/api/src/config/env.validation.ts`]); no application code changes |
+| Railway / Kubernetes deployment ([Link to `/infra/kubernetes/api-hpa.yaml`]) | AWS CDK / Terraform (AWS provider) | Replace `infra/terraform/` Railway provider with `hashicorp/aws`; same file structure: `main.tf` ([Link to `/infra/terraform/environments/production/main.tf`]) |
+| Cloudflare R2 / S3 | Amazon S3 | Implement `S3StorageClient` replacing R2 client — swap binding in the relevant module |
+| PgBouncer self-managed ([Link to `/infra/pgbouncer/pgbouncer.ini`]) | RDS Proxy | Update `DATABASE_URL` to RDS Proxy endpoint; `pool_mode = transaction` equivalent is automatic |
 
 ### Key Differences from Stack 1
 
-- **No persistent containers:** Lambda functions are stateless by design — the stateless session architecture enforced in §2.7 (all session state in Redis) is already compatible.
-- **Cold starts:** Provisioned concurrency required for the POS validation Lambda (`POST /sessions/:id/validate`) to meet the <500ms P95 SLA defined in §2.8.
-- **BullMQ → SQS:** SQS does not support repeatable jobs natively. The `SessionExpirationService` cron (§2.3) must be replaced with an EventBridge Scheduler rule targeting a dedicated expiration Lambda.
-- **IaC:** Terraform AWS provider (`hashicorp/aws`) replaces the Railway provider. Same file structure: `infra/terraform/environments/production/main.tf`.
+- **No persistent containers:** Lambda functions are stateless by design — the stateless session architecture enforced in §2.7 (all session state in Redis, see [Link to `/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`]) is already compatible.
+- **Cold starts:** Provisioned concurrency required for the POS validation Lambda (`POST /sessions/:id/validate`, see [Link to `/apps/api/src/modules/checkout/presentation/controllers/validation.controller.ts`]) to meet the <500ms P95 SLA defined in §2.8.
+- **BullMQ → SQS:** SQS does not support repeatable jobs natively. The `SessionExpirationService` cron ([Link to `/apps/api/src/modules/checkout/application/services/session-expiration.service.ts`]) must be replaced with an EventBridge Scheduler rule targeting a dedicated expiration Lambda.
+- **IaC:** Terraform AWS provider (`hashicorp/aws`) replaces the Railway provider. Same file structure: `infra/terraform/environments/production/main.tf` ([Link to `/infra/terraform/environments/production/main.tf`]).
