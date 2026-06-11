@@ -973,44 +973,44 @@ flowchart TD
     s8 --> prod_env
 ```
 
-## How to Implement the Pipeline
+### How to Implement the Pipeline
 
 The pipeline is triggered on every push to a pull request targeting `main`. It enforces a series of quality gates. All workflow files are located in [Link to `/.github/workflows/`].
 
-### Install & Cache Dependencies
+#### Install & Cache Dependencies
 - **What to do:** Use `pnpm install --frozen-lockfile` to ensure consistent dependency versions.  
 - **Cache:** Global pnpm store and local `node_modules` cached via `actions/cache@v4` keyed on `pnpm-lock.yaml`.  
 - **Implementation:** Configure workflow with `NODE_VERSION: '20'` and `PNPM_VERSION: '9'`. Use `concurrency: cancel-in-progress: true`.
 
-### Lint & Static Analysis
+#### Lint & Static Analysis
 - **Linting:** Run `pnpm lint` (ESLint) with `--max-warnings=0`.  
 - **Formatting:** Run `pnpm format:check` (Prettier).  
 - **Type Checking:** Run `pnpm type-check` (`tsc --noEmit`).  
 - **SonarQube:** Run `sonarsource/sonarqube-scan-action` with `SONAR_TOKEN` and `SONAR_HOST_URL`.
 
-### Unit Tests
+#### Unit Tests
 - **What to do:** Run `pnpm test:unit --coverage` (Jest config: [Link to `/apps/api/jest.unit.config.ts`]).  
 - **Artifacts:** Upload coverage report (`apps/api/coverage/lcov.info`).
 
-### Integration Tests
+#### Integration Tests
 - **What to do:** Spin up `postgres:16-alpine` and `redis:7-alpine` via GitHub Actions `services`.  
 - **Database Setup:** Run `pnpm prisma migrate deploy`.  
 - **Execution:** Run `pnpm test:integration` (config: [Link to `/apps/api/jest.integration.config.ts`]).  
 - **Health Checks:** Use `pg_isready` and `redis-cli ping`.
 
-### API Contract Tests
+#### API Contract Tests
 - **What to do:** Generate OpenAPI spec with `pnpm openapi:generate`.  
 - **Validation:** Run `pnpm openapi:validate` (e.g., `vacuum`).  
 - **Execution:** Run `pnpm test:contract` against schemas in [Link to `/packages/shared-types/src/`].
 
-### Quality Gate Check
+#### Quality Gate Check
 - **Coverage Threshold:** Fail if coverage < 80%.  
 - **Security Audit:** Run `pnpm audit --audit-level=critical`. Fail on critical/high vulnerabilities.  
 - **SonarQube Quality Gate:** Must pass; merge blocked otherwise.
 
 ---
 
-### Quality Gates Summary
+#### Quality Gates Summary
 
 | Gate                  | Tool       | Threshold                          | Blocks Merge? |
 |-----------------------|------------|------------------------------------|---------------|
@@ -1026,39 +1026,44 @@ The pipeline is triggered on every push to a pull request targeting `main`. It e
 
 ---
 
-## Deployment Strategy & Execution
+### Deployment Strategy & Execution
 
 Deployment is triggered automatically by a push to `main` and defined in [Link to `/.github/workflows/deploy.yml`].
 
-### Build & Push Docker Image
+#### Build & Push Docker Image
+
 - **Action:** `docker/build-push-action@v5` using multi-stage `Dockerfile` ([Link to `/docker/Dockerfile.api`]).  
 - **Tagging:** `docker/metadata-action` generates tags (`main-{sha}`).  
 - **Registry:** Push to `ghcr.io`.
 
-### Deploy to Staging (Automatic)
+#### Deploy to Staging (Automatic)
+
 - **Action:** `railwayapp/railway-deploy@v1` with `RAILWAY_STAGING_TOKEN`.  
 - **Migrations:** Run `prisma migrate deploy`.  
 - **Smoke Tests:** Poll `https://staging.api.smartcart.app/api/v1/health`. Validate critical flows (register/login).
 
-### Deploy to Production (Manual Gate)
+#### Deploy to Production (Manual Gate)
+
 - **Approval:** GitHub Environment "production" with manual approval.  
 - **Execution:** Deploy via `railwayapp/railway-deploy@v1` with `RAILWAY_PRODUCTION_TOKEN`.
 
-### Post-Deploy Monitoring
+#### Post-Deploy Monitoring
+
 - **Stabilization:** Wait 30s, curl `/api/v1/health`.  
 - **Error Tracking:** Query Sentry API for unresolved issues (last 5 min).  
 - **Notification:** Slack `#deployments` with image tag, commit SHA, author.
 
 ---
 
-## Environment Configuration & Local Development
+### Environment Configuration & Local Development
 
 - Copy [Link to `/.env.example`] → `.env`.  
 - Run `pnpm docker:up` (Compose file: [Link to `/docker/docker-compose.yml`]).  
 - Run `pnpm prisma:migrate`.  
 - Run `pnpm dev`.
 
-### Docker Multi-Stage Build Implementation
+#### Docker Multi-Stage Build Implementation
+
 - **Stage 1 (Builder):** Install deps, generate Prisma client, compile TS → JS.  
 - **Stage 2 (Runner):** Base `node:20-alpine`. Non-root `nestjs` user. Copy production artifacts. `HEALTHCHECK` → `/api/v1/health/liveness`. Start with `node --require ./dist/tracing.js dist/main.js`.
 
@@ -1066,7 +1071,7 @@ Analytics worker uses [Link to `/docker/Dockerfile.worker`] with same pattern.
 
 ---
 
-### Bundle Size Optimizations
+#### Bundle Size Optimizations
 
 | Technique              | How to Implement | Impact                          |
 |------------------------|------------------|---------------------------------|
@@ -1078,7 +1083,7 @@ Analytics worker uses [Link to `/docker/Dockerfile.worker`] with same pattern.
 
 ---
 
-### Available Scripts (root `package.json` [Link to `/package.json`])
+#### Available Scripts (root `package.json` [Link to `/package.json`])
 
 - `pnpm dev` — Start API in dev mode  
 - `pnpm build` — Build all packages/apps  
@@ -1090,3 +1095,51 @@ Analytics worker uses [Link to `/docker/Dockerfile.worker`] with same pattern.
 - `pnpm test:contract` — API contract tests  
 - `pnpm docker:up` / `pnpm docker:down` — Start/stop local Docker Compose  
 - `pnpm openapi:generate` / `pnpm openapi:validate` — OpenAPI spec tasks  
+
+---
+
+## 2.10 Project scaffold
+
+- **Root:** [`/backend/apps`](/backend/apps/)
+
+```
+# Scaffold: backend/
+
+backend/
+├── apps/
+│   ├── api/
+│   │   ├── docker/
+│   │   ├── src/
+│   │   │   ├── common/
+│   │   │   │   ├── decorators/
+│   │   │   │   └── pipes/
+│   │   │   └── modules/
+│   │   │       ├── analytics/
+│   │   │       ├── auth/
+│   │   │       ├── catalog/
+│   │   │       ├── checkout/
+│   │   │       │   ├── application/
+│   │   │       │   ├── domain/
+│   │   │       │   ├── infrastructure/
+│   │   │       │   └── presentation/
+│   │   │       ├── rewards/
+│   │   │       └── (otros módulos)
+│   │   └── test/
+│   └── analytics-worker/
+│       ├── src/
+│       │   ├── infrastructure/
+│       │   ├── processors/
+│       │   └── services/
+│       └── test/
+├── packages/
+│   └── shared-types/
+│       ├── src/
+│       │   ├── dto/
+│       │   └── validation/
+│       └── test/
+├── infra/
+│   ├── docker/
+│   └── terraform/
+└── .github/
+    └── workflows/
+```
