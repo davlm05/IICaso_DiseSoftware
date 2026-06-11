@@ -911,72 +911,29 @@ This section details the two most critical workflows beyond basic CRUD: the **QR
 
 ---
 
-## 2.9 Infrastructure and DevOps
+## 2.9. Infrastructure & DevOps
 
-This section documents the complete delivery pipeline — from developer workstation to production — for SmartCart. Every tool, script, and configuration is specified with its exact file path in the monorepo. The pipeline is designed to enforce quality gates automatically, prevent regressions, and enable any team member to deploy safely.
+- **Source Control:** Git with GitHub, following Trunk-Based Development. All developers commit to short-lived feature branches (max 24 hours) and merge to `main` via squash-merge pull requests. `main` is always deployable. Branch protection rules at [Link to `/.github/settings.yml`] require 1 approving review, all status checks passing, and up-to-date branches.
+- **CI/CD Tooling:** GitHub Actions. The PR validation pipeline is defined in [Link to `/.github/workflows/ci.yml`]. The deployment pipeline is defined in [Link to `/.github/workflows/deploy.yml`]. Docker images are pushed to GitHub Container Registry (GHCR).
+- **Infrastructure as Code (IaC):** Terraform (v1.9+) with state stored in Terraform Cloud. Primary providers: `railway`, `cloudflare`, and `github`. The production environment is defined in [Link to `/infra/terraform/environments/production/main.tf`], which manages the API service, analytics worker, PostgreSQL, and Redis instances as code.
+- **Deployment Strategy:** Rolling updates with zero downtime (`maxSurge: 1, maxUnavailable: 0`). Database migrations run automatically via Prisma Migrate before new containers receive traffic. Instant rollback is available.
 
-### Source Control
+---
 
-| Concern                | Decision                                                                                                                   |
-|-------------------------|----------------------------------------------------------------------------------------------------------------------------|
-| Version Control System  | Git                                                                                                                        |
-| Platform                | GitHub                                                                                                                     |
-| Branching Strategy      | **Trunk-Based Development** — all developers commit to short-lived feature branches (max 24 hours) and merge to `main` via pull request. `main` is always deployable. |
-| Branch Naming           | `feat/<ticket-id>-short-description`, `fix/<ticket-id>-short-description`, `chore/<ticket-id>-short-description`                 |
-| Merge Strategy          | Squash merge to keep `main` history linear and clean. Each commit on `main` represents exactly one PR.                         |
-| Branch Protection       | `main` requires: 1 approving review, all status checks passing, branch up-to-date before merge. Direct pushes to main are disabled. |
+### CI/CD Pipeline (Backend)
 
-**Branch Protection Rules (GitHub Settings)**:
-
-```
-# 📁 .github/settings.yml — Branch protection configuration
-branches:
-  - name: main
-    protection:
-      required_pull_request_reviews:
-        required_approving_review_count: 1
-        dismiss_stale_reviews: true
-        require_code_owner_reviews: true
-      required_status_checks:
-        strict: true
-        contexts:
-          - "lint"
-          - "type-check"
-          - "unit-tests"
-          - "integration-tests"
-          - "api-contract-tests"
-          - "security-audit"
-          - "quality-gate"
-      enforce_admins: false
-      restrictions:
-        users: []
-        teams: ["backend-engineers"]
-```
-
-### CI/CD Tooling
-
-| Concern             | Decision                                                                                                   |
-|---------------------|------------------------------------------------------------------------------------------------------------|
-| CI/CD Platform      | GitHub Actions — runs on every push to a PR and on merge to `main`                                           |
-| Workflow Files      | `.github/workflows/ci.yml` (PR validation), `.github/workflows/deploy.yml` (deployment)                        |
-| Container Registry  | GitHub Container Registry (GHCR) for Docker images                                                         |
-| Secrets Storage     | GitHub Actions Secrets for `DOCKER_REGISTRY_TOKEN`, `RAILWAY_API_TOKEN`, `SENTRY_DSN`, etc.                      |
-
-### CI/CD Pipeline — Full Flow Diagram
+**Full Pipeline Flow Diagram:**
 
 ```mermaid
 flowchart TD
-    %% Trigger Nodes
     push(["git push feature/xxx"]) 
     pr(["Create PR"])
     merge(["Merge PR to main"])
 
-    %% CI Stage Grouping
     subgraph CI_Stage ["CI Pipeline (Feature Branch / PR)"]
         s1["1. Install Deps<br/>• npm ci<br/>• Cache: node_modules"]
         s2["2. Static Analysis<br/>• ESLint<br/>• Prettier check<br/>• TypeScript check (tsc --noEmit)"]
         
-        %% Test Matrix
         s3a["3a. Unit Tests<br/>(Jest)"]
         s3b["3b. Integ Tests<br/>(Jest + Docker)"]
         s3c["3c. API Contract Tests<br/>(Jest)"]
@@ -984,7 +941,6 @@ flowchart TD
         s4["4. Quality Gate<br/>• Coverage ≥ 80%<br/>• SonarQube pass<br/>• No critical vulns"]
     end
 
-    %% CD Stage Grouping
     subgraph CD_Stage ["CD Pipeline (Main Branch)"]
         s5["5. Build & Push<br/>• Docker image<br/>• Tag: main-{sha}<br/>• Push to GHCR"]
         s6["6. Deploy Staging<br/>• Railway / Render<br/>• Auto-deploy"]
@@ -996,875 +952,141 @@ flowchart TD
         s9["9. Post-Deploy<br/>• Health check<br/>• Sentry watch<br/>• (10 min monitor)"]
     end
 
-    %% Production Target Environment
     prod_env["Production Environment<br/>(Railway / ECS)"]
 
-    %% --- Relationships & Execution Flow ---
     push --> s1
     s1 --> s2
-    
-    %% Fan out to parallel tests
     s2 --> s3a
     s2 --> s3b
     s2 --> s3c
-    
     pr -.-> s3a
-    
-    %% Fan in to Quality Gate
     s3a --> s4
     s3b --> s4
     s3c --> s4
-    
-    %% Branch Merge Gate
     s4 --> merge
     merge --> s5
-    
-    %% CD Pipeline Linearity
     s5 --> s6
     s6 --> s7
     s7 --> approval
-    
-    %% Production Release Cutover
     approval -- "Approved" --> s8
     s8 --> s9
     s8 --> prod_env
-
-    %% Styling configurations for clear separation of concerns
-    style push fill:#f4f4f6,stroke:#444,stroke-width:1px
-    style pr fill:#f4f4f6,stroke:#444,stroke-width:1px
-    style merge fill:#f4f4f6,stroke:#444,stroke-width:1px
-    style prod_env fill:#eef9ff,stroke:#0077cc,stroke-width:1px
 ```
 
-### CI Pipeline — Pull Request Validation
+## How to Implement the Pipeline
+
+The pipeline is triggered on every push to a pull request targeting `main`. It enforces a series of quality gates. All workflow files are located in [Link to `/.github/workflows/`].
 
-```
-# 📁 .github/workflows/ci.yml
-name: CI — Pull Request Validation
+### Install & Cache Dependencies
+- **What to do:** Use `pnpm install --frozen-lockfile` to ensure consistent dependency versions.  
+- **Cache:** Global pnpm store and local `node_modules` cached via `actions/cache@v4` keyed on `pnpm-lock.yaml`.  
+- **Implementation:** Configure workflow with `NODE_VERSION: '20'` and `PNPM_VERSION: '9'`. Use `concurrency: cancel-in-progress: true`.
 
-on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
-
-env:
-  NODE_VERSION: '20'
-  PNPM_VERSION: '9'
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  # ─── Step 1: Install & Cache Dependencies ──────────────────
-  install:
-    name: Install Dependencies
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            apps/*/node_modules
-            packages/*/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-  # ─── Step 2: Static Analysis ───────────────────────────────
-  lint:
-    name: Lint & Type Check
-    runs-on: ubuntu-latest
-    needs: install
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - name: ESLint
-        run: pnpm lint
-      - name: Prettier Check
-        run: pnpm format:check
-      - name: TypeScript Type Check
-        run: pnpm type-check
-
-  # ─── Step 3a: Unit Tests ──────────────────────────────────
-  unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    needs: install
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - name: Run Unit Tests
-        run: pnpm test:unit --coverage
-      - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: apps/api/coverage/lcov.info
-
-  # ─── Step 3b: Integration Tests ────────────────────────────
-  integration-tests:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: install
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_pass
-          POSTGRES_DB: smartcart_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - name: Run Prisma Migrations
-        run: pnpm prisma migrate deploy
-        env:
-          DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/smartcart_test
-      - name: Run Integration Tests
-        run: pnpm test:integration
-        env:
-          DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/smartcart_test
-          REDIS_URL: redis://localhost:6379
-          JWT_ACCESS_SECRET: test-access-secret-at-least-32-chars-long
-          JWT_REFRESH_SECRET: test-refresh-secret-at-least-32-chars-long
-          QR_SIGNING_SECRET: test-qr-secret-at-least-32-chars-long
-
-  # ─── Step 3c: API Contract Tests ──────────────────────────
-  api-contract-tests:
-    name: API Contract Tests
-    runs-on: ubuntu-latest
-    needs: install
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - name: Generate OpenAPI Spec
-        run: pnpm openapi:generate
-      - name: Validate OpenAPI Spec
-        run: pnpm openapi:validate
-      - name: Run Contract Tests
-        run: pnpm test:contract
-
-  # ─── Step 4: Quality Gate ─────────────────────────────────
-  quality-gate:
-    name: Quality Gate
-    runs-on: ubuntu-latest
-    needs: [lint, unit-tests, integration-tests, api-contract-tests]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download Coverage Report
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-report
-      - name: Check Coverage Threshold
-        run: |
-          COVERAGE=$(grep -oP '"pct":\K\d+\.\d+' coverage-summary.json | head -1)
-          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
-            echo "Coverage $COVERAGE% is below 80% threshold"
-            exit 1
-          fi
-          echo "Coverage $COVERAGE% meets threshold"
-      - name: Check for Critical Vulnerabilities
-        run: pnpm audit --audit-level=critical
-      - name: SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@v3
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-```
-
-### CD Pipeline — Deployment
-
-```
-# 📁 .github/workflows/deploy.yml
-name: CD — Deploy
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Deployment target'
-        required: true
-        type: choice
-        options:
-          - staging
-          - production
-
-env:
-  NODE_VERSION: '20'
-  IMAGE_NAME: ghcr.io/${{ github.repository }}/smartcart-api
-
-jobs:
-  # ─── Step 5: Build & Push Docker Image ────────────────────
-  build:
-    name: Build & Push Docker Image
-    runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=main-
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-      - name: Build and Push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/Dockerfile.api
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ─── Step 6: Deploy to Staging ────────────────────────────
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    environment:
-      name: staging
-      url: https://staging.api.smartcart.app
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Railway (Staging)
-        uses: railwayapp/railway-deploy@v1
-        with:
-          railway_token: ${{ secrets.RAILWAY_STAGING_TOKEN }}
-          environment: staging
-          service: smartcart-api
-
-  # ─── Step 7: Smoke Tests (Staging) ────────────────────────
-  smoke-tests:
-    name: Smoke Tests
-    runs-on: ubuntu-latest
-    needs: deploy-staging
-    steps:
-      - name: Health Check
-        run: |
-          for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://staging.api.smartcart.app/api/v1/health)
-            if [ "$STATUS" = "200" ]; then
-              echo "Health check passed"
-              exit 0
-            fi
-            echo "Waiting for deployment... attempt $i/10"
-            sleep 10
-          done
-          echo "Health check failed after 10 attempts"
-          exit 1
-      - name: Critical Flow Test
-        run: |
-          # Register test user
-          curl -s -X POST https://staging.api.smartcart.app/api/v1/auth/register \
-            -H "Content-Type: application/json" \
-            -d '{"fullName":"Smoke Test","email":"smoke@test.com","password":"Test1234"}' \
-            | tee /tmp/register.json
-
-          # Login
-          curl -s -X POST https://staging.api.smartcart.app/api/v1/auth/login \
-            -H "Content-Type: application/json" \
-            -d '{"email":"smoke@test.com","password":"Test1234"}' \
-            | tee /tmp/login.json
-
-          echo "Critical flows verified"
-
-  # ─── Step 8: Deploy to Production (Manual Approval) ───────
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: smoke-tests
-    if: github.ref == 'refs/heads/main'
-    environment:
-      name: production
-      url: https://api.smartcart.app
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Railway (Production)
-        uses: railwayapp/railway-deploy@v1
-        with:
-          railway_token: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
-          environment: production
-          service: smartcart-api
-
-  # ─── Step 9: Post-Deploy Monitoring ───────────────────────
-  post-deploy-monitor:
-    name: Post-Deploy Monitor
-    runs-on: ubuntu-latest
-    needs: deploy-production
-    steps:
-      - name: Wait for deployment to stabilize
-        run: sleep 30
-      - name: Health Check (Production)
-        run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.smartcart.app/api/v1/health)
-          if [ "$STATUS" != "200" ]; then
-            echo "Production health check failed!"
-            exit 1
-          fi
-          echo "Production healthy"
-      - name: Check Sentry for new errors
-        run: |
-          # Query Sentry API for errors in the last 5 minutes
-          curl -s "https://sentry.io/api/0/projects/smartcart/api/issues/?query=is:unresolved&statsPeriod=5m" \
-            -H "Authorization: Bearer ${{ secrets.SENTRY_AUTH_TOKEN }}" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); exit(1 if len(d)>0 else 0)" \
-            && echo "No new Sentry issues" \
-            || echo "Warning: New Sentry issues detected — check Sentry dashboard"
-      - name: Notify Slack
-        uses: slackapi/slack-github-action@v1.26.0
-        with:
-          payload: |
-            {
-              "text": "SmartCart API deployed to production\n• Image: ${{ needs.build.outputs.image_tag }}\n• Commit: ${{ github.sha }}\n• Author: ${{ github.actor }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-```
-
-### Infrastructure as Code (IaC)
-
-| Concern           | Decision                                                                                   |
-|-------------------|--------------------------------------------------------------------------------------------|
-| Tool              | **Terraform** (v1.9+) — provider-agnostic, declarative, state stored in Terraform Cloud        |
-| Providers         | `railway` (for Railway.app), `cloudflare` (for R2 storage), `github` (for repository settings)   |
-| State Management  | Terraform Cloud with remote state, state locking, and version history                      |
-
-**Terraform Configuration for Railway (Primary Hosting)**:
-
-```
-# 📁 infra/terraform/main.tf
-terraform {
-  required_version = ">= 1.9.0"
-
-  required_providers {
-    railway = {
-      source  = "terraform-community-providers/railway"
-      version = "~> 0.4"
-    }
-    cloudflare = {
-      source  = "cloudflare/cloudflare"
-      version = "~> 4.0"
-    }
-  }
-
-  cloud {
-    organization = "smartcart"
-    workspaces {
-      name = "smartcart-production"
-    }
-  }
-}
-
-provider "railway" {
-  token = var.railway_api_token
-}
-
-provider "cloudflare" {
-  api_token = var.cloudflare_api_token
-}
-```
-
-```
-# 📁 infra/terraform/environments/production/main.tf
-# Production environment definition
-
-module "smartcart_api" {
-  source = "../../modules/railway-service"
-
-  environment    = "production"
-  service_name   = "smartcart-api"
-  repo_url       = "https://github.com/smartcart/smartcart"
-  branch         = "main"
-  dockerfile_path = "docker/Dockerfile.api"
-
-  # Environment variables (non-sensitive)
-  env_vars = {
-    NODE_ENV                  = "production"
-    PORT                      = "3000"
-    BCRYPT_ROUNDS             = "12"
-    CORS_ORIGINS              = "https://app.smartcart.app"
-    RATE_LIMIT_MAX            = "100"
-    RATE_LIMIT_TTL            = "60"
-    AI_SERVICE_URL            = "https://ai.smartcart.internal"
-    OTLP_EXPORTER_ENDPOINT    = "http://jaeger:4317"
-  }
-
-  # Secrets (Railway manages these securely)
-  secrets = [
-    "DATABASE_URL",
-    "REDIS_URL",
-    "JWT_ACCESS_SECRET",
-    "JWT_REFRESH_SECRET",
-    "QR_SIGNING_SECRET",
-    "AI_SERVICE_API_KEY",
-    "SENTRY_DSN",
-    "EXPO_PUSH_API_TOKEN",
-    "S3_ACCESS_KEY_ID",
-    "S3_SECRET_ACCESS_KEY",
-    "S3_BUCKET_NAME",
-    "S3_REGION",
-  ]
-
-  # Scaling
-  min_replicas = 3
-  max_replicas = 10
-  cpu           = "1 vCPU"
-  memory        = "1 GB"
-
-  # Health check
-  health_check_path = "/api/v1/health/readiness"
-}
-
-module "smartcart_analytics_worker" {
-  source = "../../modules/railway-service"
-
-  environment    = "production"
-  service_name   = "smartcart-analytics-worker"
-  repo_url       = "https://github.com/smartcart/smartcart"
-  branch         = "main"
-  dockerfile_path = "docker/Dockerfile.worker"
-
-  env_vars = {
-    NODE_ENV               = "production"
-    AI_SERVICE_URL         = "https://ai.smartcart.internal"
-    OTLP_EXPORTER_ENDPOINT = "http://jaeger:4317"
-  }
-
-  secrets = [
-    "DATABASE_URL",
-    "REDIS_URL",
-    "AI_SERVICE_API_KEY",
-  ]
-
-  min_replicas = 2
-  max_replicas = 8
-  cpu           = "0.5 vCPU"
-  memory        = "512 MB"
-}
-
-module "postgresql" {
-  source = "../../modules/railway-postgresql"
-
-  environment     = "production"
-  database_name   = "smartcart"
-  version         = "16"
-  high_availability = true
-}
-
-module "redis" {
-  source = "../../modules/railway-redis"
-
-  environment = "production"
-  version     = "7.4"
-  maxmemory   = "4gb"
-}
-```
-
-### Docker Configuration
-
-```
-# 📁 docker/Dockerfile.api — Multi-stage build for minimal image size
-# Stage 1: Build
-FROM node:20-alpine AS builder
-WORKDIR /app
-
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9 --activate
-
-# Copy dependency manifests
-COPY pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY package.json ./
-COPY apps/api/package.json apps/api/
-COPY packages/shared-types/package.json packages/shared-types/
-
-# Install dependencies (production only for smaller layer)
-RUN pnpm install --frozen-lockfile --prod --filter=@smartcart/api
-
-# Copy source code
-COPY apps/api/ apps/api/
-COPY packages/shared-types/ packages/shared-types/
-COPY prisma/ prisma/
-
-# Generate Prisma client
-RUN pnpm --filter=@smartcart/api prisma:generate
-
-# Build TypeScript
-RUN pnpm --filter=@smartcart/api build
-
-# Stage 2: Production runtime
-FROM node:20-alpine AS runner
-WORKDIR /app
-
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nestjs
-
-# Copy only production artifacts from builder
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /app/apps/api/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/package.json ./package.json
-
-# Copy OpenTelemetry startup script
-COPY --from=builder /app/apps/api/src/tracing.ts ./dist/tracing.js
-
-# Set non-root user
-USER nestjs
-
-# Expose port
-EXPOSE 3000
-
-# Health check
-HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/v1/health/liveness || exit 1
-
-# Start application (tracing must be imported first)
-CMD ["node", "--require", "./dist/tracing.js", "dist/main.js"]
-```
-```
-# 📁 docker/Dockerfile.worker — Analytics worker image
-FROM node:20-alpine AS builder
-WORKDIR /app
-
-RUN corepack enable && corepack prepare pnpm@9 --activate
-
-COPY pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY package.json ./
-COPY apps/analytics-worker/package.json apps/analytics-worker/
-COPY packages/shared-types/package.json packages/shared-types/
-
-RUN pnpm install --frozen-lockfile --prod --filter=@smartcart/analytics-worker
-
-COPY apps/analytics-worker/ apps/analytics-worker/
-COPY packages/shared-types/ packages/shared-types/
-COPY prisma/ prisma/
-
-RUN pnpm --filter=@smartcart/analytics-worker prisma:generate
-RUN pnpm --filter=@smartcart/analytics-worker build
-
-FROM node:20-alpine AS runner
-WORKDIR /app
-
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nestjs
-
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/analytics-worker/dist ./dist
-COPY --from=builder /app/apps/analytics-worker/node_modules/.prisma ./node_modules/.prisma
-
-USER nestjs
-
-CMD ["node", "dist/main.js"]
-```
-
-```
-# 📁 docker/docker-compose.yml — Local development environment
-version: '3.9'
-
-services:
-  api:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.api
-      target: builder # Use builder stage for hot-reload in dev
-    ports:
-      - "3000:3000"
-    environment:
-      NODE_ENV: development
-      DATABASE_URL: postgresql://smartcart:smartcart@postgres:5432/smartcart?schema=public
-      REDIS_URL: redis://redis:6379
-      JWT_ACCESS_SECRET: dev-access-secret-at-least-32-chars-long!!
-      JWT_REFRESH_SECRET: dev-refresh-secret-at-least-32-chars-long!!
-      QR_SIGNING_SECRET: dev-qr-secret-at-least-32-chars-long!!!!
-      SENTRY_DSN: ""
-      AI_SERVICE_URL: http://ai-mock:8000
-      CORS_ORIGINS: "*"
-    volumes:
-      - ../apps/api/src:/app/apps/api/src
-      - ../packages:/app/packages
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: pnpm --filter=@smartcart/api dev
-
-  analytics-worker:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.worker
-      target: builder
-    environment:
-      NODE_ENV: development
-      DATABASE_URL: postgresql://smartcart:smartcart@postgres:5432/smartcart?schema=public
-      REDIS_URL: redis://redis:6379
-      AI_SERVICE_URL: http://ai-mock:8000
-    volumes:
-      - ../apps/analytics-worker/src:/app/apps/analytics-worker/src
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: pnpm --filter=@smartcart/analytics-worker dev
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: smartcart
-      POSTGRES_PASSWORD: smartcart
-      POSTGRES_DB: smartcart
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U smartcart"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  ai-mock:
-    image: mockoon/cli:latest
-    command: ["mockoon-cli", "start", "--data", "/data/ai-mock.json"]
-    volumes:
-      - ../tests/mocks/ai-mock.json:/data/ai-mock.json:ro
-    ports:
-      - "8000:8000"
-
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    ports:
-      - "16686:16686" # UI
-      - "4317:4317"   # OTLP gRPC
-
-volumes:
-  postgres_data:
-```
-
-### Deployment Strategy
-
-| Concern             | Decision                                                                                                                                            |
-|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
-| Strategy            | Rolling Updates — new containers are started before old ones are terminated. `maxSurge: 1, maxUnavailable: 0` ensures zero-downtime deployments.      |
-| Justification       | SmartCart is a revenue-critical system. Zero-downtime deployments are mandatory. Rolling updates are simpler to operate than Blue-Green (no double infrastructure cost) and safer than Canary for a small team (no traffic splitting complexity). |
-| Rollback            | Railway supports instant rollback to any previous deployment via the dashboard or CLI: `railway rollback --service smartcart-api`. Rollback triggers automatically if health checks fail after deploy. |
-| Database Migrations | Migrations run automatically before the new containers receive traffic. Prisma Migrate is idempotent. Rollback migrations are tested in staging before production deploy. |
-
-### Environment Configuration
-
-```
-# 📁 .env.example — Template for local development
-# Copy this file to .env and fill in the values
-
-NODE_ENV=development
-PORT=3000
-
-# PostgreSQL (local Docker)
-DATABASE_URL=postgresql://smartcart:smartcart@localhost:5432/smartcart?schema=public
-
-# Redis (local Docker)
-REDIS_URL=redis://localhost:6379
-
-# JWT Secrets (generate with: openssl rand -base64 32)
-JWT_ACCESS_SECRET=replace-with-32-char-random-string
-JWT_REFRESH_SECRET=replace-with-32-char-random-string
-QR_SIGNING_SECRET=replace-with-32-char-random-string
-
-# Security
-BCRYPT_ROUNDS=12
-CORS_ORIGINS=http://localhost:19006
-
-# Rate Limiting
-RATE_LIMIT_TTL=60
-RATE_LIMIT_MAX=100
-
-# Optional: AI Service
-# AI_SERVICE_URL=http://localhost:8000
-# AI_SERVICE_API_KEY=dev-key
-
-# Optional: Observability
-# SENTRY_DSN=https://xxx@sentry.io/xxx
-# OTLP_EXPORTER_ENDPOINT=http://localhost:4317
-```
-
-### Scripts — package.json
-
-```
-// 📁 package.json — Root workspace scripts
-{
-  "scripts": {
-    "dev": "pnpm --filter=@smartcart/api dev",
-    "build": "pnpm --filter=@smartcart/api build",
-    "lint": "eslint 'apps/**/*.ts' 'packages/**/*.ts' --max-warnings=0",
-    "format": "prettier --write '**/*.{ts,json,md,yaml}'",
-    "format:check": "prettier --check '**/*.{ts,json,md,yaml}'",
-    "type-check": "tsc --noEmit",
-    "test:unit": "jest --config apps/api/jest.unit.config.ts",
-    "test:integration": "jest --config apps/api/jest.integration.config.ts",
-    "test:contract": "jest --config apps/api/jest.contract.config.ts",
-    "test:e2e": "jest --config apps/api/jest.e2e.config.ts",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:seed": "ts-node prisma/seed.ts",
-    "openapi:generate": "nest start --entryFile apps/api/src/openapi-generator.ts",
-    "openapi:validate": "vacuum lint docs/api/openapi.yaml",
-    "docker:build": "docker build -f docker/Dockerfile.api -t smartcart-api .",
-    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
-    "docker:down": "docker compose -f docker/docker-compose.yml down"
-  }
-}
-```
-
-### Bundle Size Optimization
-
-| Technique                  | Implementation                                                                                                      | Impact                                      |
-|-----------------------------|----------------------------------------------------------------------------------------------------------------------|---------------------------------------------|
-| Multi-stage Docker Build    | `Dockerfile.api` uses `builder` stage with dev dependencies and `runner` stage with production-only dependencies.          | Final image: ~180 MB vs ~600 MB without multi-stage |
-| pnpm Workspace              | Only production dependencies for the specific app are installed in the runner stage.                                | Eliminates ~200 MB of unused dependencies    |
-| Tree-shaking                | TypeScript `tsconfig.json` sets `"module": "ESNext"` and `"moduleResolution": "bundler"` for optimal tree-shaking.     | Reduces bundle by ~15%                       |
-| Prisma Client Generation    | Only the database provider needed (`postgresql`) is generated. `binaryTargets = ["linux-musl-openssl-3.0.x"]` for Alpine. | Reduces Prisma engine size by ~40 MB         |
-| node_modules Pruning        | `pnpm prune --prod` removes dev dependencies from the runner image.                                                 | Saves ~150 MB                                |
-| Alpine Base Image           | `node:20-alpine` (~50 MB) instead of `node:20` (~350 MB).                                                           | Saves ~300 MB in base image                  |
-
-
-## CI/CD Pipeline (Backend)
-
-This section documents the complete continuous integration and continuous delivery pipeline for the SmartCart backend. The pipeline is designed to catch defects as early as possible (shift-left), enforce quality gates automatically, and enable any team member to deploy to production safely with a single click after PR merge.
-
-### Pipeline Overview
-
-```mermaid
-flowchart TD
-    %% Developer Trigger
-    dev["<b>DEVELOPER LOCAL</b><br/>• git checkout -b feat/xxx<br/>• git push origin feat/xxx"]
-    
-    dev -->|Triggers PR Pipeline| ci_1
-
-    %% --- CI PIPELINE SUBGRAPH ---
-    subgraph CI ["GITHUB ACTIONS — CI PIPELINE (Pull Request)"]
-        ci_1["<b>1. Install & Cache Dependencies</b><br/>• pnpm install --frozen-lockfile<br/>• Cache: node_modules, pnpm store"]
-        ci_2["<b>2. Lint & Static Analysis</b><br/>• ESLint (max-warnings=0)<br/>• Prettier --check<br/>• TypeScript tsc --noEmit<br/>• SonarQube Scan"]
-        ci_3["<b>3. Unit Tests</b><br/>• Jest (jest-expo + ts-jest)<br/>• Coverage: statements ≥ 80%<br/>• Coverage: branches ≥ 75%"]
-        ci_4["<b>4. Integration Tests</b><br/>• Jest + Docker (PostgreSQL 16, Redis 7)<br/>• Prisma Migrate Deploy<br/>• Tests against real database"]
-        ci_5["<b>5. API Contract Tests</b><br/>• Generate OpenAPI spec<br/>• Validate against snapshot<br/>• Check for breaking changes"]
-        ci_6["<b>6. Quality Gate Check</b><br/>• Coverage ≥ 80%<br/>• SonarQube Quality Gate: PASS<br/>• No critical/high vulnerabilities<br/>• No duplicate code > 3%<br/>• No security hotspots"]
-        ci_7["<b> All Checks Pass</b><br/>• PR can be merged to main"]
-
-        ci_1 --> ci_2 --> ci_3 --> ci_4 --> ci_5 --> ci_6 --> ci_7
-    end
-
-    ci_7 -->|Merge PR to Main Branch| cd_1
-
-    %% --- CD PIPELINE SUBGRAPH ---
-    subgraph CD ["GITHUB ACTIONS — CD PIPELINE (Main Branch)"]
-        cd_1["<b>7. Build & Push Docker Image</b><br/>• Docker multi-stage build<br/>• Push to GHCR: main-{sha}, latest"]
-        cd_2["<b>8. Deploy Staging (Automatic)</b><br/>• Railway / Render auto-deploy<br/>• Prisma migrate deploy<br/>• Health check + smoke tests"]
-        cd_3["<b>9. Deploy Prod (Manual Gate)</b><br/>• Manual approval required<br/>• Railway / Render deploy<br/>• Post-deploy: 10-min monitoring window"]
-        cd_4["<b> Production Verified</b><br/>• Sentry: zero new errors<br/>• Slack notification"]
-
-        cd_1 --> cd_2 --> cd_3 --> cd_4
-    end
-
-    %% Custom Styling for Visual Clarity
-    style dev fill:#f9f9fb,stroke:#444,stroke-width:1px
-    style CI fill:#f4f8fb,stroke:#0066cc,stroke-width:1px
-    style CD fill:#fdf7f5,stroke:#dd5522,stroke-width:1px
-```
-
-### Quality gates summary
-
-| Gate                     | Tool             | Threshold                                | Blocks Merge? |
-|---------------------------|------------------|------------------------------------------|---------------|
-| ESLint                   | ESLint v9        | 0 warnings, 0 errors                       |  Yes        |
-| Prettier                  | Prettier v3      | All files formatted                       |  Yes        |
-| TypeScript                | tsc v5           | No type errors                            |  Yes        |
-| Unit Test Coverage        | Jest             | Statements ≥ 80%, Branches ≥ 75%          |  Yes        |
-| Integration Tests         | Jest + Docker    | All tests pass                            |  Yes        |
-| API Contract              | OpenAPI Diff     | No breaking changes                       |  Yes        |
-| Security Vulnerabilities  | pnpm audit       | 0 critical, 0 high                        |  Yes        |
-| SonarQube Quality Gate    | SonarQube        | Reliability A, Security A, Coverage ≥ 80% |  Yes        |
-| PR Approvals              | GitHub           | 1 approving review                        |  Yes        |
+### Lint & Static Analysis
+- **Linting:** Run `pnpm lint` (ESLint) with `--max-warnings=0`.  
+- **Formatting:** Run `pnpm format:check` (Prettier).  
+- **Type Checking:** Run `pnpm type-check` (`tsc --noEmit`).  
+- **SonarQube:** Run `sonarsource/sonarqube-scan-action` with `SONAR_TOKEN` and `SONAR_HOST_URL`.
+
+### Unit Tests
+- **What to do:** Run `pnpm test:unit --coverage` (Jest config: [Link to `/apps/api/jest.unit.config.ts`]).  
+- **Artifacts:** Upload coverage report (`apps/api/coverage/lcov.info`).
+
+### Integration Tests
+- **What to do:** Spin up `postgres:16-alpine` and `redis:7-alpine` via GitHub Actions `services`.  
+- **Database Setup:** Run `pnpm prisma migrate deploy`.  
+- **Execution:** Run `pnpm test:integration` (config: [Link to `/apps/api/jest.integration.config.ts`]).  
+- **Health Checks:** Use `pg_isready` and `redis-cli ping`.
+
+### API Contract Tests
+- **What to do:** Generate OpenAPI spec with `pnpm openapi:generate`.  
+- **Validation:** Run `pnpm openapi:validate` (e.g., `vacuum`).  
+- **Execution:** Run `pnpm test:contract` against schemas in [Link to `/packages/shared-types/src/`].
+
+### Quality Gate Check
+- **Coverage Threshold:** Fail if coverage < 80%.  
+- **Security Audit:** Run `pnpm audit --audit-level=critical`. Fail on critical/high vulnerabilities.  
+- **SonarQube Quality Gate:** Must pass; merge blocked otherwise.
+
+---
+
+### Quality Gates Summary
+
+| Gate                  | Tool       | Threshold                          | Blocks Merge? |
+|-----------------------|------------|------------------------------------|---------------|
+| ESLint                | ESLint v9  | 0 warnings, 0 errors               | Yes           |
+| Prettier              | Prettier v3| All files formatted                | Yes           |
+| TypeScript            | tsc v5     | No type errors                     | Yes           |
+| Unit Test Coverage    | Jest       | Statements ≥ 80%, Branches ≥ 75%   | Yes           |
+| Integration Tests     | Jest+Docker| All tests pass                     | Yes           |
+| API Contract          | OpenAPI Diff | No breaking changes              | Yes           |
+| Security Vulnerabilities | pnpm audit | 0 critical, 0 high              | Yes           |
+| SonarQube Quality Gate| SonarQube  | Reliability A, Security A, Coverage ≥ 80% | Yes |
+| PR Approvals          | GitHub     | 1 approving review                 | Yes           |
+
+---
+
+## Deployment Strategy & Execution
+
+Deployment is triggered automatically by a push to `main` and defined in [Link to `/.github/workflows/deploy.yml`].
+
+### Build & Push Docker Image
+- **Action:** `docker/build-push-action@v5` using multi-stage `Dockerfile` ([Link to `/docker/Dockerfile.api`]).  
+- **Tagging:** `docker/metadata-action` generates tags (`main-{sha}`).  
+- **Registry:** Push to `ghcr.io`.
+
+### Deploy to Staging (Automatic)
+- **Action:** `railwayapp/railway-deploy@v1` with `RAILWAY_STAGING_TOKEN`.  
+- **Migrations:** Run `prisma migrate deploy`.  
+- **Smoke Tests:** Poll `https://staging.api.smartcart.app/api/v1/health`. Validate critical flows (register/login).
+
+### Deploy to Production (Manual Gate)
+- **Approval:** GitHub Environment "production" with manual approval.  
+- **Execution:** Deploy via `railwayapp/railway-deploy@v1` with `RAILWAY_PRODUCTION_TOKEN`.
+
+### Post-Deploy Monitoring
+- **Stabilization:** Wait 30s, curl `/api/v1/health`.  
+- **Error Tracking:** Query Sentry API for unresolved issues (last 5 min).  
+- **Notification:** Slack `#deployments` with image tag, commit SHA, author.
+
+---
+
+## Environment Configuration & Local Development
+
+- Copy [Link to `/.env.example`] → `.env`.  
+- Run `pnpm docker:up` (Compose file: [Link to `/docker/docker-compose.yml`]).  
+- Run `pnpm prisma:migrate`.  
+- Run `pnpm dev`.
+
+### Docker Multi-Stage Build Implementation
+- **Stage 1 (Builder):** Install deps, generate Prisma client, compile TS → JS.  
+- **Stage 2 (Runner):** Base `node:20-alpine`. Non-root `nestjs` user. Copy production artifacts. `HEALTHCHECK` → `/api/v1/health/liveness`. Start with `node --require ./dist/tracing.js dist/main.js`.
+
+Analytics worker uses [Link to `/docker/Dockerfile.worker`] with same pattern.
+
+---
+
+### Bundle Size Optimizations
+
+| Technique              | How to Implement | Impact                          |
+|------------------------|------------------|---------------------------------|
+| Multi-stage Docker Build | `node:20-alpine AS builder` + runner | Final image ~180 MB vs ~600 MB |
+| pnpm Prune             | `pnpm prune --prod` | Saves ~150 MB                  |
+| Alpine Base Image       | `node:20-alpine` (~50 MB) vs `node:20` (~350 MB) | Saves ~300 MB |
+| Prisma Binary Targets   | Only `linux-musl-openssl-3.0.x` | Reduces Prisma engine ~40 MB |
+| Tree-shaking            | `tsconfig.json` with `"module": "ESNext"` | Reduces bundle ~15% |
+
+---
+
+### Available Scripts (root `package.json` [Link to `/package.json`])
+
+- `pnpm dev` — Start API in dev mode  
+- `pnpm build` — Build all packages/apps  
+- `pnpm lint` — Run ESLint  
+- `pnpm format:check` — Verify formatting  
+- `pnpm type-check` — Run TypeScript checks  
+- `pnpm test:unit` — Unit tests with coverage  
+- `pnpm test:integration` — Integration tests  
+- `pnpm test:contract` — API contract tests  
+- `pnpm docker:up` / `pnpm docker:down` — Start/stop local Docker Compose  
+- `pnpm openapi:generate` / `pnpm openapi:validate` — OpenAPI spec tasks  
