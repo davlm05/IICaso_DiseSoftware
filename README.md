@@ -296,7 +296,30 @@ flowchart TD
 
 ##### Level 1 — System Context Diagram
 
-**Where to maintain**: [Link to `/docs/architecture/c4-level1-system-context.md`]
+```mermaid
+graph TB
+    %% Actors
+    Shopper["👤 Shopper<br/><i>Mobile App User</i>"]
+    Cashier["👤 Cashier<br/><i>POS Operator</i>"]
+    Admin["👤 Admin / B2B Partner<br/><i>Report Consumer</i>"]
+    CSR["👤 Customer Service Rep<br/><i>Points Manager</i>"]
+
+    %% System
+    SmartCart["🛒 SmartCart System<br/><i>Mobile POS + Consumer Analytics Platform</i>"]
+
+    %% Relationships
+    Shopper -->|"Scans products<br/>Generates QR codes<br/>Redeems rewards"| SmartCart
+    Cashier -->|"Validates QR codes<br/>Confirms checkout<br/>Authorizes payment"| SmartCart
+    Admin -->|"Downloads consumer segments<br/>Views product insights<br/>Exports B2B reports"| SmartCart
+    CSR -->|"Deducts points<br/>Manages reward fulfillment"| SmartCart
+
+    %% Styling
+    classDef actor fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1,rx:8,ry:8
+    classDef system fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px,color:#1b5e20,rx:12,ry:12
+
+    class Shopper,Cashier,Admin,CSR actor
+    class SmartCart system
+```
 
 The system context diagram shows SmartCart as a single system with four external actors:
 
@@ -307,7 +330,117 @@ The system context diagram shows SmartCart as a single system with four external
 
 ##### Level 2 — Container Diagram
 
-Where to maintain: [Link to `/docs/architecture/c4-level2-container.md`]
+```mermaid
+graph TB
+    %% ==========================================
+    %% ACTORS
+    %% ==========================================
+    Shopper["👤 Shopper"]
+    Cashier["👤 Cashier"]
+    Admin["👤 Admin / B2B Partner"]
+
+    %% ==========================================
+    %% CONTAINERS
+    %% ==========================================
+    subgraph MobileApp["📱 Mobile App Container"]
+        direction LR
+        RN["React Native / Expo<br/><i>iOS & Android</i>"]
+        Scanner["Camera Scanner<br/><i>expo-camera</i>"]
+        QRRender["QR Renderer<br/><i>react-native-qrcode-svg</i>"]
+        PushNotif["Push Notifications<br/><i>expo-notifications</i>"]
+    end
+
+    Gateway["🔄 API Gateway<br/><i>Nginx / Cloud Load Balancer</i><br/>Routes: /api/* → NestJS<br/>/ws → WebSocket"]
+
+    subgraph NestJSApp["⚙️ NestJS Modular Monolith"]
+        direction TB
+        
+        subgraph Modules["Domain Modules"]
+            direction LR
+            AuthMod["Auth<br/>Module"]
+            CatalogMod["Catalog<br/>Module"]
+            CheckoutMod["Checkout<br/>Module"]
+            RewardsMod["Rewards<br/>Module"]
+            AnalyticsMod["Analytics<br/>Module"]
+            NotifMod["Notifications<br/>Module"]
+        end
+
+        subgraph Layers["Internal Layers"]
+            direction LR
+            AppLayer["Application<br/>Services"]
+            DomainLayer["Domain<br/>Entities & Rules"]
+        end
+
+        Modules --> Layers
+    end
+
+    subgraph WorkerApp["🔄 Analytics Worker"]
+        direction TB
+        BullConsumer["BullMQ Consumer<br/><i>@Processor</i>"]
+        Aggregator["Profile<br/>Aggregator"]
+        FeatureExt["Feature<br/>Extractor"]
+        SegmentSvc["Segmentation<br/>Service"]
+
+        BullConsumer --> Aggregator --> FeatureExt --> SegmentSvc
+    end
+
+    subgraph DataStores["🗄️ Data Stores"]
+        direction LR
+        PG[("PostgreSQL<br/><i>Primary DB</i>")]
+        Redis[("Redis<br/><i>Cache & Sessions</i>")]
+        BullMQ[("BullMQ<br/><i>Job Queue</i>")]
+        S3[("S3 / R2<br/><i>Images & Reports</i>")]
+    end
+
+    subgraph ExternalSvc["☁️ External Services"]
+        AISvc["AI Inference<br/>Service<br/><i>POST /classify</i>"]
+        PushSvc["Expo Push<br/>API<br/><i>Notifications</i>"]
+    end
+
+    %% ==========================================
+    %% CONNECTIONS
+    %% ==========================================
+    Shopper -->|"HTTPS REST"| Gateway
+    Shopper -->|"WSS Real-time"| Gateway
+    Cashier -->|"HTTPS REST"| Gateway
+    Admin -->|"HTTPS REST + API Key"| Gateway
+
+    Gateway -->|"Routes requests"| NestJSApp
+
+    Layers -->|"Read/Write"| PG
+    Layers -->|"Cache/Sessions"| Redis
+    Layers -->|"Enqueue jobs"| BullMQ
+    Layers -->|"Store files"| S3
+
+    BullMQ -->|"Consume jobs"| WorkerApp
+
+    WorkerApp -->|"Query 90-day window"| PG
+    WorkerApp -->|"Classify user"| AISvc
+    WorkerApp -->|"Upsert segments"| PG
+    WorkerApp -->|"Invalidate cache"| Redis
+
+    NotifMod -->|"Send push"| PushSvc
+    PushSvc -->|"FCM/APNs"| MobileApp
+
+    %% ==========================================
+    %% STYLING
+    %% ==========================================
+    classDef actor fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1,rx:8,ry:8
+    classDef mobile fill:#e8eaf6,stroke:#283593,stroke-width:2px,color:#1a237e
+    classDef gateway fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#bf360c
+    classDef nestjs fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
+    classDef worker fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#4a148c
+    classDef datastore fill:#eceff1,stroke:#37474f,stroke-width:2px,color:#263238,rx:6,ry:6
+    classDef external fill:#ffebee,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5,color:#b71c1c
+
+    class Shopper,Cashier,Admin actor
+    class RN,Scanner,QRRender,PushNotif mobile
+    class Gateway gateway
+    class AuthMod,CatalogMod,CheckoutMod,RewardsMod,AnalyticsMod,NotifMod,AppLayer,DomainLayer nestjs
+    class BullConsumer,Aggregator,FeatureExt,SegmentSvc worker
+    class PG,Redis,BullMQ,S3 datastore
+    class AISvc,PushSvc external
+```
 
 The container diagram shows five runtime containers:
 
@@ -320,7 +453,147 @@ The container diagram shows five runtime containers:
 
 ##### Level 3 — Component Diagram (Checkout Module)
 
-**Where to maintain**: [Link to `/docs/architecture/c4-level3-checkout-component.md`]
+```mermaid
+graph TB
+    %% ==========================================
+    %% PRESENTATION LAYER
+    %% ==========================================
+    subgraph Presentation["🎯 Presentation Layer"]
+        direction LR
+        SessionCtrl["<b>SessionController</b><br/><i>REST</i><br/>POST /sessions<br/>POST /sessions/:id/items"]
+        QrCtrl["<b>QrController</b><br/><i>REST</i><br/>POST /sessions/:id/qr"]
+        ValidationCtrl["<b>ValidationController</b><br/><i>REST</i><br/>POST /sessions/validate"]
+        SessionGW["<b>SessionGateway</b><br/><i>WebSocket</i><br/>emit: sessionStatusChanged<br/>on: subscribe:session"]
+    end
+
+    %% ==========================================
+    %% APPLICATION LAYER
+    %% ==========================================
+    subgraph Application["⚙️ Application Layer"]
+        direction TB
+        
+        CheckoutSvc["<b>CheckoutService</b><br/>createSession()<br/>addItem()<br/>generateQr()<br/>validateSession()"]
+        PointsSvc["<b>PointsService</b><br/>calculatePoints()<br/>creditPoints()"]
+        QrSigner["<b>AppQrSigner</b><br/>sign()<br/>verify()"]
+        StateMachine["<b>SessionStateMachine</b><br/>transition()<br/>guardTransition()"]
+        
+        CheckoutSvc --> PointsSvc
+        CheckoutSvc --> QrSigner
+        CheckoutSvc --> StateMachine
+    end
+
+    %% ==========================================
+    %% APPLICATION INTERFACES (Ports)
+    %% ==========================================
+    subgraph Interfaces["🔌 Application Interfaces"]
+        direction LR
+        ISessionRepo["<b>ISessionRepository</b><br/><i>Interface</i><br/>findById()<br/>save()<br/>markCompleted()"]
+        IEventPub["<b>IEventPublisher</b><br/><i>Interface</i><br/>publish()"]
+        IQrSignerInt["<b>IQrSigner</b><br/><i>Interface</i><br/>sign()<br/>verify()"]
+        IPointsCalc["<b>IPointsCalculationStrategy</b><br/><i>Interface</i><br/>calculate()"]
+    end
+
+    %% ==========================================
+    %% DOMAIN LAYER
+    %% ==========================================
+    subgraph Domain["🧠 Domain Layer"]
+        direction TB
+        
+        Session["<b>ShoppingSession</b><br/><i>Aggregate Root</i><br/>+id: string<br/>+userId: string<br/>+storeId: string<br/>+status: SessionStatus<br/>+items: SessionItem[]<br/>+addItem()<br/>+requestCheckout()<br/>+validateItems()"]
+        
+        SessionItem["<b>SessionItem</b><br/><i>Entity</i><br/>+productId: string<br/>+barcode: string<br/>+quantity: number<br/>+pointsValue: number"]
+        
+        QrTicket["<b>QrTicket</b><br/><i>Value Object</i><br/>+token: string<br/>+expiresAt: Date<br/>+sessionId: string<br/>+itemHash: string<br/>+isExpired()<br/>+verifyHash()"]
+        
+        CheckoutEvent["<b>CheckoutCompletedEvent</b><br/><i>Domain Event</i><br/>+sessionId: string<br/>+userId: string<br/>+pointsAwarded: number<br/>+items: Array<br/>+timestamp: Date"]
+        
+        SessionStatus["<b>SessionStatus</b><br/><i>Enum</i><br/>ACTIVE<br/>PENDING_CHECKOUT<br/>COMPLETED<br/>VALIDATION_FAILED<br/>EXPIRED"]
+
+        FixedStrat["<b>FixedPointsStrategy</b><br/>rate: 50 pts/unit"]
+        MultiplierStrat["<b>MultiplierStrategy</b><br/>multiplier: 2x spend"]
+
+        Session --> SessionItem
+        Session --> SessionStatus
+        IPointsCalc -.-> FixedStrat
+        IPointsCalc -.-> MultiplierStrat
+    end
+
+    %% ==========================================
+    %% INFRASTRUCTURE LAYER
+    %% ==========================================
+    subgraph Infrastructure["🏗️ Infrastructure Layer"]
+        direction TB
+        
+        PrismaSessionRepo["<b>PrismaSessionRepository</b><br/><i>implements ISessionRepository</i><br/>- prisma: PrismaService<br/>- redis: RedisService"]
+        
+        BullMqPublisher["<b>BullMqEventPublisher</b><br/><i>implements IEventPublisher</i><br/>- analyticsQueue: Queue"]
+        
+        JwtQrSignerImpl["<b>JwtQrSigner</b><br/><i>implements IQrSigner</i><br/>- secret: string"]
+        
+        SessionMapper["<b>SessionMapper</b><br/>toDomain()<br/>toPersistence()"]
+    end
+
+    subgraph ExternalDep["🔗 External Dependencies"]
+        direction LR
+        PG[("PostgreSQL")]
+        RedisCache[("Redis")]
+        BullMQQueue[("BullMQ Queue")]
+    end
+
+    %% ==========================================
+    %% CONNECTIONS
+    %% ==========================================
+
+    %% Presentation → Application
+    SessionCtrl -->|"calls"| CheckoutSvc
+    QrCtrl -->|"calls"| CheckoutSvc
+    ValidationCtrl -->|"calls"| CheckoutSvc
+    SessionGW -->|"calls"| CheckoutSvc
+
+    %% Application → Interfaces (Dependency Inversion)
+    CheckoutSvc -.->|"depends on"| ISessionRepo
+    CheckoutSvc -.->|"depends on"| IEventPub
+    CheckoutSvc -.->|"depends on"| IQrSignerInt
+
+    %% Application → Domain
+    CheckoutSvc -->|"uses"| Session
+    CheckoutSvc -->|"uses"| QrTicket
+    CheckoutSvc -->|"publishes"| CheckoutEvent
+
+    %% Infrastructure → Implements Interfaces
+    PrismaSessionRepo -->|"implements"| ISessionRepo
+    BullMqPublisher -->|"implements"| IEventPub
+    JwtQrSignerImpl -->|"implements"| IQrSignerInt
+
+    %% Infrastructure → Domain
+    PrismaSessionRepo -->|"maps to/from"| Session
+    PrismaSessionRepo -->|"uses"| SessionMapper
+    SessionMapper -->|"produces"| Session
+    SessionMapper -->|"reads"| SessionItem
+
+    %% Infrastructure → External
+    PrismaSessionRepo -->|"queries"| PG
+    PrismaSessionRepo -->|"caches"| RedisCache
+    BullMqPublisher -->|"publishes to"| BullMQQueue
+    CheckoutEvent -->|"consumed by"| BullMqPublisher
+
+    %% ==========================================
+    %% STYLING
+    %% ==========================================
+    classDef presentation fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
+    classDef application fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#bf360c
+    classDef interfaces fill:#fff9c4,stroke:#f9a825,stroke-width:2px,stroke-dasharray: 5 5,color:#f57f17
+    classDef domain fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
+    classDef infrastructure fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#4a148c
+    classDef external fill:#eceff1,stroke:#37474f,stroke-width:2px,color:#263238,rx:6,ry:6
+
+    class SessionCtrl,QrCtrl,ValidationCtrl,SessionGW presentation
+    class CheckoutSvc,PointsSvc,QrSigner,StateMachine application
+    class ISessionRepo,IEventPub,IQrSignerInt,IPointsCalc interfaces
+    class Session,SessionItem,QrTicket,CheckoutEvent,SessionStatus,FixedStrat,MultiplierStrat domain
+    class PrismaSessionRepo,BullMqPublisher,JwtQrSignerImpl,SessionMapper infrastructure
+    class PG,RedisCache,BullMQQueue external
+```
 
 The Checkout module component diagram illustrates:
 
