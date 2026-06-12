@@ -570,6 +570,13 @@ classDiagram
 | Validation rejected | POS / fraud review rejects | `VALIDATION_REJECTED` | "No pudimos verificar tu compra" | No | Yes |
 | Render crash | Component throws | (caught by `FeatureErrorBoundary`) | "Algo salió mal. Vuelve a intentarlo." | Reload feature | Yes |
 
+> **Canonical codes:** The backend wire error codes (§2.8) are the source of truth, defined
+> once in `@smartcart/shared-types`. `ApiErrorMapper` maps them to the client-side `AppError.code`
+> above: `QR_TOKEN_EXPIRED → QR_EXPIRED`, `QR_ITEM_MISMATCH → VALIDATION_REJECTED`,
+> `SESSION_NOT_FOUND → VALIDATION_REJECTED`, `UNAUTHORIZED`/`INVALID_QR_TOKEN → SESSION_EXPIRED`
+> (or a security alert). Client-only conditions (`NETWORK_ERROR`, `SERVER_ERROR`, `UNKNOWN`)
+> have no backend code.
+
 #### Flow
 
 ```mermaid
@@ -736,11 +743,11 @@ The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.
 | Concern | Choice | Version | Justification |
 |---|---|---|---|
 | API Style | REST + OpenAPI | — | Frontend `apiClient` already REST; Swagger auto-gen in Nest |
-| Language | TypeScript / Node.js | 5.5 / 20 LTS | **Reuse frontend `types.ts` 1:1** (`Product`, `QrTicket`, `ValidationResult`) → zero contract drift |
+| Language | TypeScript / Node.js | 5.5 / 20 LTS | Shared DTOs + Zod schemas live in **`@smartcart/shared-types`**, imported 1:1 by both `frontend/` and `backend/apps/api` → zero contract drift |
 | Framework | NestJS | 10.4 | DI + modules map to template's layered design + Repository/Service/DTO patterns out-of-box |
 | ORM/DB | Prisma 5.20 / PostgreSQL | 17 | Template schema is relational; Prisma migrations + type-safety |
 | Async | BullMQ | 5.x | Analytics profiling + push notif queues (template 2.4) |
-| Cache | Redis | 7.2 | Session state (stateless API), profile cache invalidation |
+| Cache | Redis | 7.2 | Session read-through cache (keeps the API stateless; PostgreSQL is authoritative), profile cache invalidation |
 | File storage | Cloudflare R2 | — | Product images |
 | AI segment | External inference (OpenAI / local sklearn microservice) | — | Consumer profiling classifier |
 | Hosting | Railway / Render | — | Docker; cheap demo, scalable |
@@ -1096,8 +1103,8 @@ graph TB
         direction LR
         SessionCtrl["<b>SessionController</b><br/><i>REST</i><br/>POST /sessions<br/>POST /sessions/:id/items"]
         QrCtrl["<b>QrController</b><br/><i>REST</i><br/>POST /sessions/:id/qr"]
-        ValidationCtrl["<b>ValidationController</b><br/><i>REST</i><br/>POST /sessions/validate"]
-        SessionGW["<b>SessionGateway</b><br/><i>WebSocket</i><br/>emit: sessionStatusChanged<br/>on: subscribe:session"]
+        ValidationCtrl["<b>ValidationController</b><br/><i>REST</i><br/>POST /sessions/:id/validate"]
+        SessionGW["<b>SessionGateway</b><br/><i>WebSocket · JWT handshake auth</i><br/>emit: sessionStatusChanged<br/>on: subscribe:session (ownership-checked)"]
     end
 
     %% ==========================================
@@ -1143,13 +1150,17 @@ graph TB
         
         SessionStatus["<b>SessionStatus</b><br/><i>Enum</i><br/>ACTIVE<br/>PENDING_CHECKOUT<br/>COMPLETED<br/>VALIDATION_FAILED<br/>EXPIRED"]
 
-        FixedStrat["<b>FixedPointsStrategy</b><br/>rate: 50 pts/unit"]
-        MultiplierStrat["<b>MultiplierStrategy</b><br/>multiplier: 2x spend"]
+        FixedStrat["<b>FixedPointsStrategy</b><br/>FIXED_PER_UNIT"]
+        MultiplierStrat["<b>SpendMultiplierStrategy</b><br/>SPEND_MULTIPLIER"]
+        VolumeStrat["<b>VolumeTierStrategy</b><br/>VOLUME_TIER"]
+        WeekendStrat["<b>WeekendBonusStrategy</b><br/>WEEKEND_BONUS"]
 
         Session --> SessionItem
         Session --> SessionStatus
         IPointsCalc -.-> FixedStrat
         IPointsCalc -.-> MultiplierStrat
+        IPointsCalc -.-> VolumeStrat
+        IPointsCalc -.-> WeekendStrat
     end
 
     %% ==========================================
@@ -1224,7 +1235,7 @@ graph TB
     class SessionCtrl,QrCtrl,ValidationCtrl,SessionGW presentation
     class CheckoutSvc,PointsSvc,QrSigner,StateMachine application
     class ISessionRepo,IEventPub,IQrSignerInt,IPointsCalc interfaces
-    class Session,SessionItem,QrTicket,CheckoutEvent,SessionStatus,FixedStrat,MultiplierStrat domain
+    class Session,SessionItem,QrTicket,CheckoutEvent,SessionStatus,FixedStrat,MultiplierStrat,VolumeStrat,WeekendStrat domain
     class PrismaSessionRepo,BullMqPublisher,JwtQrSignerImpl,SessionMapper infrastructure
     class PG,RedisCache,BullMQQueue external
 ```
@@ -1250,7 +1261,7 @@ The Checkout module component diagram illustrates:
 - `ShoppingSession` aggregate root with composed SessionItem entities
 - `QrTicket` value object
 - `CheckoutCompletedEvent` domain event
-- `PointsCalculationStrategy` interface with `FixedPointsStrategy` and `MultiplierStrategy` implementations
+- `PointsCalculationStrategy` interface with `FixedPointsStrategy`, `SpendMultiplierStrategy`, `VolumeTierStrategy`, and `WeekendBonusStrategy` implementations
 
 **Infrastructure components**:
 
@@ -1310,7 +1321,7 @@ All files in the "Location" column are empty stubs. Open each one and implement 
 | Aspect | Implementation Directive |
 |--------|---------------------------|
 | Purpose | Generate a signed, time-sensitive JWT token embedding a deterministic hash of session items. At checkout, validate the token signature, expiration, and item hash against physical cart contents. |
-| Generation | Called by `CheckoutService.generateQr()`. Domain validation: session must be ACTIVE with ≥ 1 item. Compute deterministic item hash (sort barcodes alphabetically, concatenate with `|`, SHA-256). Sign JWT with HS256, 5-minute expiry. |
+| Generation | Called by `CheckoutService.generateQr()`. Domain validation: session must be ACTIVE with ≥ 1 item. Compute deterministic item hash (sort barcodes alphabetically, concatenate with `|`, SHA-256). Sign JWT with HS256, 10-minute expiry. |
 | Validation | Called by `CheckoutService.validateSession()`. Verify JWT signature. Check expiration. Compute hash of POS-scanned items using same algorithm. Compare hashes — mismatch throws `QrItemMismatchError`. |
 | Participants | `CheckoutService`, `JwtQrSigner` (infrastructure), `ShoppingSession.computeItemHash()` (domain), `ShoppingSession.validateItems()` (domain) |
 
@@ -1328,14 +1339,14 @@ Steps:
 
 **Key Rules:**
 
-- QR tokens expire after 5 minutes (JWT `exp` claim + factory enforcement)  
+- QR tokens expire after 10 minutes — the JWT `exp` claim is the single source of truth (factory reads it, never sets its own)  
 - 10-second clock skew tolerance for validation  
 - `QR_SIGNING_SECRET` must be at least 32 characters  
 - Tampered tokens fail signature verification; modified items fail hash comparison  
 
 **What you need to implement:**
 
-- [`backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`](backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts) — Implement `sign(payload)` using `jsonwebtoken`: `jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn: '5m' })`. Implement `verify(token)`: call `jwt.verify(token, secret)` — catch `TokenExpiredError` and re-throw as a typed `QrTokenExpiredError`, catch `JsonWebTokenError` as `InvalidQrTokenError`.
+- [`backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`](backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts) — Implement `sign(payload)` using `jsonwebtoken`: `jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn: '10m' })`. Implement `verify(token)`: call `jwt.verify(token, secret)` — catch `TokenExpiredError` and re-throw as a typed `QrTokenExpiredError`, catch `JsonWebTokenError` as `InvalidQrTokenError`.
 - [`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts) — Add `computeItemHash()` following the three steps above using Node's built-in `crypto.createHash('sha256')`. Add `validateItems(scannedBarcodes: string[])`: compute the hash of the scanned barcodes and compare against the stored hash — throw `QrItemMismatchError` on mismatch.
 - [`backend/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts`](backend/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts) — Implement `create(session, signer)`: call `session.requestCheckout()` to transition state, compute the item hash, call `signer.sign({ sessionId, itemHash, userId })`, and return a `QrTicket` value object wrapping the resulting token.  
 
@@ -1408,7 +1419,7 @@ All four strategy files and both service files are empty stubs:
 
 | Step | Layer        | Pattern(s) Active | Action |
 |------|--------------|-------------------|--------|
-| 1    | Presentation | DTO               | `ZodValidationPipe` validates `ValidationRequestSchema` against request body |
+| 1    | Presentation | DTO               | `ZodValidationPipe` validates `ValidateSessionRequestSchema` against request body |
 | 2    | Application → Domain | Service Layer, Repository | `CheckoutService` calls `ISessionRepository.findById()` |
 | 3    | Infrastructure → Domain | Repository, Factory | `PrismaSessionRepository` maps row to entity via `SessionFactory.reconstitute()` |
 | 4    | Application → Infrastructure | Service Layer, Transaction | `CheckoutService` opens Prisma `$transaction`; calls `ISessionRepository.save()` with COMPLETED status, credits points via `IPointsRepository`, inserts immutable ledger record |
@@ -1430,13 +1441,53 @@ All four strategy files and both service files are empty stubs:
 
 ---
 
+### Data Model
+
+The relational model below is the single source of truth for the Prisma schema. The canonical
+schema lives at `backend/apps/api/prisma/schema.prisma` (to be generated from this table);
+domain entities are mapped to/from these rows by the infrastructure-layer mappers (§2.2 Rule 3).
+
+```mermaid
+erDiagram
+    User ||--o{ ShoppingSession : owns
+    User ||--o{ PointsTransaction : has
+    User ||--o{ Redemption : makes
+    User ||--o| ConsumerSegment : classified_as
+    Store ||--o{ ShoppingSession : hosts
+    Store ||--o{ ApiKey : scopes
+    ShoppingSession ||--o{ SessionItem : contains
+    ShoppingSession ||--o{ PointsTransaction : credits
+    Product ||--o{ SessionItem : referenced_by
+    Reward ||--o{ Redemption : redeemed_as
+```
+
+| Entity | Key fields | Notes |
+|--------|-----------|-------|
+| `User` | `id` (uuid, pk), `email` (unique), `fullName`, `passwordHash`, `phone?`, `pushToken?`, `role` (enum), `createdAt` | `role` ∈ `USER, BACKOFFICE_OPERATOR, CATALOG_MANAGER, STORE_ADMIN, SUPER_ADMIN` (§2.5). PII fields encrypted at rest. |
+| `Store` | `id` (uuid, pk), `name`, `createdAt` | Referenced by `storeId` throughout sessions and analytics. |
+| `Product` | `id` (uuid, pk), `barcode` (unique, EAN-8/13), `name`, `brand`, `imageUrl?`, `pointsConfig` (jsonb), `sponsored` (bool) | `pointsConfig` shape drives the strategy resolver (§2.3 Points). |
+| `ShoppingSession` | `id` (uuid, pk), `userId` (fk→User), `storeId` (fk→Store), `status` (enum), `itemHash?`, `createdAt`, `updatedAt` | `status` ∈ `ACTIVE, PENDING_CHECKOUT, COMPLETED, VALIDATION_FAILED, EXPIRED` (§2.3 state machine). `itemHash` set at QR generation. |
+| `SessionItem` | `id` (uuid, pk), `sessionId` (fk→Session, cascade), `productId` (fk→Product), `barcode`, `quantity` (int), `pointsValue` (int) | Composed under the `ShoppingSession` aggregate. |
+| `PointsTransaction` | `id` (uuid, pk), `userId` (fk→User), `delta` (int, signed), `reason` (enum), `sessionId?` (fk→Session), `createdAt` | **Append-only ledger** — never updated/deleted. Balance = `SUM(delta)`. `reason` ∈ `PURCHASE, REDEMPTION, ADJUSTMENT`. Indexed on `(userId, createdAt)` for the 90-day analytics window. |
+| `Reward` | `id` (uuid, pk), `name`, `description`, `cost` (int, points), `imageUrl?`, `active` (bool) | Catalog of redeemable rewards. |
+| `Redemption` | `id` (uuid, pk), `userId` (fk→User), `rewardId` (fk→Reward), `couponCode` (unique), `status` (enum), `redeemedAt` | The issued coupon. `status` ∈ `ISSUED, USED, EXPIRED`. |
+| `ConsumerSegment` | `userId` (fk→User, unique, pk), `segmentName`, `features` (jsonb), `updatedAt` | Upsert target of the analytics worker (§2.3 step 5). One row per user. |
+| `ApiKey` | `id` (uuid, pk), `hashedKey` (SHA-256, unique), `type` (enum), `storeId?` (fk→Store), `label`, `createdAt` | Non-JWT auth for POS/B2B surfaces. `type` ∈ `POS, B2B`. |
+
+**Integrity rules:** the points balance is *derived* (never stored) from `PointsTransaction`,
+making it tamper-evident (§2.5 Audit Logging). `SessionItem` deletes cascade with the session;
+`PointsTransaction` rows are immutable and never cascade. `ConsumerSegment` holds aggregated
+features only — no raw transaction rows — supporting the B2B anonymization guarantee (§2.5 PII).
+
+---
+
 ### Key Endpoints
 
 | Method | Path                        | Description                                                                 | Auth Required        |
 |--------|-----------------------------|-----------------------------------------------------------------------------|----------------------|
-| POST   | `/auth/register`            | Register a new shopper account. Receives access token in body and refresh token via HTTP-only cookie. | No                   |
-| POST   | `/auth/login`               | Authenticate with email/password. Receives access token in body and refresh token via HTTP-only cookie. | No                   |
-| POST   | `/auth/refresh`             | Exchange the refresh token cookie for a new access token (token rotation).  | Refresh token (cookie) |
+| POST   | `/auth/register`            | Register a new shopper account. Receives access token and refresh token in the response body. | No                   |
+| POST   | `/auth/login`               | Authenticate with email/password. Receives access token and refresh token in the response body. | No                   |
+| POST   | `/auth/refresh`             | Exchange the refresh token (sent in the request body) for a new access token (token rotation). | Refresh token (body) |
 | POST   | `/auth/logout`              | Revoke the current refresh token.                                           | Yes (JWT)            |
 | GET    | `/users/me`                 | Get current user profile with points balance.                               | Yes (JWT)            |
 | PATCH  | `/users/me`                 | Update profile (name, phone).                                               | Yes (JWT)            |
@@ -1458,6 +1509,12 @@ All four strategy files and both service files are empty stubs:
 | GET    | `/analytics/stores/:id/overview` | Get store-level metrics (avg ticket, peak hours, segment mix).           | B2B API Key          |
 | GET    | `/health`                   | Service health check (database, redis, uptime).                             | No                   |
 
+> **Module coverage:** `auth`, `checkout`, and `analytics` are scaffolded (§2.10). The
+> `users` (`/users/me*`), `catalog` (`/products/*`), `rewards` (`/rewards/*`), and
+> `notifications` modules are in MVP scope but **not yet scaffolded** — each follows the same
+> four-layer structure (§2.2) and needs a controller, an application service, and (where
+> stateful) a Prisma repository added before the endpoints above go live.
+
 ---
 
 ### Data Contracts (DTOs)
@@ -1472,13 +1529,13 @@ All DTOs are defined as TypeScript interfaces with accompanying Zod validation s
 | Concern              | Strategy                                                                                                                                                                                                                                                                                                                                 |
 |----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Transport            | HTTPS enforced via Nginx reverse proxy; all HTTP requests 301-redirected to HTTPS. TLS 1.3 minimum (TLS 1.2 accepted for legacy Android API < 26). HSTS header set to `max-age=31536000; includeSubDomains; preload` via Helmet middleware. Let's Encrypt certificates auto-renewed via Certbot. Config: [`backend/infra/docker/nginx/default.conf`](backend/infra/docker/nginx/default.conf). |
-| Authentication       | JWT `accessToken` (HS256, 15-min expiry) sent in `Authorization: Bearer` header. `refreshToken` (7-day expiry) stored in HTTP-only, Secure, SameSite=Strict cookie. Passwords hashed with `bcrypt` (cost factor 12). Account lockout after 5 failed attempts within 15 minutes (30-min lockout) via Redis. Token rotation on refresh; old tokens invalidated. JWT service: [`backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts). Password service: [`backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts). Auth service: [`backend/apps/api/src/modules/auth/application/services/auth.service.ts`](backend/apps/api/src/modules/auth/application/services/auth.service.ts). |
-| Authorization        | Role-Based Access Control (RBAC) with five roles: `shopper`, `pos_operator`, `customer_service`, `b2b_partner`, `admin`. Endpoints decorated with `@Roles()` and enforced by `RolesGuard`. Resource ownership verified by `ResourceOwnershipGuard` (compares JWT `sub` with resource IDs). POS and B2B endpoints secured with separate API Key authentication (`X-API-Key` header), hashed with SHA-256 and stored in DB. Roles guard: [`backend/apps/api/src/common/guards/roles.guard.ts`](backend/apps/api/src/common/guards/roles.guard.ts). Resource ownership guard: [`backend/apps/api/src/common/guards/resource-ownership.guard.ts`](backend/apps/api/src/common/guards/resource-ownership.guard.ts). API key guard: [`backend/apps/api/src/common/guards/api-key.guard.ts`](backend/apps/api/src/common/guards/api-key.guard.ts). |
+| Authentication       | JWT `accessToken` (HS256, 15-min expiry) sent in `Authorization: Bearer` header. `refreshToken` (7-day expiry) returned in the response body; the React Native client stores it in **expo-secure-store** (hardware-backed Keychain/Keystore), never `AsyncStorage`. Passwords hashed with `bcrypt` (cost factor 12). Account lockout after 5 failed attempts within 15 minutes (30-min lockout) via Redis. Token rotation on refresh; old tokens invalidated. JWT service: [`backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts). Password service: [`backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts). Auth service: [`backend/apps/api/src/modules/auth/application/services/auth.service.ts`](backend/apps/api/src/modules/auth/application/services/auth.service.ts). |
+| Authorization        | Role-Based Access Control (RBAC) with five JWT roles defined once in `@smartcart/shared-types` (single source of truth shared with the frontend): `USER` (consumer mobile app), `BACKOFFICE_OPERATOR`, `CATALOG_MANAGER`, `STORE_ADMIN`, `SUPER_ADMIN` (back-office web tool). The mobile app only ever issues `USER`-scoped tokens; the Customer Service Rep's point-adjustment and reward-fulfillment actions run under `STORE_ADMIN`. Endpoints decorated with `@Roles()` and enforced by `RolesGuard`. Resource ownership verified by `ResourceOwnershipGuard` (compares JWT `sub` with resource IDs). The POS and B2B surfaces are **not** JWT roles — they authenticate with separate API Key authentication (`X-API-Key` header), hashed with SHA-256 and stored in DB. Roles guard: [`backend/apps/api/src/common/guards/roles.guard.ts`](backend/apps/api/src/common/guards/roles.guard.ts). Resource ownership guard: [`backend/apps/api/src/common/guards/resource-ownership.guard.ts`](backend/apps/api/src/common/guards/resource-ownership.guard.ts). API key guard: [`backend/apps/api/src/common/guards/api-key.guard.ts`](backend/apps/api/src/common/guards/api-key.guard.ts). |
 | Database Encryption  | Encryption at rest: AES-256 provider-managed (Railway/Render/GCP Cloud SQL). Encryption in transit: TLS 1.3 enforced for all connections; Prisma client configured with `sslmode=require`. Connection strings never hardcoded; sourced from `DATABASE_URL` environment variable. |
-| Secrets Management   | All secrets stored in environment variables (Railway Shared Variables / Render Environment Groups in production). Never committed to Git (`.env` in `.gitignore`). JWT secrets rotated quarterly; database credentials rotated every 90 days. Application validates all required secrets at startup using a Zod schema and fails fast if any are missing or invalid. Validation: [`backend/apps/api/src/config/env.validation.ts`](backend/apps/api/src/config/env.validation.ts). |
+| Secrets Management   | All secrets stored in environment variables (Railway Shared Variables / Render Environment Groups in production). Never committed to Git (`.env` in `.gitignore`). JWT secrets rotated quarterly using a `kid` (key-ID) header with a dual-key overlap window — the previous key stays valid for verification until all live tokens expire, so rotation never forces a mass logout; database credentials rotated every 90 days. Application validates all required secrets at startup using a Zod schema and fails fast if any are missing or invalid. Validation: [`backend/apps/api/src/config/env.validation.ts`](backend/apps/api/src/config/env.validation.ts). |
 | Rate Limiting        | Redis-based rate limiter middleware applied globally (`100 req/min` per authenticated user or IP, configurable via `RATE_LIMIT_MAX`). Stricter limits on auth endpoints (`10 req/min` for login/register) to prevent brute-force. `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers included in responses. Middleware: [`backend/apps/api/src/common/middleware/rate-limiter.middleware.ts`](backend/apps/api/src/common/middleware/rate-limiter.middleware.ts). |
 | Input Validation     | All inputs validated at the controller boundary using Zod schemas via a global `ZodValidationPipe`. Schemas enforce strict types (UUIDs, numeric-only barcodes, length caps) preventing SQL injection, XSS, path traversal, and ReDoS. Validation pipe: [`backend/apps/api/src/common/pipes/zod-validation.pipe.ts`](backend/apps/api/src/common/pipes/zod-validation.pipe.ts). Shared schemas: [`packages/shared-types/src/`](packages/shared-types/src/). |
-| OWASP Compliance     | SQL Injection: 100% parameterized queries via Prisma ORM. XSS: Helmet CSP headers block inline scripts; all user input validated by Zod schemas. CSRF: SameSite=Strict cookies; API auth uses `Authorization` header. Path Traversal: UUID validation on all path parameters. ReDoS: Zod regex patterns tested for catastrophic backtracking; input lengths capped. Security headers configured via Helmet: [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts). |
+| OWASP Compliance     | SQL Injection: 100% parameterized queries via Prisma ORM. XSS: Helmet CSP headers block inline scripts; all user input validated by Zod schemas. CSRF: not applicable — no cookie-based sessions; the access token is sent in the `Authorization` header and the refresh token in the request body, so there are no ambient credentials for a cross-site request to abuse. Path Traversal: UUID validation on all path parameters. ReDoS: Zod regex patterns tested for catastrophic backtracking; input lengths capped. Security headers configured via Helmet: [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts). |
 | Audit Logging        | All sensitive operations (`login`, `register`, `logout`, `refresh`, `redeemReward`, `validateSession`, `updateProfile`, `deleteAccount`) logged as structured JSON with `userId`, `action`, `IP address`, and `correlationId`. Points transactions are append-only — immutable ledger where balance is derived via `SUM(delta)`, making it tamper-evident. Audit interceptor: [`backend/apps/api/src/common/interceptors/audit.interceptor.ts`](backend/apps/api/src/common/interceptors/audit.interceptor.ts). Points ledger: [`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-points.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-points.repository.ts). |
 
 ---
@@ -1487,12 +1544,12 @@ All DTOs are defined as TypeScript interfaces with accompanying Zod validation s
 
 | OWASP Security | Risk it addresses | How we comply | Validation criterion |
 |---------------------|-------------------|---------------|----------------------|
-| **A01 — Broken Access Control** | An authenticated user reads or modifies another user's sessions, points balance, or profile (IDOR). A low-privilege role reaches an admin or B2B endpoint. | `RolesGuard` + `@Roles()` decorator enforces role-based access on every endpoint. `ResourceOwnershipGuard` compares the JWT `sub` claim against the resource's `userId` on every session/points request. POS and B2B surfaces are separated behind API Key auth (`X-API-Key`), not JWT. | A shopper JWT on `GET /sessions/:otherId` returns 403. A missing/invalid `X-API-Key` on `POST /sessions/:id/validate` returns 401. Guard unit tests cover both cases. |
+| **A01 — Broken Access Control** | An authenticated user reads or modifies another user's sessions, points balance, or profile (IDOR). A low-privilege role reaches an admin or B2B endpoint. | `RolesGuard` + `@Roles()` decorator enforces role-based access on every endpoint. `ResourceOwnershipGuard` compares the JWT `sub` claim against the resource's `userId` on every session/points request. POS and B2B surfaces are separated behind API Key auth (`X-API-Key`), not JWT. | A `USER` JWT on `GET /sessions/:otherId` returns 403. A missing/invalid `X-API-Key` on `POST /sessions/:id/validate` returns 401. Guard unit tests cover both cases. |
 | **A02 — Cryptographic Failures** | Leaked password hashes can be cracked. Weak or short JWT/QR secrets can be brute-forced. Unencrypted DB connections expose data in transit. | Passwords hashed with `bcrypt` cost 12. `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `QR_SIGNING_SECRET` validated as `z.string().min(32)` at startup. `DATABASE_URL` enforces `sslmode=require`. Password fields redacted from all logs via Pino's `redact` config. | App fails to start if any secret is under 32 chars. A grep for `password` in log output returns zero results. DB connection without SSL is refused. |
 | **A03 — Injection (SQL & XSS)** | User-supplied input concatenated into SQL queries allows data extraction or destruction. Stored malicious strings served to the mobile client could trigger XSS. | 100% Prisma ORM parameterized queries for all DB access. `Prisma.sql` tagged templates required for any `$queryRaw`. Zod schemas enforce strict types and length caps at every controller boundary. Helmet CSP headers block inline script execution. | Grep for `$queryRaw` with string interpolation returns zero results. A barcode of `'; DROP TABLE--` is rejected by Zod with 400. Response includes `Content-Security-Policy` header. |
 | **A05 — Security Misconfiguration** | Missing security headers, verbose error messages exposing stack traces, debug endpoints exposed in production, or an app that starts with missing secrets. | Helmet middleware sets CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`. `GlobalExceptionFilter` strips stack traces from 500 responses in production. Swagger UI disabled when `NODE_ENV=production`. Startup fails fast via Zod env schema if any required secret is absent. | `curl -I` on any endpoint shows all Helmet headers. A triggered 500 in production returns `{ errorCode, message }` only — no stack trace. App does not start without `JWT_ACCESS_SECRET`. |
 | **A06 — Vulnerable and Outdated Components** | A known CVE in an npm dependency can be directly exploited (e.g., prototype pollution, RCE). | `pnpm audit --audit-level=critical` runs as a CI quality gate and blocks merges on critical/high severity findings. Dependencies reviewed and updated regularly. | CI pipeline fails on any new critical or high CVE. `pnpm audit` in a clean install returns zero critical/high findings. |
-| **A07 — Authentication Failures** | Brute-forced passwords, stolen refresh tokens reused after logout, or expired tokens still accepted allow account takeover. | bcrypt cost 12 for passwords. Account lockout after 5 failed login attempts within 15 minutes (30-min lockout stored in Redis). Access token expires in 15 minutes. Refresh token rotation: old token is invalidated on each use; reuse returns 401. Refresh token stored in HTTP-only `SameSite=Strict` cookie — inaccessible to JavaScript. | The 6th login attempt within 15 min returns 429. A refresh token used twice returns 401 on the second call. An access token accepted 16 minutes after issue returns 401. |
+| **A07 — Authentication Failures** | Brute-forced passwords, stolen refresh tokens reused after logout, or expired tokens still accepted allow account takeover. | bcrypt cost 12 for passwords. Account lockout after 5 failed login attempts within 15 minutes (30-min lockout stored in Redis). Access token expires in 15 minutes. Refresh token rotation: old token is invalidated on each use; reuse returns 401. Refresh token stored client-side in **expo-secure-store** (hardware-backed Keychain/Keystore), never `AsyncStorage`; the server stores only its hash in Redis for revocation. | The 6th login attempt within 15 min returns 429. A refresh token used twice returns 401 on the second call. An access token accepted 16 minutes after issue returns 401. |
 | **A08 — Software & Data Integrity / ReDoS** | A crafted input triggers catastrophic regex backtracking, blocking the Node.js event loop. A tampered QR token passes validation if signing is weak. | All Zod regex patterns avoid nested quantifiers and have hard `maxLength` caps. QR tokens signed with HS256; `JwtQrSigner.verify()` rejects any tampered or expired token before it reaches domain logic. | A 10 000-character barcode field is rejected in <1 ms. A QR token with a modified payload (but valid signature format) returns `INVALID_QR_TOKEN`. |
 | **A09 — Security Logging & Monitoring Failures** | Undetected breaches or no audit trail for sensitive operations make incident response impossible. | Structured JSON logs via Pino with `correlationId`, `userId`, `action`, and `IP` on every request. `AuditInterceptor` logs all sensitive operations. Sentry captures every unhandled 500 with context. Points ledger is append-only (immutable audit trail). PII fields auto-redacted by Pino's `redact` config. | `validateSession` appears in audit log with correct fields after each call. A triggered 500 creates a Sentry event within 30 seconds. `email` never appears in plain text in any log line. |
 | **A10 — Server-Side Request Forgery (SSRF)** | The analytics worker makes outbound HTTP calls to the AI inference service. If the target URL is attacker-controllable, internal services could be probed. | `AI_INFERENCE_URL` is set only via environment variable, validated as `z.string().url()` (must be HTTPS) at worker startup. No user-supplied URLs are ever passed to HTTP clients. The analytics worker has no public API surface — it only consumes BullMQ jobs from an internal queue. | Worker fails to start if `AI_INFERENCE_URL` is not a valid HTTPS URL. Grep for any `fetch`/`axios` call that uses a runtime-variable URL other than `AI_INFERENCE_URL` returns zero results. |
@@ -1509,7 +1566,7 @@ Apply both guards at the controller level so they cannot be accidentally skipped
 ```typescript
 @Controller('sessions')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('shopper')
+@Roles('USER')
 export class SessionController { ... }
 ```
 
@@ -1698,14 +1755,14 @@ To implement the graceful shutdown handler, modify the application's entry point
 - **Strategy:** Horizontal scaling. Multiple stateless NestJS API containers run behind a load balancer. The analytics worker (`analytics-worker`) is a separate Railway/Render service that scales independently. The primary bottleneck is the database, mitigated by Redis Cache-Aside for product lookups, and PgBouncer connection pooling.
 
 - **Scaling Configuration:**
-  - **API service:** Configure Railway/Render to scale horizontally. A CPU threshold of ~70% is a reasonable trigger. Because the API is fully stateless (all session data lives in Redis), adding more instances requires zero code changes.
+  - **API service:** Configure Railway/Render to scale horizontally. A CPU threshold of ~70% is a reasonable trigger. Because the API is fully stateless (no session state is held in-process — PostgreSQL is the source of truth and Redis is a shared read-through cache), adding more instances requires zero code changes.
   - **Analytics worker:** The worker is CPU-bound during AI classification. Scale its instance count based on BullMQ queue depth — if `analytics-profile-update` consistently has >100 waiting jobs, add worker instances.
 
 - **Stateless Services:**
   - **What to implement:** All session state externalized to Redis, not stored in-process.
-  - **How to implement:** In service logic (e.g., `CheckoutService` at [`backend/apps/api/src/modules/checkout/application/services/checkout.service.ts`](backend/apps/api/src/modules/checkout/application/services/checkout.service.ts)), load session data via `sessionRepo.findById()`. Repository (e.g., `PrismaSessionRepository` at [`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts)) implements **Read-Through/Write-Through cache**:
+  - **How to implement:** In service logic (e.g., `CheckoutService` at [`backend/apps/api/src/modules/checkout/application/services/checkout.service.ts`](backend/apps/api/src/modules/checkout/application/services/checkout.service.ts)), load session data via `sessionRepo.findById()`. Repository (e.g., `PrismaSessionRepository` at [`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts)) implements a **Read-Through cache with cache-after-commit writes**:
     1. **On `findById`:** Check Redis (`redis.get`). On miss, query PostgreSQL, hydrate Redis with TTL (e.g., 7200s), return data.
-    2. **On `save`:** Update Redis immediately, then persist to PostgreSQL. Guarantees consistency across containers.
+    2. **On `save`:** Persist to PostgreSQL first — inside the active `$transaction` when a `tx` client is passed. Update or invalidate the Redis entry **only after the transaction commits** (via a post-commit hook), never inside the callback. This prevents a rolled-back transaction from leaving a stale `COMPLETED` session in cache while the database still shows `PENDING_CHECKOUT`.
 
 - **Connection Pooling & PgBouncer:**
   - **What to implement:** PgBouncer in **Transaction Pooling** mode between API containers and PostgreSQL.
@@ -1727,6 +1784,10 @@ This section traces the four main workflows through every architectural layer. F
 
 **Prerequisites:** Shopper has created a session, scanned items, and requested a QR code. QR contains a signed JWT embedding a deterministic SHA-256 hash of session items.
 
+> **Note:** Store-presence ("inside an affiliated store") is gated **client-side** by the
+> mobile app (LocationPill, §1.2); the server does not re-verify geolocation. Point accrual is
+> implicitly bound to the physical POS that scans the QR, not to a server-side location check.
+
 **Steps:**
 
 1. **POS Terminal Request:** `POST /api/v1/sessions/{id}/validate` with `qrToken` and `scannedItems[]`. Requires valid POS API Key in `X-API-Key`.
@@ -1747,7 +1808,7 @@ This section traces the four main workflows through every architectural layer. F
 
 5. **Post-Commit Side Effects:**
    - Event publishing via `BullMqEventPublisher` ([`backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts`](backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts)). *What to code:* Implement `publish(event)` — call `this.analyticsQueue.add('profile-update', event)`. This enqueues the job for the analytics worker.
-   - Real-time notification via `SessionGateway` ([`backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts`](backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts)). *What to code:* Implement a `@WebSocketGateway` class. On the `sessionStatusChanged` event, call `this.server.to(sessionId).emit('sessionStatusChanged', { status, pointsAwarded })`.
+   - Real-time notification via `SessionGateway` ([`backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts`](backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts)). *What to code:* Implement a `@WebSocketGateway` class with a **JWT handshake guard** — authenticate the token on `handleConnection` and reject unauthenticated sockets. On `subscribe:session`, verify the JWT `sub` owns the session **before** joining room `session:{id}` (reject otherwise, so no client can observe another user's checkout). On the `sessionStatusChanged` event, emit to the per-session room — `this.server.to('session:' + sessionId).emit('sessionStatusChanged', { status, pointsAwarded })`.
    - Metrics via `BusinessMetricsService` ([`backend/apps/api/src/common/metrics/business-metrics.service.ts`](backend/apps/api/src/common/metrics/business-metrics.service.ts)). *What to code:* Call `this.checkoutCounter.inc()` and `this.pointsHistogram.observe(total)` after the transaction.
 
 **Error Handling Matrix:**
@@ -1761,6 +1822,9 @@ This section traces the four main workflows through every architectural layer. F
 | Session not found | `SESSION_NOT_FOUND` | 404 | Ask shopper to create new session | N/A |
 | Items mismatch | `QR_ITEM_MISMATCH` | 422 | Display mismatch | Session → `VALIDATION_FAILED` |
 | DB connection lost | `INTERNAL_ERROR` | 500 | "System error. Retry." | Full `$transaction` rollback |
+
+> These wire error codes are the canonical set, defined in `@smartcart/shared-types`; the
+> frontend `ApiErrorMapper` maps them to its client-side `AppError.code` (§1.5 Error taxonomy).
 
 ---
 
@@ -1803,13 +1867,13 @@ This section traces the four main workflows through every architectural layer. F
 
 3. **Token Issuance:**
    - *What to code:* In [`backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts), implement `signAccessToken(userId, role): string` — call `jwt.sign({ sub: userId, role }, accessSecret, { expiresIn: '15m' })`. Implement `signRefreshToken(userId): string` — sign with a separate `refreshSecret`, `expiresIn: '7d'`. Store the refresh token hash in Redis (`refresh:{userId}:{tokenId}`) so it can be revoked.
-   - Return `accessToken` in the response body. Set `refreshToken` as an HTTP-only, `Secure`, `SameSite=Strict` cookie via `response.cookie()`.
+   - Return both `accessToken` and `refreshToken` in the response body. The React Native client persists the `refreshToken` in expo-secure-store; the server keeps only its hash in Redis for revocation.
 
-4. **Token Refresh:** `POST /api/v1/auth/refresh` — reads the `refreshToken` cookie.
-   - *What to code:* In `auth.service.ts`, implement `refresh(refreshToken)`. Verify the token with `jwtService.verifyRefreshToken()`. Look up the token hash in Redis — if missing, it was revoked, throw `UnauthorizedException`. Delete the old token from Redis, issue a new `accessToken` and a new `refreshToken` (rotation), set the new cookie.
+4. **Token Refresh:** `POST /api/v1/auth/refresh` — reads the `refreshToken` from the request body.
+   - *What to code:* In `auth.service.ts`, implement `refresh(refreshToken)`. Verify the token with `jwtService.verifyRefreshToken()`. Look up the token hash in Redis — if missing, it was revoked, throw `UnauthorizedException`. Delete the old token from Redis, issue a new `accessToken` and a new `refreshToken` (rotation), and return both in the response body.
 
 5. **Logout:** `POST /api/v1/auth/logout`.
-   - *What to code:* Delete the refresh token entry from Redis. Clear the cookie by calling `response.clearCookie('refreshToken')`.
+   - *What to code:* Delete the refresh token entry from Redis (server-side revocation). The client deletes its stored token from expo-secure-store.
 
 ---
 
@@ -2087,6 +2151,8 @@ backend/
 │   │   ├── eslint.config.mjs
 │   │   ├── jest.unit.config.ts
 │   │   ├── jest.integration.config.ts
+│   │   ├── prisma/
+│   │   │   └── schema.prisma
 │   │   ├── docker/
 │   │   ├── test/
 │   │   └── src/
