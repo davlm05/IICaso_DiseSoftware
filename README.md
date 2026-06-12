@@ -7,15 +7,13 @@
 | API Style | REST + OpenAPI | — | Frontend `apiClient` already REST; Swagger auto-gen in Nest |
 | Language | TypeScript / Node.js | 5.5 / 20 LTS | **Reuse frontend `types.ts` 1:1** (`Product`, `QrTicket`, `ValidationResult`) → zero contract drift |
 | Framework | NestJS | 10.4 | DI + modules map to template's layered design + Repository/Service/DTO patterns out-of-box |
-| ORM/DB | Prisma 5.20 / PostgreSQL | 16 | Template schema is relational; Prisma migrations + type-safety |
+| ORM/DB | Prisma 5.20 / PostgreSQL | 17 | Template schema is relational; Prisma migrations + type-safety |
 | Async | BullMQ | 5.x | Analytics profiling + push notif queues (template 2.4) |
 | Cache | Redis | 7.2 | Session state (stateless API), profile cache invalidation |
-| File storage | Cloudflare R2 / AWS S3 | — | Product images |
+| File storage | Cloudflare R2 | — | Product images |
 | AI segment | External inference (OpenAI / local sklearn microservice) | — | Consumer profiling classifier |
-| Hosting | Railway / Render / AWS ECS | — | Docker; cheap demo, scalable |
+| Hosting | Railway / Render | — | Docker; cheap demo, scalable |
 | Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
-
-The stack above covers the current implementation. For the target production serverless architecture (AWS Lambda, Aurora PostgreSQL, SQS/SNS), see §2.11 — Production Evolution Roadmap.
 
 ## 2.2. Architecture — Implementation Guide
 
@@ -32,7 +30,6 @@ The stack above covers the current implementation. For the target production ser
 | Type Sharing          | Monorepo package `@smartcart/shared-types` at repo root, consumed by both `frontend/` and `backend/apps/api` |
 | Transaction Strategy  | Prisma `$transaction` with interactive callback for ACID operations      |
 | Async Processing      | BullMQ queues for long-running analytics pipeline                        |
-| Serverless Evolution  | Interface-based DI bindings — swap implementations, not domain logic     |
 
 
 #### Implementation directives by concern
@@ -43,7 +40,6 @@ The stack above covers the current implementation. For the target production ser
 | Type-Safe Contract Sharing    | Shared TypeScript interfaces and Zod schemas in a workspace package           | Create `packages/shared-types/` at the **repo root** exporting DTO interfaces and Zod validation schemas. Both `backend/apps/api` and `frontend/` import from `@smartcart/shared-types`. NestJS uses `ZodValidationPipe` for runtime validation. | Change a DTO → both sides break at compile time. No contract drift. | [`packages/shared-types/src/`](packages/shared-types/src/) — Shared interfaces and Zod schemas by domain<br>[`backend/apps/api/src/common/pipes/zod-validation.pipe.ts`](backend/apps/api/src/common/pipes/zod-validation.pipe.ts) — Generic validation pipe                                |
 | ACID Transactions             | Atomic updates across session status, points balance, and audit trail         | Use Prisma `$transaction` with interactive callback. Pass `tx` client to all repository methods within the boundary. Repositories accept optional `Prisma.TransactionClient`. Publish events only after commit resolves. | Everything inside the transaction succeeds or fails together. No I/O inside the callback. | [`backend/apps/api/src/modules/checkout/application/services/checkout.service.ts`](backend/apps/api/src/modules/checkout/application/services/checkout.service.ts) — `validateSession()` method<br>[`backend/apps/api/src/modules/checkout/application/interfaces/session-repository.interface.ts`](backend/apps/api/src/modules/checkout/application/interfaces/session-repository.interface.ts) — Repository interface with `tx` parameter |
 | Long-Running Process Separation | Independent BullMQ worker for consumer profiling pipeline                   | Create `apps/analytics-worker/` with `@Processor` decorator. Main API publishes `CheckoutCompletedEvent` to queue after transaction commit. Worker handles aggregation queries, feature extraction, AI inference, and segment upsert. Deploy as separate Docker container. | Non-blocking side effects. Worker scales independently | [`backend/apps/analytics-worker/src/processors/profile-update.processor.ts`](backend/apps/analytics-worker/src/processors/profile-update.processor.ts) — Job processor<br>[`backend/apps/analytics-worker/src/services/profile-aggregator.service.ts`](backend/apps/analytics-worker/src/services/profile-aggregator.service.ts) — Aggregation logic<br>[`backend/apps/api/src/infrastructure/messaging/analytics-queue.producer.ts`](backend/apps/api/src/infrastructure/messaging/analytics-queue.producer.ts) — Queue producer |
-| Serverless Evolution Path     | Interface-based module design allowing implementation swaps                   | Define TypeScript interfaces in `application/interfaces/`. Bind to implementations via NestJS DI in `*.module.ts` providers array. To migrate: create new implementation class (e.g., `HttpCatalogServiceClient`), swap binding — domain logic untouched. | The interface is the contract. The implementation is configuration. | [`backend/apps/api/src/modules/catalog/catalog.module.ts`](backend/apps/api/src/modules/catalog/catalog.module.ts) — In-process binding example<br>[`backend/apps/api/src/modules/catalog/application/interfaces/catalog-service.interface.ts`](backend/apps/api/src/modules/catalog/application/interfaces/catalog-service.interface.ts) — Interface definition |
 
 ### Layered design
 
@@ -76,13 +72,15 @@ Each NestJS module follows a strict four-layer structure. Layers are enforced by
 
 **Example entity structure (what to build)**:
 
-- Private mutable state with public readonly accessors
-- Constructor that establishes invariants
-- Methods that enforce state transitions (e.g., `addItem()` only when status is ACTIVE)
-- Pure computation methods (e.g., `computeItemHash()`) with zero side effects
-- Domain errors thrown for business rule violations
+Open [`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts) — it is already scaffolded and empty. Implement a TypeScript class with the following structure:
 
-**Source location**: [`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts) — Reference implementation of a pure domain entity.
+- Private mutable state with public readonly accessors
+- Constructor that establishes invariants (e.g., `status` starts as `ACTIVE`, `items` starts empty)
+- Methods that enforce state transitions (e.g., `addItem()` only when status is `ACTIVE`)
+- Pure computation methods (e.g., `computeItemHash()`) with zero side effects
+- Domain errors thrown for business rule violations (e.g., throw a typed `DomainError` subclass, not a generic `Error`)
+
+This is the most important domain file in the project — the rules you encode here are the rules of the checkout flow.
 
 ##### Rule 2: Application Layer — Interfaces Only, Never Implementations
 
@@ -150,7 +148,7 @@ Each NestJS module follows a strict four-layer structure. Layers are enforced by
 - Use `{ provide: 'INTERFACE_TOKEN', useClass: ConcreteImplementation }` for interface bindings
 - Use string tokens for interfaces (e.g., `'ISessionRepository'`) or `@Inject()` decorators
 - Export providers that other modules need via the exports array
-- To swap implementations (e.g., for testing or Serverless migration), change only this file
+- To swap implementations (e.g., for testing or a different provider), change only this file
 
 **Source location**: [`backend/apps/api/src/modules/checkout/checkout.module.ts`](backend/apps/api/src/modules/checkout/checkout.module.ts)— Module definition with DI bindings.
 
@@ -237,6 +235,7 @@ graph TB
     Shopper["👤 Shopper"]
     Cashier["👤 Cashier"]
     Admin["👤 Admin / B2B Partner"]
+    CSR["👤 Customer Service Rep"]
 
     %% ==========================================
     %% CONTAINERS
@@ -303,6 +302,7 @@ graph TB
     Shopper -->|"WSS Real-time"| Gateway
     Cashier -->|"HTTPS REST"| Gateway
     Admin -->|"HTTPS REST + API Key"| Gateway
+    CSR -->|"HTTPS REST"| Gateway
 
     Gateway -->|"Routes requests"| NestJSApp
 
@@ -332,7 +332,7 @@ graph TB
     classDef datastore fill:#eceff1,stroke:#37474f,stroke-width:2px,color:#263238,rx:6,ry:6
     classDef external fill:#ffebee,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5,color:#b71c1c
 
-    class Shopper,Cashier,Admin actor
+    class Shopper,Cashier,Admin,CSR actor
     class RN,Scanner,QRRender,PushNotif mobile
     class Gateway gateway
     class AuthMod,CatalogMod,CheckoutMod,RewardsMod,AnalyticsMod,NotifMod,AppLayer,DomainLayer nestjs
@@ -341,13 +341,17 @@ graph TB
     class AISvc,PushSvc external
 ```
 
-The container diagram shows five runtime containers:
+The container diagram shows five runtime containers and four actors:
 
+- **Shopper (Mobile)** — Scans products, generates QR codes, redeems rewards
+- **Cashier (POS)** — Validates QR codes at the checkout terminal
+- **Admin / B2B Partner** — Downloads analytics reports and segment data
+- **Customer Service Rep** — Adjusts points balances and manages reward fulfillment via REST API
 - **Mobile App (React Native/Expo)** — Consumer-facing native app with camera, GPS, and push notifications
 - **API Gateway (Nginx/Cloud LB)** — Routes REST to NestJS API, WebSocket connections for real-time status
 - **NestJS Modular Monolith** — Single Node.js process containing Auth, Catalog, Checkout, Rewards, and Analytics modules with strict layer separation
 - **Analytics Worker** — Independent BullMQ consumer for long-running consumer profiling pipeline
-- **Data Stores** — PostgreSQL (primary), Redis (cache/sessions), BullMQ (job queue), S3/R2 (file storage)
+- **Data Stores** — PostgreSQL (primary), Redis (cache/sessions), BullMQ (job queue), Cloudflare R2 (file storage)
 - **AI Inference Service (External)** — HTTP endpoint that classifies consumer behavior into segments
 
 ##### Level 3 — Component Diagram (Checkout Module)
@@ -557,6 +561,17 @@ The Checkout module component diagram illustrates:
 - Data Privacy: B2B endpoints return only aggregated, anonymized data  
 - Resilience: Worker retries via BullMQ if AI service is unavailable  
 
+**What you need to implement:**
+
+All files in the "Location" column are empty stubs. Open each one and implement the corresponding step:
+
+- **Step 1** — In [`backend/apps/api/src/modules/checkout/application/services/checkout.service.ts`](backend/apps/api/src/modules/checkout/application/services/checkout.service.ts): after the Prisma `$transaction` resolves in `validateSession()`, call `this.eventPublisher.publish(new CheckoutCompletedEvent(...))` with the session's `userId`, `storeId`, `items`, `pointsAwarded`, and current timestamp.
+- **Step 2** — In [`backend/apps/analytics-worker/src/processors/profile-update.processor.ts`](backend/apps/analytics-worker/src/processors/profile-update.processor.ts): decorate the class with `@Processor('analytics-profile-update')`. Implement `@Process() async handle(job: Job)`. Pull the `CheckoutCompletedEvent` from `job.data` and delegate to `ProfileAggregatorService`.
+- **Step 3** — In [`backend/apps/analytics-worker/src/services/profile-aggregator.service.ts`](backend/apps/analytics-worker/src/services/profile-aggregator.service.ts): query `points_transactions` for the last 90 days for this user. Compute the six features listed above. Return them as a plain object. Guard: if fewer than 5 transactions exist, return `null` — the processor should skip classification.
+- **Step 4** — In [`backend/apps/analytics-worker/src/infrastructure/ai/ai-inference.client.ts`](backend/apps/analytics-worker/src/infrastructure/ai/ai-inference.client.ts): check Redis for `segment:{userId}` (TTL 24h). On cache miss, `POST` the feature object to the AI inference endpoint. Store the response in Redis on success.
+- **Step 5** — In [`backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts`](backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts): run a Prisma `upsert` on the `consumer_segments` table. Immediately delete the two Redis keys: `analytics:store:{storeId}:segments` and `analytics:global:segment-distribution`.
+- **Step 6** — In [`backend/apps/api/src/modules/analytics/application/services/analytics.service.ts`](backend/apps/api/src/modules/analytics/application/services/analytics.service.ts): implement `getSegmentDistribution(storeId)`. Check Redis first. On miss, query the DB and group by `segment_name`. Merge any segment with fewer than 50 users into `"other"`. Cache the result for 1 hour before returning.
+
 ---
 
 ### 2. QR Generation and Validation
@@ -570,6 +585,12 @@ The Checkout module component diagram illustrates:
 
 **Deterministic Hash Algorithm:**
 
+This algorithm is the anti-tamper mechanism for QR checkout. When the shopper generates a QR code, the system hashes their scanned cart items and embeds that hash in the JWT. At the POS, the cashier's scanned items are hashed using the same algorithm. If a single item was added, removed, or swapped between QR generation and the physical checkout, the hashes won't match and `QrItemMismatchError` is thrown — the sale cannot proceed.
+
+You implement this as `computeItemHash()` inside [`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts). It is a pure method — no database access, no injected dependencies, just the session's `items` array in, a SHA-256 hex string out. The POS side calls the same algorithm on its scanned items and compares. Both sides must use the exact same sort order and separator or hashes will never match.
+
+Steps:
+
 1. Sort session items alphabetically by barcode  
 2. Concatenate as `"barcode1|barcode2|barcode3"`  
 3. Compute SHA-256 hash of the concatenated string  
@@ -581,11 +602,11 @@ The Checkout module component diagram illustrates:
 - `QR_SIGNING_SECRET` must be at least 32 characters  
 - Tampered tokens fail signature verification; modified items fail hash comparison  
 
-**Source Files:**
+**What you need to implement:**
 
-- Signer: [`backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`](backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts)  
-- Domain hash logic: [`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts)  
-- Factory: [`backend/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts`](backend/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts)  
+- [`backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`](backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts) — Implement `sign(payload)` using `jsonwebtoken`: `jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn: '5m' })`. Implement `verify(token)`: call `jwt.verify(token, secret)` — catch `TokenExpiredError` and re-throw as a typed `QrTokenExpiredError`, catch `JsonWebTokenError` as `InvalidQrTokenError`.
+- [`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts) — Add `computeItemHash()` following the three steps above using Node's built-in `crypto.createHash('sha256')`. Add `validateItems(scannedBarcodes: string[])`: compute the hash of the scanned barcodes and compare against the stored hash — throw `QrItemMismatchError` on mismatch.
+- [`backend/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts`](backend/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts) — Implement `create(session, signer)`: call `session.requestCheckout()` to transition state, compute the item hash, call `signer.sign({ sessionId, itemHash, userId })`, and return a `QrTicket` value object wrapping the resulting token.  
 
 ---
 
@@ -608,16 +629,18 @@ The Checkout module component diagram illustrates:
 
 **Adding a New Strategy (Open/Closed Principle):**
 
-- Create new class in `domain/strategies/` implementing `IPointsCalculationStrategy`  
+- Create new class in [`backend/apps/api/src/modules/checkout/domain/strategies/`](backend/apps/api/src/modules/checkout/domain/strategies/) implementing `IPointsCalculationStrategy`  
 - Register in `PointsStrategyResolver` constructor: `this.register(new NewStrategy())`  
 - No existing code changes required  
 
-**Source Files:**
+**What you need to implement:**
 
-- Interface: [`backend/apps/api/src/modules/checkout/domain/strategies/points-calculation-strategy.interface.ts`](backend/apps/api/src/modules/checkout/domain/strategies/points-calculation-strategy.interface.ts)  
-- Strategies: [`backend/apps/api/src/modules/checkout/domain/strategies/`](backend/apps/api/src/modules/checkout/domain/strategies/)  
-- Resolver: [`backend/apps/api/src/modules/checkout/application/services/points-strategy-resolver.ts`](backend/apps/api/src/modules/checkout/application/services/points-strategy-resolver.ts)  
-- Service: [`backend/apps/api/src/modules/checkout/application/services/points.service.ts`](backend/apps/api/src/modules/checkout/application/services/points.service.ts)  
+All four strategy files and both service files are empty stubs:
+
+- [`backend/apps/api/src/modules/checkout/domain/strategies/points-calculation-strategy.interface.ts`](backend/apps/api/src/modules/checkout/domain/strategies/points-calculation-strategy.interface.ts) — Define the `IPointsCalculationStrategy` interface. It needs a `strategyType: string` property and a `calculate(item: SessionItem, config: PointsConfig): number` method.
+- Each strategy file (e.g., [`backend/apps/api/src/modules/checkout/domain/strategies/fixed-points.strategy.ts`](backend/apps/api/src/modules/checkout/domain/strategies/fixed-points.strategy.ts)) — Implement the calculation from the Strategy Types table above. No dependencies — pure TypeScript math.
+- [`backend/apps/api/src/modules/checkout/application/services/points-strategy-resolver.ts`](backend/apps/api/src/modules/checkout/application/services/points-strategy-resolver.ts) — Register all four strategies in the constructor via a `Map<string, IPointsCalculationStrategy>`. Implement `resolve(type: string)` — throw `UnknownStrategyError` if not found.
+- [`backend/apps/api/src/modules/checkout/application/services/points.service.ts`](backend/apps/api/src/modules/checkout/application/services/points.service.ts) — Implement `calculatePoints(session: ShoppingSession): number`. Skip items where `pointsConfig.sponsored === true`. For each remaining item, call `resolver.resolve(config.type).calculate(item, config)`. Sum and return total.  
 
 ---
 
@@ -642,11 +665,11 @@ The Checkout module component diagram illustrates:
 | PENDING_CHECKOUT | expire()         | EXPIRED            | Age > 2 hours (cron) |
 | COMPLETED  | expire()               | COMPLETED          | Idempotent — no transition |
 
-**Source Files:**
+**What you need to implement:**
 
-- Entity FSM: [`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts)  
-- State machine: [`backend/apps/api/src/modules/checkout/domain/state-machine/session-state-machine.ts`](backend/apps/api/src/modules/checkout/domain/state-machine/session-state-machine.ts)  
-- Cron service: [`backend/apps/api/src/modules/checkout/application/services/session-expiration.service.ts`](backend/apps/api/src/modules/checkout/application/services/session-expiration.service.ts)  
+- [`backend/apps/api/src/modules/checkout/domain/state-machine/session-state-machine.ts`](backend/apps/api/src/modules/checkout/domain/state-machine/session-state-machine.ts) — Implement `transition(session: ShoppingSession, event: SessionEvent)`. Use the State Transition Rules table above as your spec: check the current status, apply the guard, and either mutate state or throw `InvalidTransitionError`. No external dependencies — pure TypeScript.
+- [`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts) — Add the public transition methods (`requestCheckout`, `completeValidation`, `markValidationFailed`, `expire`) and the `addItem` method. Each calls through to the state machine internally and enforces the guards.
+- [`backend/apps/api/src/modules/checkout/application/services/session-expiration.service.ts`](backend/apps/api/src/modules/checkout/application/services/session-expiration.service.ts) — Inject `ISessionRepository`. Decorate with `@Injectable()` and `@Cron('*/5 * * * *')`. In the cron handler, query for sessions with `status = ACTIVE` and `createdAt < (now - 2 hours)`. Call `session.expire()` on each and save via the repository.
 
 ---
 
@@ -767,16 +790,6 @@ All errors follow a consistent structure:
 
 ---
 
-### **Production Readiness Checklist**
-- **Logs:** Every log line is valid JSON with a `correlationId`; PII is redacted.  
-- **Metrics:** `/metrics` endpoint returns 200 OK with valid Prometheus format; scrape interval configured.  
-- **Tracing:** Jaeger shows full traces from HTTP → Service → Prisma → Redis for checkout validation.  
-- **Alerts:** `ServiceDown` fires within 1 minute of `/health` failure; on-call escalation policy tested.  
-- **Error Tracking:** Zero unhandled exceptions in Sentry; 5xx error rate < 0.1%.  
-- **Dashboard:** On-call engineer can identify root cause within 5 minutes using the Grafana Operations Dashboard (provisioned at [`backend/infra/grafana/dashboards/smartcart-overview.json`](backend/infra/grafana/dashboards/smartcart-overview.json)).  
-
----
-
 ## 2.7. Availability & Scalability
 
 ### Availability
@@ -788,12 +801,11 @@ All errors follow a consistent structure:
 | **RPO (Recovery Point Objective)** | < 5 minutes. Achieved via PostgreSQL continuous WAL archiving to S3/R2 every 5 minutes. Points transactions are committed synchronously before the API responds, ensuring zero financial record loss. |
 
 - **Mechanisms:**
-  - **Multi-AZ Deployment:** NestJS containers deployed across 3 availability zones behind an Nginx/ALB load balancer. If one AZ fails, traffic routes to the remaining zones.
-  - **Load Balancer Health Checks:** Nginx/ALB probes `GET /api/v1/health/readiness` every 10 seconds. Unhealthy containers are removed after 2 consecutive failures.
-  - **Auto-Restart on Crash:** Kubernetes `restartPolicy: Always` ensures the container restarts within seconds of a process crash. The Node.js process inside the container uses PM2 or similar for instant restarts.
-  - **Database Replication:** PostgreSQL streaming replication to a read replica in a different AZ. WAL files archived every 5 minutes. On primary failure, the replica is promoted automatically.
-  - **Redis Sentinel:** A 3-node Sentinel quorum monitors the Redis primary. Automatic failover occurs if the primary is unreachable for 30 seconds, ensuring session cache and BullMQ queues remain operational.
-  - **Graceful Shutdown:** The application handles `SIGTERM` to drain connections cleanly during deployments. Kubernetes sends this signal 30 seconds before `SIGKILL`.
+  - **Load Balancer Health Checks:** Railway/Render's load balancer probes `GET /api/v1/health/readiness` on each container. Unhealthy containers are removed from rotation automatically.
+  - **Auto-Restart on Crash:** Railway and Render both restart crashed containers automatically. Inside the container, the Node.js process starts with graceful shutdown enabled — see below.
+  - **Database Replication:** Railway PostgreSQL includes automatic daily backups. For production resilience, configure continuous WAL archiving. On failure, restore from the latest backup.
+  - **Redis Persistence:** Redis is configured with AOF (append-only file) persistence so BullMQ queued jobs survive a Redis restart without loss.
+  - **Graceful Shutdown:** The application handles `SIGTERM` to drain in-flight requests cleanly before the container stops during a deploy.
 
 **Graceful Shutdown Implementation Guide**
 
@@ -812,13 +824,11 @@ To implement the graceful shutdown handler, modify the application's entry point
 
 ### Scalability
 
-- **Strategy:** Horizontal scaling. Multiple stateless NestJS API containers run behind a load balancer. The analytics worker (`analytics-worker`) is a separate deployment that scales independently. The primary bottleneck is the database, mitigated by read replicas, Redis Cache-Aside for product lookups, and PgBouncer connection pooling.
+- **Strategy:** Horizontal scaling. Multiple stateless NestJS API containers run behind a load balancer. The analytics worker (`analytics-worker`) is a separate Railway/Render service that scales independently. The primary bottleneck is the database, mitigated by Redis Cache-Aside for product lookups, and PgBouncer connection pooling.
 
-- **Trigger Metrics (Auto-Scaling Configuration):**
-  - **What to implement:** Kubernetes HorizontalPodAutoscaler (HPA) resources for the API and the analytics worker.
-  - **How to implement:**
-    - **API deployment** ([`backend/infra/kubernetes/api-hpa.yaml`](backend/infra/kubernetes/api-hpa.yaml)): Configure HPA with `minReplicas: 3`, `maxReplicas: 20`. Target CPU utilization **70%**, memory **75%**, and custom metric for HTTP request rate (>100 req/s per pod). Define `scaleUp` policy (double pods or +4 max) and `scaleDown` policy (remove pods slowly, 10% at a time, after 5-min stabilization).
-    - **Analytics worker** ([`backend/infra/kubernetes/analytics-worker-hpa.yaml`](backend/infra/kubernetes/analytics-worker-hpa.yaml)): Configure HPA with `minReplicas: 2`, `maxReplicas: 10`. Use custom metric `smartcart_bullmq_queue_depth` filtered for `analytics-profile-update` queue. Target average of **100 waiting jobs** to trigger scaling.
+- **Scaling Configuration:**
+  - **API service:** Configure Railway/Render to scale horizontally. A CPU threshold of ~70% is a reasonable trigger. Because the API is fully stateless (all session data lives in Redis), adding more instances requires zero code changes.
+  - **Analytics worker:** The worker is CPU-bound during AI classification. Scale its instance count based on BullMQ queue depth — if `analytics-profile-update` consistently has >100 waiting jobs, add worker instances.
 
 - **Stateless Services:**
   - **What to implement:** All session state externalized to Redis, not stored in-process.
@@ -836,7 +846,7 @@ To implement the graceful shutdown handler, modify the application's entry point
 
 ## 2.8. Backend Key Workflows
 
-This section details the two most critical workflows beyond basic CRUD: the **QR Validation Flow** (the revenue path) and the **Consumer Data Pipeline** (the B2B analytics path). Each workflow traces the operation through every architectural layer, with explicit timing constraints and failure modes.
+This section traces the four main workflows through every architectural layer. For each step, the linked file is an empty stub — the "What to code" notes tell you what to write inside it.
 
 ---
 
@@ -849,20 +859,25 @@ This section details the two most critical workflows beyond basic CRUD: the **QR
 **Steps:**
 
 1. **POS Terminal Request:** `POST /api/v1/sessions/{id}/validate` with `qrToken` and `scannedItems[]`. Requires valid POS API Key in `X-API-Key`.
-2. **Security Verification (Infrastructure Layer):**
-   - API Key validated by `ApiKeyGuard` ([`backend/apps/api/src/common/guards/api-key.guard.ts`](backend/apps/api/src/common/guards/api-key.guard.ts)).
-   - DTO validated via `ZodValidationPipe` against `ValidateSessionRequestSchema` ([`packages/shared-types/src/validation/session.schemas.ts`](packages/shared-types/src/validation/session.schemas.ts)).
-   - QR token verified by `JwtQrSigner.verify()` ([`backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`](backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts)).
+   - *What to code:* In [`backend/apps/api/src/modules/checkout/presentation/controllers/validation.controller.ts`](backend/apps/api/src/modules/checkout/presentation/controllers/validation.controller.ts), implement the `@Post(':id/validate')` handler. Annotate it with `@UseGuards(ApiKeyGuard)` and `@UsePipes(ZodValidationPipe)`. Call `checkoutService.validateSession(id, dto)` and return the result.
+
+2. **Security Verification:**
+   - API Key validated by `ApiKeyGuard` ([`backend/apps/api/src/common/guards/api-key.guard.ts`](backend/apps/api/src/common/guards/api-key.guard.ts)). *What to code:* Implement `canActivate()` — read the `X-API-Key` header, SHA-256 hash it, and call `apiKeyRepository.findByHash(hash)`. Return `false` (throws 401) if not found.
+   - DTO validated via `ZodValidationPipe` against `ValidateSessionRequestSchema` ([`packages/shared-types/src/validation/session.schemas.ts`](packages/shared-types/src/validation/session.schemas.ts)). *What to code:* Define the schema here — require `qrToken: z.string()` and `scannedItems: z.array(z.string())`.
+   - QR token verified by `JwtQrSigner.verify()` ([`backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`](backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts)). *What to code:* See §2.3 QR section above — `jwt.verify()` wrapped with typed error handling.
+
 3. **Session Retrieval & Domain Validation:**
-   - Session loaded via `ISessionRepository.findById()` ([`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts)).
-   - Items validated by `ShoppingSession.validateItems()` ([`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts)).
+   - Session loaded via `ISessionRepository.findById()` ([`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts)). *What to code:* Check Redis first (`redis.get('session:{id}')`). On miss, run `prisma.shoppingSession.findUnique()`, convert via `SessionMapper.toDomain()`, write to Redis with a 2-hour TTL.
+   - Items validated by `ShoppingSession.validateItems()` ([`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts)). *What to code:* Sort the incoming barcode array the same way as `computeItemHash()`, hash it, and compare to the hash stored on the session. Throw `QrItemMismatchError` on mismatch.
+
 4. **Points Calculation & Atomic Transaction:**
-   - Points computed via `PointsService.calculatePoints()` ([`backend/apps/api/src/modules/checkout/application/services/points.service.ts`](backend/apps/api/src/modules/checkout/application/services/points.service.ts)) and `PointsStrategyResolver`.
-   - Prisma `$transaction`: mark session `COMPLETED`, credit points, insert immutable ledger record.
+   - Points computed via `PointsService.calculatePoints()` ([`backend/apps/api/src/modules/checkout/application/services/points.service.ts`](backend/apps/api/src/modules/checkout/application/services/points.service.ts)). *What to code:* See §2.3 Points section — iterate items, resolve strategy, sum totals.
+   - *What to code for the transaction:* In `CheckoutService.validateSession()`, call `prisma.$transaction(async (tx) => { await sessionRepo.save(session, tx); await pointsRepo.creditPoints(userId, total, tx); await pointsRepo.insertLedger(userId, total, 'PURCHASE', tx); })`. Only call `eventPublisher.publish()` after the transaction resolves.
+
 5. **Post-Commit Side Effects:**
-   - Event publishing via `BullMqEventPublisher` ([`backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts`](backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts)).
-   - Real-time notification via `SessionGateway` ([`backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts`](backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts)).
-   - Metrics via `BusinessMetricsService` ([`backend/apps/api/src/common/metrics/business-metrics.service.ts`](backend/apps/api/src/common/metrics/business-metrics.service.ts)).
+   - Event publishing via `BullMqEventPublisher` ([`backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts`](backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts)). *What to code:* Implement `publish(event)` — call `this.analyticsQueue.add('profile-update', event)`. This enqueues the job for the analytics worker.
+   - Real-time notification via `SessionGateway` ([`backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts`](backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts)). *What to code:* Implement a `@WebSocketGateway` class. On the `sessionStatusChanged` event, call `this.server.to(sessionId).emit('sessionStatusChanged', { status, pointsAwarded })`.
+   - Metrics via `BusinessMetricsService` ([`backend/apps/api/src/common/metrics/business-metrics.service.ts`](backend/apps/api/src/common/metrics/business-metrics.service.ts)). *What to code:* Call `this.checkoutCounter.inc()` and `this.pointsHistogram.observe(total)` after the transaction.
 
 **Error Handling Matrix:**
 
@@ -884,22 +899,69 @@ This section details the two most critical workflows beyond basic CRUD: the **QR
 
 **Steps:**
 
-1. **Event Trigger:** `CheckoutService` publishes `CheckoutCompletedEvent` to `analytics-profile-update` queue. Config: [`backend/apps/api/src/common/queues/queue.config.ts`](backend/apps/api/src/common/queues/queue.config.ts).
+1. **Event Trigger:** `CheckoutService` publishes `CheckoutCompletedEvent` to `analytics-profile-update` queue. Config: [`backend/apps/api/src/common/queues/queue.config.ts`](backend/apps/api/src/common/queues/queue.config.ts). *What to code:* Export the queue name as a constant (`ANALYTICS_QUEUE = 'analytics-profile-update'`) and register the BullMQ module in `CheckoutModule` using this constant.
+
 2. **Profile Aggregation (Worker):**
-   - `ProfileUpdateProcessor` ([`backend/apps/analytics-worker/src/processors/profile-update.processor.ts`](backend/apps/analytics-worker/src/processors/profile-update.processor.ts)) consumes job.
-   - `ProfileAggregatorService` ([`backend/apps/analytics-worker/src/services/profile-aggregator.service.ts`](backend/apps/analytics-worker/src/services/profile-aggregator.service.ts)) computes 90-day rolling profile. Guard: ≥5 transactions required.
+   - `ProfileUpdateProcessor` ([`backend/apps/analytics-worker/src/processors/profile-update.processor.ts`](backend/apps/analytics-worker/src/processors/profile-update.processor.ts)) consumes job. *What to code:* Decorate with `@Processor(ANALYTICS_QUEUE)`. Add `@Process() async handle(job: Job<CheckoutCompletedEvent>)`. Delegate to `profileAggregatorService.aggregate(job.data)`.
+   - `ProfileAggregatorService` ([`backend/apps/analytics-worker/src/services/profile-aggregator.service.ts`](backend/apps/analytics-worker/src/services/profile-aggregator.service.ts)) computes 90-day rolling profile. *What to code:* See §2.3 Consumer Profiling steps 2–3. Return `null` if fewer than 5 transactions — the processor should skip AI classification in that case.
+
 3. **AI Classification:**
-   - `AiInferenceClient` ([`backend/apps/analytics-worker/src/infrastructure/ai/ai-inference.client.ts`](backend/apps/analytics-worker/src/infrastructure/ai/ai-inference.client.ts)) applies Circuit Breaker, Redis cache (`segment:{userId}` TTL 24h), and fallback rule-based classification.
+   - `AiInferenceClient` ([`backend/apps/analytics-worker/src/infrastructure/ai/ai-inference.client.ts`](backend/apps/analytics-worker/src/infrastructure/ai/ai-inference.client.ts)) applies Redis cache and HTTP call. *What to code:* Check Redis for `segment:{userId}` first. On miss, `POST` the feature object to the AI endpoint. If the HTTP call fails, throw the error — BullMQ will automatically retry the job according to its retry config. Cache the result on success.
+
 4. **Persist & Invalidate Cache:**
-   - `SegmentRepository` ([`backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts`](backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts)) UPSERTs into `consumer_segments`. Invalidates cache keys: `analytics:store:{storeId}:segments`, `analytics:global:segment-distribution`.
+   - `SegmentRepository` ([`backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts`](backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts)) UPSERTs `consumer_segments`. *What to code:* Use `prisma.consumerSegment.upsert({ where: { userId }, create: {...}, update: {...} })`. After the upsert, call `redis.del('analytics:store:{storeId}:segments')` and `redis.del('analytics:global:segment-distribution')`.
 
 **B2B Data Consumption:**
 
-- Endpoint: `GET /analytics/segments?storeId=` in `AnalyticsController` ([`backend/apps/api/src/modules/analytics/presentation/controllers/analytics.controller.ts`](backend/apps/api/src/modules/analytics/presentation/controllers/analytics.controller.ts)).
-- Service: `AnalyticsService.getSegmentDistribution()` ([`backend/apps/api/src/modules/analytics/application/services/analytics.service.ts`](backend/apps/api/src/modules/analytics/application/services/analytics.service.ts)).
-  - Redis cache check → DB query → group by `segment_name`.
-  - Guard: segments <50 users merged into `"other"`.
-  - Cache result for 1h, return anonymized distribution.
+- Endpoint: `GET /analytics/segments?storeId=` in `AnalyticsController` ([`backend/apps/api/src/modules/analytics/presentation/controllers/analytics.controller.ts`](backend/apps/api/src/modules/analytics/presentation/controllers/analytics.controller.ts)). *What to code:* Add `@UseGuards(ApiKeyGuard)` — B2B partners authenticate with an API key, not a JWT.
+- Service: `AnalyticsService.getSegmentDistribution()` ([`backend/apps/api/src/modules/analytics/application/services/analytics.service.ts`](backend/apps/api/src/modules/analytics/application/services/analytics.service.ts)). *What to code:* Check Redis for the cached result. On miss, query `consumer_segments` grouped by `segment_name`, merge any segment with fewer than 50 users into `"other"`, cache for 1 hour, return.
+
+---
+
+### Workflow 3: User Authentication Flow
+
+**Business Criticality:** All other workflows depend on this — no JWT means no session, no checkout.
+
+**Steps:**
+
+1. **Register:** `POST /api/v1/auth/register` with `email`, `password`, `fullName`.
+   - *What to code:* In [`backend/apps/api/src/modules/auth/application/services/auth.service.ts`](backend/apps/api/src/modules/auth/application/services/auth.service.ts), implement `register(dto)`. Check if email already exists — throw `ConflictException` if so. Hash the password with `bcrypt` (cost 12) using [`backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts). Save the user. Issue tokens (see step 3).
+
+2. **Login:** `POST /api/v1/auth/login` with `email` and `password`.
+   - *What to code:* In `auth.service.ts`, implement `login(dto)`. Look up the user by email — throw `UnauthorizedException` if not found (do not reveal whether the email exists). Compare the provided password against the stored hash using `passwordService.verify()`. On match, issue tokens.
+
+3. **Token Issuance:**
+   - *What to code:* In [`backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts), implement `signAccessToken(userId, role): string` — call `jwt.sign({ sub: userId, role }, accessSecret, { expiresIn: '15m' })`. Implement `signRefreshToken(userId): string` — sign with a separate `refreshSecret`, `expiresIn: '7d'`. Store the refresh token hash in Redis (`refresh:{userId}:{tokenId}`) so it can be revoked.
+   - Return `accessToken` in the response body. Set `refreshToken` as an HTTP-only, `Secure`, `SameSite=Strict` cookie via `response.cookie()`.
+
+4. **Token Refresh:** `POST /api/v1/auth/refresh` — reads the `refreshToken` cookie.
+   - *What to code:* In `auth.service.ts`, implement `refresh(refreshToken)`. Verify the token with `jwtService.verifyRefreshToken()`. Look up the token hash in Redis — if missing, it was revoked, throw `UnauthorizedException`. Delete the old token from Redis, issue a new `accessToken` and a new `refreshToken` (rotation), set the new cookie.
+
+5. **Logout:** `POST /api/v1/auth/logout`.
+   - *What to code:* Delete the refresh token entry from Redis. Clear the cookie by calling `response.clearCookie('refreshToken')`.
+
+---
+
+### Workflow 4: Session Creation & Item Scanning
+
+**Business Criticality:** The user-facing happy path — everything before QR generation.
+
+**Steps:**
+
+1. **Create Session:** `POST /api/v1/sessions` with `storeId`.
+   - *What to code:* In [`backend/apps/api/src/modules/checkout/application/services/checkout.service.ts`](backend/apps/api/src/modules/checkout/application/services/checkout.service.ts), implement `createSession(userId, storeId)`. Check that the user has no existing `ACTIVE` session — throw `ConflictException` if so. Create a new `ShoppingSession` entity with status `ACTIVE`. Persist via `sessionRepo.save()`. Return the session ID.
+
+2. **Scan & Look Up Product:** `GET /api/v1/products/:barcode`.
+   - *What to code:* In the Catalog module's service, implement `getByBarcode(barcode)`. Check Redis (`product:{barcode}`, TTL 1h). On miss, query the database. Return the product including its `pointsConfig`. Cache the result. If not found, throw `NotFoundException`.
+
+3. **Add Item to Session:** `POST /api/v1/sessions/:id/items` with `barcode` and `quantity`.
+   - *What to code:* In `checkout.service.ts`, implement `addItem(sessionId, userId, dto)`. Load the session via `sessionRepo.findById()`. Verify `session.userId === userId` — throw `ForbiddenException` otherwise. Load the product by barcode. Call `session.addItem(product, dto.quantity)` — the entity enforces the `ACTIVE` status guard and throws if violated. Persist via `sessionRepo.save()`. Return the updated session.
+
+4. **Remove Item:** `DELETE /api/v1/sessions/:id/items/:itemId`.
+   - *What to code:* Load session, verify ownership, call `session.removeItem(itemId)`, persist. The domain entity should throw `ItemNotFoundError` if the item ID doesn't belong to the session.
+
+5. **Generate QR:** `POST /api/v1/sessions/:id/qr`.
+   - *What to code:* In `checkout.service.ts`, implement `generateQr(sessionId, userId)`. Load session, verify ownership, verify at least one item exists. Call `QrTicketFactory.create(session, qrSigner)` — this transitions the session to `PENDING_CHECKOUT` and signs the JWT. Persist the session with updated status. Return the QR token string.
 
 ---
 
@@ -944,7 +1006,7 @@ flowchart TD
         s9["9. Post-Deploy<br/>• Health check<br/>• Sentry watch<br/>• (10 min monitor)"]
     end
 
-    prod_env["Production Environment<br/>(Railway / ECS)"]
+    prod_env["Production Environment<br/>(Railway)"]
 
     push --> s1
     s1 --> s2
@@ -967,38 +1029,50 @@ flowchart TD
 
 ### How to Implement the Pipeline
 
-The pipeline is triggered on every push to a pull request targeting `main`. It enforces a series of quality gates. All workflow files are located in [`.github/workflows/`](.github/workflows/).
+The pipeline lives in [`.github/workflows/ci.yml`](.github/workflows/ci.yml). It runs automatically on every push to a branch that has an open PR targeting `main`. Here is what each stage does and what you need to write.
 
 #### Install & Cache Dependencies
-- **What to do:** Use `pnpm install --frozen-lockfile` to ensure consistent dependency versions.  
-- **Cache:** Global pnpm store and local `node_modules` cached via `actions/cache@v4` keyed on `pnpm-lock.yaml`.  
-- **Implementation:** Configure workflow with `NODE_VERSION: '20'` and `PNPM_VERSION: '9'`. Use `concurrency: cancel-in-progress: true`.
+
+Set up two `env` variables at the workflow level — `NODE_VERSION: '20'` and `PNPM_VERSION: '9'` — so all jobs use the same versions without repeating them. Add `concurrency: cancel-in-progress: true` at the workflow level so that a new push cancels the previous run on the same branch (saves CI minutes).
+
+In the install step, use `pnpm install --frozen-lockfile` (not `npm ci`) — this ensures nobody accidentally installs a version not in the lockfile. Cache the global pnpm store using `actions/cache@v4` keyed on the hash of `pnpm-lock.yaml`. Without this cache, every run downloads ~300 MB of packages from scratch.
 
 #### Lint & Static Analysis
-- **Linting:** Run `pnpm lint` (ESLint) with `--max-warnings=0`.  
-- **Formatting:** Run `pnpm format:check` (Prettier).  
-- **Type Checking:** Run `pnpm type-check` (`tsc --noEmit`).  
-- **SonarQube:** Run `sonarsource/sonarqube-scan-action` with `SONAR_TOKEN` and `SONAR_HOST_URL`.
+
+Run three checks in sequence — if any fail, stop early:
+
+1. `pnpm lint` — ESLint with `--max-warnings=0`. A warning is a failure; fix it before merging.
+2. `pnpm format:check` — Prettier dry-run. If the formatter would change any file, this fails. Run `pnpm format` locally to fix.
+3. `pnpm type-check` — `tsc --noEmit`. Compiles TypeScript without emitting files, just to catch type errors. This is faster than a full build.
+
+Also add `sonarsource/sonarqube-scan-action` here. It needs `SONAR_TOKEN` and `SONAR_HOST_URL` as GitHub secrets — add them to your repository settings.
 
 #### Unit Tests
-- **What to do:** Run `pnpm test:unit --coverage` (Jest config: [`backend/apps/api/jest.unit.config.ts`](backend/apps/api/jest.unit.config.ts)).  
-- **Artifacts:** Upload coverage report (`apps/api/coverage/lcov.info`).
+
+Run `pnpm test:unit --coverage` using the Jest config in [`backend/apps/api/jest.unit.config.ts`](backend/apps/api/jest.unit.config.ts). After the run, upload the coverage report (`apps/api/coverage/lcov.info`) as a workflow artifact using `actions/upload-artifact@v4` — SonarQube will download it for code quality analysis.
+
+Unit tests run against in-memory mocks — no real database or Redis. Keep them fast.
 
 #### Integration Tests
-- **What to do:** Spin up `postgres:17-alpine` and `redis:7.2-alpine` via GitHub Actions `services`.  
-- **Database Setup:** Run `pnpm prisma migrate deploy`.  
-- **Execution:** Run `pnpm test:integration` (config: [`backend/apps/api/jest.integration.config.ts`](backend/apps/api/jest.integration.config.ts)).  
-- **Health Checks:** Use `pg_isready` and `redis-cli ping`.
+
+Integration tests need a real database and Redis. GitHub Actions `services` block is the cleanest way to spin them up — add `postgres:17-alpine` and `redis:7.2-alpine` as services in the workflow YAML. Set the standard environment variables (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`) so Prisma can connect.
+
+Before running the tests, run `pnpm prisma migrate deploy` to apply all migrations to the fresh database. Add a health check step using `pg_isready` and `redis-cli ping` to wait for the services to be ready before migrations start — without this, the migration sometimes fires before the database is up and fails.
+
+Then run `pnpm test:integration` (config: [`backend/apps/api/jest.integration.config.ts`](backend/apps/api/jest.integration.config.ts)).
 
 #### API Contract Tests
-- **What to do:** Generate OpenAPI spec with `pnpm openapi:generate`.  
-- **Validation:** Run `pnpm openapi:validate` (e.g., `vacuum`).  
-- **Execution:** Run `pnpm test:contract` against schemas in [`packages/shared-types/src/`](packages/shared-types/src/).
+
+Generate the OpenAPI spec from your NestJS decorators with `pnpm openapi:generate`, then validate it with `pnpm openapi:validate` (the `vacuum` tool works well for this). Finally run `pnpm test:contract` against the Zod schemas in [`packages/shared-types/src/`](packages/shared-types/src/) to verify that the API responses match what the frontend expects.
+
+If you add a breaking change to an endpoint (rename a field, change a type, remove a response property), this step catches it before it reaches the frontend team.
 
 #### Quality Gate Check
-- **Coverage Threshold:** Fail if coverage < 80%.  
-- **Security Audit:** Run `pnpm audit --audit-level=critical`. Fail on critical/high vulnerabilities.  
-- **SonarQube Quality Gate:** Must pass; merge blocked otherwise.
+
+After all tests pass, run two final checks:
+
+- `pnpm audit --audit-level=critical` — fails if any installed dependency has a critical or high severity CVE. Fix by updating the package or adding a `pnpm audit --fix`.
+- SonarQube Quality Gate evaluation — the `sonarqube-quality-gate-action` waits for SonarQube to finish its analysis and returns the gate result. If the gate fails (e.g., coverage dropped below 80% or a security hotspot appeared), the workflow fails and the merge is blocked.
 
 ---
 
@@ -1036,17 +1110,17 @@ Deployment is triggered automatically by a push to `main` and defined in [`.gith
 
 #### Deploy to Production (Manual Gate)
 
-- **Approval:** GitHub Environment "production" with manual approval.
-- **Execution:** Apply Kubernetes manifests via `kubectl apply -f infra/kubernetes/` against the production cluster (AWS EKS). Rolling update strategy: `maxSurge: 1, maxUnavailable: 0`. HPA resources: [`backend/infra/kubernetes/api-hpa.yaml`](backend/infra/kubernetes/api-hpa.yaml) and [`backend/infra/kubernetes/analytics-worker-hpa.yaml`](backend/infra/kubernetes/analytics-worker-hpa.yaml).
-- **Migrations:** Run `prisma migrate deploy` against the production Aurora PostgreSQL instance before traffic shifts.
+- **Approval:** Configure a GitHub Environment named `"production"` in your repository settings, with yourself as a required reviewer. The workflow will pause at this step and wait for your approval before proceeding.
+- **Execution:** Use `railwayapp/railway-deploy@v1` with `RAILWAY_PRODUCTION_TOKEN`. Railway handles the rolling deploy — the old instance stays live until the new one passes its health check, so there is no downtime window.
+- **Migrations:** Run `prisma migrate deploy` against the production PostgreSQL instance before Railway shifts traffic to the new container. Add this as a separate workflow step that runs before the deploy action.
 
 **Deployment targets by environment:**
 
 | Environment | Platform | Config |
 |---|---|---|
-| Local dev | Docker Compose | `infra/docker/docker-compose.yml` |
-| Staging | Railway (auto-deploy on merge to `main`) | `RAILWAY_STAGING_TOKEN` |
-| Production | Kubernetes on AWS EKS (manual gate) | `infra/kubernetes/` + `infra/terraform/` |
+| Local dev | Docker Compose | [`backend/infra/docker/docker-compose.yml`](backend/infra/docker/docker-compose.yml) |
+| Staging | Railway (auto-deploy on merge to `main`) | `RAILWAY_STAGING_TOKEN` secret |
+| Production | Railway (manual gate) | `RAILWAY_PRODUCTION_TOKEN` secret |
 
 #### Post-Deploy Monitoring
 
@@ -1285,41 +1359,3 @@ backend/
 
 ---
 
-## 2.11. Production Evolution Roadmap
-
-This section describes the target serverless architecture for production deployment. The implementation in §2.2–§2.10 uses a NestJS modular monolith (Stack 1) designed with interface-based DI to enable migration to this model with minimal domain-logic changes — swap implementations, not business rules.
-
-### Target Technology Stack
-
-| Concern | Choice | Version | Justification |
-|---------|--------|---------|---------------|
-| **API Style** | REST API + OpenAPI 3.1 | — | Standard communication contract; consistent with current Stack 1 interface |
-| **Language** | TypeScript | 5.x (latest) | Static typing, AWS CDK ecosystem support, compatible with existing codebase |
-| **Framework** | AWS Lambda + API Gateway | — | Serverless compute; API Gateway exposes REST endpoints and WebSockets; no container management |
-| **Database** | Amazon Aurora PostgreSQL | 17.0+ | PostgreSQL-compatible, fully managed, high availability with automatic multi-AZ failover; ideal for transactional data (sessions, products, user profiles) |
-| **Hosting** | AWS | — | Serverless architecture with automatic scalability; native integration with Lambda, API Gateway, SQS, SNS, S3, SageMaker |
-| **Async Processing** | AWS SQS + SNS | — | SQS replaces BullMQ for message queues; SNS replaces Expo Push direct calls for push notifications |
-| **Caching** | Amazon ElastiCache for Redis | 7.2+ | Low-latency cache for active sessions, user profiles, and analytics queries; drop-in replacement for current Redis layer |
-| **File Storage** | Amazon S3 | — | Object storage for product images, B2B reports, and CI/CD artifacts; replaces Cloudflare R2 |
-
-### Migration Path from Stack 1
-
-The interface-based DI architecture in §2.2 makes this migration possible without rewriting domain logic:
-
-| Stack 1 (Current) | Stack 2 (Target) | Migration Action |
-|---|---|---|
-| NestJS `@Controller` handlers ([`backend/apps/api/src/modules/checkout/presentation/controllers/`](backend/apps/api/src/modules/checkout/presentation/controllers/)) | AWS Lambda handlers | Wrap NestJS app with `@vendia/serverless-express`, or rewrite handlers as thin Lambda functions delegating to existing application services |
-| BullMQ + Redis queues ([`backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts`](backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts)) | AWS SQS | Implement `SqsEventPublisher` replacing `BullMqEventPublisher` — swap binding in `checkout.module.ts` ([`backend/apps/api/src/modules/checkout/checkout.module.ts`](backend/apps/api/src/modules/checkout/checkout.module.ts)) only |
-| `SessionExpirationService` `@Cron` ([`backend/apps/api/src/modules/checkout/application/services/session-expiration.service.ts`](backend/apps/api/src/modules/checkout/application/services/session-expiration.service.ts)) | AWS EventBridge Scheduler | Replace cron with a scheduled Lambda rule; domain expiration logic in `session-state-machine.ts` ([`backend/apps/api/src/modules/checkout/domain/state-machine/session-state-machine.ts`](backend/apps/api/src/modules/checkout/domain/state-machine/session-state-machine.ts)) unchanged |
-| PostgreSQL 16 (Docker / Railway) ([`backend/infra/docker/docker-compose.yml`](backend/infra/docker/docker-compose.yml)) | Aurora PostgreSQL 17 | Update `DATABASE_URL`; run `prisma migrate deploy`; no schema changes required |
-| Redis self-managed ([`backend/infra/docker/docker-compose.yml`](backend/infra/docker/docker-compose.yml)) | ElastiCache Redis 7.2 | Update connection string in `env.validation.ts` ([`backend/apps/api/src/config/env.validation.ts`](backend/apps/api/src/config/env.validation.ts)); no application code changes |
-| Railway / Kubernetes deployment ([`backend/infra/kubernetes/api-hpa.yaml`](backend/infra/kubernetes/api-hpa.yaml)) | AWS CDK / Terraform (AWS provider) | Replace `infra/terraform/` Railway provider with `hashicorp/aws`; same file structure: `main.tf` ([`backend/infra/terraform/environments/production/main.tf`](backend/infra/terraform/environments/production/main.tf)) |
-| Cloudflare R2 / S3 | Amazon S3 | Implement `S3StorageClient` replacing R2 client — swap binding in the relevant module |
-| PgBouncer self-managed ([`backend/infra/pgbouncer/pgbouncer.ini`](backend/infra/pgbouncer/pgbouncer.ini)) | RDS Proxy | Update `DATABASE_URL` to RDS Proxy endpoint; `pool_mode = transaction` equivalent is automatic |
-
-### Key Differences from Stack 1
-
-- **No persistent containers:** Lambda functions are stateless by design — the stateless session architecture enforced in §2.7 (all session state in Redis, see [`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts)) is already compatible.
-- **Cold starts:** Provisioned concurrency required for the POS validation Lambda (`POST /sessions/:id/validate`, see [`backend/apps/api/src/modules/checkout/presentation/controllers/validation.controller.ts`](backend/apps/api/src/modules/checkout/presentation/controllers/validation.controller.ts)) to meet the <500ms P95 SLA defined in §2.8.
-- **BullMQ → SQS:** SQS does not support repeatable jobs natively. The `SessionExpirationService` cron ([`backend/apps/api/src/modules/checkout/application/services/session-expiration.service.ts`](backend/apps/api/src/modules/checkout/application/services/session-expiration.service.ts)) must be replaced with an EventBridge Scheduler rule targeting a dedicated expiration Lambda.
-- **IaC:** Terraform AWS provider (`hashicorp/aws`) replaces the Railway provider. Same file structure: `infra/terraform/environments/production/main.tf` ([`backend/infra/terraform/environments/production/main.tf`](backend/infra/terraform/environments/production/main.tf)).
