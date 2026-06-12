@@ -736,22 +736,6 @@ All DTOs are defined as TypeScript interfaces with accompanying Zod validation s
 
 ---
 
-### Error Response Format
-
-All errors follow a consistent structure:
-
-```json
-{
-  "errorCode": "VALIDATION_FAILED",
-  "message": "Request validation failed",
-  "details": [{ "field": "barcode", "message": "Barcode must be numeric" }],
-  "timestamp": "2026-06-09T14:30:00Z",
-  "correlationId": "abc-123-def-456"
-}
-```
-
----
-
 ## 2.5. Security
 
 | Concern              | Strategy                                                                                                                                                                                                                                                                                                                                 |
@@ -765,6 +749,162 @@ All errors follow a consistent structure:
 | Input Validation     | All inputs validated at the controller boundary using Zod schemas via a global `ZodValidationPipe`. Schemas enforce strict types (UUIDs, numeric-only barcodes, length caps) preventing SQL injection, XSS, path traversal, and ReDoS. Validation pipe: [`backend/apps/api/src/common/pipes/zod-validation.pipe.ts`](backend/apps/api/src/common/pipes/zod-validation.pipe.ts). Shared schemas: [`packages/shared-types/src/`](packages/shared-types/src/). |
 | OWASP Compliance     | SQL Injection: 100% parameterized queries via Prisma ORM. XSS: Helmet CSP headers block inline scripts; all user input validated by Zod schemas. CSRF: SameSite=Strict cookies; API auth uses `Authorization` header. Path Traversal: UUID validation on all path parameters. ReDoS: Zod regex patterns tested for catastrophic backtracking; input lengths capped. Security headers configured via Helmet: [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts). |
 | Audit Logging        | All sensitive operations (`login`, `register`, `logout`, `refresh`, `redeemReward`, `validateSession`, `updateProfile`, `deleteAccount`) logged as structured JSON with `userId`, `action`, `IP address`, and `correlationId`. Points transactions are append-only — immutable ledger where balance is derived via `SUM(delta)`, making it tamper-evident. Audit interceptor: [`backend/apps/api/src/common/interceptors/audit.interceptor.ts`](backend/apps/api/src/common/interceptors/audit.interceptor.ts). Points ledger: [`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-points.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-points.repository.ts). |
+
+---
+
+### OWASP Compliance
+
+| OWASP Security | Risk it addresses | How we comply | Validation criterion |
+|---------------------|-------------------|---------------|----------------------|
+| **A01 — Broken Access Control** | An authenticated user reads or modifies another user's sessions, points balance, or profile (IDOR). A low-privilege role reaches an admin or B2B endpoint. | `RolesGuard` + `@Roles()` decorator enforces role-based access on every endpoint. `ResourceOwnershipGuard` compares the JWT `sub` claim against the resource's `userId` on every session/points request. POS and B2B surfaces are separated behind API Key auth (`X-API-Key`), not JWT. | A shopper JWT on `GET /sessions/:otherId` returns 403. A missing/invalid `X-API-Key` on `POST /sessions/:id/validate` returns 401. Guard unit tests cover both cases. |
+| **A02 — Cryptographic Failures** | Leaked password hashes can be cracked. Weak or short JWT/QR secrets can be brute-forced. Unencrypted DB connections expose data in transit. | Passwords hashed with `bcrypt` cost 12. `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `QR_SIGNING_SECRET` validated as `z.string().min(32)` at startup. `DATABASE_URL` enforces `sslmode=require`. Password fields redacted from all logs via Pino's `redact` config. | App fails to start if any secret is under 32 chars. A grep for `password` in log output returns zero results. DB connection without SSL is refused. |
+| **A03 — Injection (SQL & XSS)** | User-supplied input concatenated into SQL queries allows data extraction or destruction. Stored malicious strings served to the mobile client could trigger XSS. | 100% Prisma ORM parameterized queries for all DB access. `Prisma.sql` tagged templates required for any `$queryRaw`. Zod schemas enforce strict types and length caps at every controller boundary. Helmet CSP headers block inline script execution. | Grep for `$queryRaw` with string interpolation returns zero results. A barcode of `'; DROP TABLE--` is rejected by Zod with 400. Response includes `Content-Security-Policy` header. |
+| **A05 — Security Misconfiguration** | Missing security headers, verbose error messages exposing stack traces, debug endpoints exposed in production, or an app that starts with missing secrets. | Helmet middleware sets CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`. `GlobalExceptionFilter` strips stack traces from 500 responses in production. Swagger UI disabled when `NODE_ENV=production`. Startup fails fast via Zod env schema if any required secret is absent. | `curl -I` on any endpoint shows all Helmet headers. A triggered 500 in production returns `{ errorCode, message }` only — no stack trace. App does not start without `JWT_ACCESS_SECRET`. |
+| **A06 — Vulnerable and Outdated Components** | A known CVE in an npm dependency can be directly exploited (e.g., prototype pollution, RCE). | `pnpm audit --audit-level=critical` runs as a CI quality gate and blocks merges on critical/high severity findings. Dependencies reviewed and updated regularly. | CI pipeline fails on any new critical or high CVE. `pnpm audit` in a clean install returns zero critical/high findings. |
+| **A07 — Authentication Failures** | Brute-forced passwords, stolen refresh tokens reused after logout, or expired tokens still accepted allow account takeover. | bcrypt cost 12 for passwords. Account lockout after 5 failed login attempts within 15 minutes (30-min lockout stored in Redis). Access token expires in 15 minutes. Refresh token rotation: old token is invalidated on each use; reuse returns 401. Refresh token stored in HTTP-only `SameSite=Strict` cookie — inaccessible to JavaScript. | The 6th login attempt within 15 min returns 429. A refresh token used twice returns 401 on the second call. An access token accepted 16 minutes after issue returns 401. |
+| **A08 — Software & Data Integrity / ReDoS** | A crafted input triggers catastrophic regex backtracking, blocking the Node.js event loop. A tampered QR token passes validation if signing is weak. | All Zod regex patterns avoid nested quantifiers and have hard `maxLength` caps. QR tokens signed with HS256; `JwtQrSigner.verify()` rejects any tampered or expired token before it reaches domain logic. | A 10 000-character barcode field is rejected in <1 ms. A QR token with a modified payload (but valid signature format) returns `INVALID_QR_TOKEN`. |
+| **A09 — Security Logging & Monitoring Failures** | Undetected breaches or no audit trail for sensitive operations make incident response impossible. | Structured JSON logs via Pino with `correlationId`, `userId`, `action`, and `IP` on every request. `AuditInterceptor` logs all sensitive operations. Sentry captures every unhandled 500 with context. Points ledger is append-only (immutable audit trail). PII fields auto-redacted by Pino's `redact` config. | `validateSession` appears in audit log with correct fields after each call. A triggered 500 creates a Sentry event within 30 seconds. `email` never appears in plain text in any log line. |
+| **A10 — Server-Side Request Forgery (SSRF)** | The analytics worker makes outbound HTTP calls to the AI inference service. If the target URL is attacker-controllable, internal services could be probed. | `AI_INFERENCE_URL` is set only via environment variable, validated as `z.string().url()` (must be HTTPS) at worker startup. No user-supplied URLs are ever passed to HTTP clients. The analytics worker has no public API surface — it only consumes BullMQ jobs from an internal queue. | Worker fails to start if `AI_INFERENCE_URL` is not a valid HTTPS URL. Grep for any `fetch`/`axios` call that uses a runtime-variable URL other than `AI_INFERENCE_URL` returns zero results. |
+
+---
+
+#### A01 — Broken Access Control
+
+**Guards implementation:** Open [`backend/apps/api/src/common/guards/roles.guard.ts`](backend/apps/api/src/common/guards/roles.guard.ts) and implement `canActivate()`: read the `@Roles()` metadata from the handler using `Reflector`, extract the `role` claim from the JWT payload attached to `request.user`, and return `false` if the role is not in the allowed list.
+
+Open [`backend/apps/api/src/common/guards/resource-ownership.guard.ts`](backend/apps/api/src/common/guards/resource-ownership.guard.ts): extract the resource's `userId` from the database (via a repository call), compare it to `request.user.sub`. If they don't match, throw `ForbiddenException`. This guard only applies to user-owned resources (sessions, points history) — not to POS or B2B endpoints.
+
+Apply both guards at the controller level so they cannot be accidentally skipped on new endpoint additions:
+```typescript
+@Controller('sessions')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('shopper')
+export class SessionController { ... }
+```
+
+---
+
+#### A02 — Cryptographic Failures
+
+In [`backend/apps/api/src/config/env.validation.ts`](backend/apps/api/src/config/env.validation.ts), add minimum length checks for all secrets:
+```typescript
+JWT_ACCESS_SECRET: z.string().min(32),
+JWT_REFRESH_SECRET: z.string().min(32),
+QR_SIGNING_SECRET: z.string().min(32),
+DATABASE_URL: z.string().url(),
+```
+If the app starts without these values meeting the constraints, it throws at boot — never silently falls back to a weak default.
+
+In [`backend/apps/api/src/config/pino.config.ts`](backend/apps/api/src/config/pino.config.ts), the `redact` array must include every sensitive field name: `['password', 'password_hash', 'refreshToken', 'accessToken', 'email', 'phone', 'pushToken']`. Pino replaces these with `[Redacted]` before writing to stdout.
+
+In [`backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts):
+```typescript
+hash(plain: string): Promise<string> { return bcrypt.hash(plain, 12); }
+verify(plain: string, hash: string): Promise<boolean> { return bcrypt.compare(plain, hash); }
+```
+Never compare passwords with `===`. Never store a plain or base64-encoded password anywhere.
+
+---
+
+#### A03 — Injection
+
+**SQL Injection — the rule and the exception:**
+
+Prisma's typed query API is safe by construction. Every call to `prisma.user.findUnique()`, `prisma.shoppingSession.create()`, etc. sends parameters as bind values at the PostgreSQL wire protocol level. User input never touches SQL text.
+
+The one dangerous pattern is `$queryRaw` with a plain string or template literal:
+```typescript
+// DANGEROUS — string interpolation goes directly into SQL
+await prisma.$queryRaw(`SELECT * FROM products WHERE barcode = '${barcode}'`);
+
+// SAFE — Prisma.sql converts each value to a bind parameter
+await prisma.$queryRaw(Prisma.sql`SELECT * FROM products WHERE barcode = ${barcode}`);
+```
+Add a CI lint rule or pre-commit hook that greps for `$queryRaw\`` (the dangerous form) and fails the build if found. All repository files live under [`backend/apps/api/src/modules/`](backend/apps/api/src/modules/) and [`backend/apps/analytics-worker/src/infrastructure/repositories/`](backend/apps/analytics-worker/src/infrastructure/repositories/).
+
+**XSS — Helmet configuration in [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts):**
+```typescript
+import helmet from 'helmet';
+app.use(helmet({
+  contentSecurityPolicy: { directives: { defaultSrc: ["'self'"] } },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+}));
+```
+This is the single place all HTTP security headers are configured. Do not split them across middleware files.
+
+---
+
+#### A05 — Security Misconfiguration
+
+In [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts), disable Swagger in production:
+```typescript
+if (process.env.NODE_ENV !== 'production') {
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, document);
+}
+```
+
+In [`backend/apps/api/src/common/filters/global-exception.filter.ts`](backend/apps/api/src/common/filters/global-exception.filter.ts), strip stack traces from 500 responses:
+```typescript
+const message = isProduction ? 'Internal server error' : exception.message;
+const stack = isProduction ? undefined : exception.stack;
+```
+The `correlationId` should always be included so the error can be traced in Sentry without revealing implementation details to the caller.
+
+---
+
+#### A07 — Authentication Failures
+
+Account lockout is stored in Redis. In [`backend/apps/api/src/modules/auth/application/services/auth.service.ts`](backend/apps/api/src/modules/auth/application/services/auth.service.ts):
+- On each failed login, increment `auth:lockout:{email}` with a 15-minute TTL. If the counter reaches 5, throw `TooManyRequestsException` for all subsequent attempts until the key expires.
+- On successful login, delete the lockout key.
+
+Refresh token rotation: when `/auth/refresh` is called, delete the old token hash from Redis before issuing the new one. If the same old token is submitted again (replay attack), it will not be found in Redis and returns 401 immediately. This limits the window of a stolen refresh token to a single use.
+
+---
+
+#### A08 — ReDoS
+
+When writing Zod schemas in [`packages/shared-types/src/validation/`](packages/shared-types/src/validation/), follow these rules for any `.regex()` call:
+- No nested quantifiers: `(a+)+` or `(\w+\s)+` are dangerous.
+- Always pair a `.regex()` with `.max(N)` — caps the worst-case input length and bounds backtracking time.
+- Prefer explicit character classes (`[a-z0-9]`) over shorthand (`\w`) inside repeated groups.
+
+The barcode regex `z.string().regex(/^\d{8,14}$/).max(14)` is safe — anchored, no alternation, fixed character class.
+
+---
+
+#### A09 — Security Logging & Monitoring
+
+In [`backend/apps/api/src/common/interceptors/audit.interceptor.ts`](backend/apps/api/src/common/interceptors/audit.interceptor.ts), implement an `NestInterceptor` that intercepts the response stream. For the sensitive operations listed in the security table, log a structured JSON entry:
+```typescript
+this.logger.log({
+  event: 'AUDIT',
+  action: 'validateSession',
+  userId: request.user?.sub,
+  ip: request.ip,
+  correlationId: request.headers['x-correlation-id'],
+  sessionId: params.id,
+});
+```
+Apply this interceptor globally in `main.ts` via `app.useGlobalInterceptors(new AuditInterceptor(logger))` — this ensures no new sensitive endpoint is accidentally excluded.
+
+---
+
+#### A10 — SSRF
+
+In [`backend/apps/analytics-worker/src/infrastructure/ai/ai-inference.client.ts`](backend/apps/analytics-worker/src/infrastructure/ai/ai-inference.client.ts), the HTTP client is initialized once at startup using a URL read from `process.env.AI_INFERENCE_URL`. It is never modified at runtime and never derived from job data or user input:
+```typescript
+constructor(private readonly config: ConfigService) {
+  this.baseUrl = config.get<string>('AI_INFERENCE_URL'); // validated at startup
+}
+
+async classify(features: FeatureVector): Promise<string> {
+  // this.baseUrl is a fixed value — never interpolate job data into it
+  return this.httpClient.post(`${this.baseUrl}/classify`, features);
+}
+```
+The `AI_INFERENCE_URL` environment variable is validated in the worker's startup config as `z.string().url().startsWith('https://')`. Any attempt to set it to a local or `http://` URL will fail validation before the worker accepts any jobs.
 
 ---
 
