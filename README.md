@@ -1773,6 +1773,15 @@ This section traces the four main workflows through every architectural layer. F
 
 **Prerequisites:** Shopper has created a session, scanned items, and requested a QR code. QR contains a signed JWT embedding a deterministic SHA-256 hash of session items.
 
+**Business Rules:**
+
+- Validation succeeds only from `PENDING_CHECKOUT`; a `COMPLETED`, `EXPIRED`, or `VALIDATION_FAILED` session is rejected — this is what makes the operation replay-safe (a re-submitted QR never double-credits).
+- The POS-scanned item hash must equal the session's frozen hash exactly. Any add/remove/swap → `QR_ITEM_MISMATCH` and the session moves to `VALIDATION_FAILED` (terminal).
+- A QR past its 10-minute `exp` is invalid regardless of session state.
+- Session completion, point credit, and the ledger insert commit in a single `$transaction` — all-or-nothing; a partial credit is impossible.
+- Only a POS API key may call this endpoint, and the key must be scoped to the session's `storeId`.
+- Post-commit side effects (analytics event, WebSocket push, metrics) are best-effort — their failure never rolls back the sale.
+
 **Steps:**
 
 1. **POS Terminal Request:** `POST /api/v1/sessions/{id}/validate` with `qrToken` and `scannedItems[]`. Requires valid POS API Key in `X-API-Key`.
@@ -1814,6 +1823,14 @@ This section traces the four main workflows through every architectural layer. F
 
 **Business Criticality:** B2B revenue path — must be **asynchronous**, **resilient**, and **anonymized**.
 
+**Business Rules:**
+
+- The pipeline is fire-and-forget: it runs only after the checkout transaction commits and must never block, delay, or fail the checkout that triggered it.
+- Classify only users with ≥ 5 `PURCHASE` transactions in the trailing 90 days; below that, skip — no segment is written.
+- Exactly one `ConsumerSegment` per user (upsert), holding aggregated features only — never raw transaction rows.
+- B2B output is aggregate-only; any segment with < 50 users collapses into `"other"` so no individual is re-identifiable (k-anonymity).
+- Jobs are idempotent and retried with backoff; a repeated delivery re-computes the same segment without side effects.
+
 **Steps:**
 
 1. **Event Trigger:** `CheckoutService` publishes `CheckoutCompletedEvent` to `analytics-profile-update` queue. Config: [`backend/apps/api/src/common/queues/queue.config.ts`](backend/apps/api/src/common/queues/queue.config.ts). *What to code:* Export the queue name as a constant (`ANALYTICS_QUEUE = 'analytics-profile-update'`) and register the BullMQ module in `CheckoutModule` using this constant.
@@ -1839,6 +1856,15 @@ This section traces the four main workflows through every architectural layer. F
 
 **Business Criticality:** All other workflows depend on this — no JWT means no session, no checkout.
 
+**Business Rules:**
+
+- `email` is unique; a duplicate registration → `409`.
+- Failed login is indistinguishable whether the email is unknown or the password is wrong — same error, no user enumeration.
+- Access token lives 15 min, refresh token 7 days; refresh tokens are single-use and rotated on every refresh.
+- The server persists only the refresh-token *hash* (Redis). Revocation = deleting that hash; a token whose hash is absent → `401`.
+- The mobile app only ever issues `USER`-scoped tokens (see §2.5); privileged roles are never minted here.
+- Five failed logins within 15 min lock the account for 30 min.
+
 **Steps:**
 
 1. **Register:** `POST /api/v1/auth/register` with `email`, `password`, `fullName`.
@@ -1862,6 +1888,15 @@ This section traces the four main workflows through every architectural layer. F
 ### Workflow 4: Session Creation & Item Scanning
 
 **Business Criticality:** The user-facing happy path — everything before QR generation.
+
+**Business Rules:**
+
+- At most one `ACTIVE` session per user; attempting a second → `409`.
+- Items may be added or removed only while the session is `ACTIVE`; the entity enforces the guard, not the controller.
+- Every session/item mutation requires `session.userId === caller` — otherwise `403` (ownership, not just authentication).
+- QR generation requires ≥ 1 item and transitions `ACTIVE → PENDING_CHECKOUT`, freezing the cart and computing its item hash.
+- Once `PENDING_CHECKOUT`, the cart is immutable — no further add/remove is permitted.
+- A session left `ACTIVE` for more than 2 hours is expired by the cleanup cron (§2.3).
 
 **Steps:**
 
