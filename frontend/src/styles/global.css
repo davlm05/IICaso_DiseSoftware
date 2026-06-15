@@ -1,36 +1,3 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/*
- * SmartCart design tokens — single source of truth.
- * Mirrors the tables in README.md#branding--style-guidelines.
- * tailwind.config.js references these via var(--token), so changing a value
- * here updates every NativeWind utility class that consumes it.
- */
-:root {
-  /* Color palette */
-  --color-primary: #16a34a;
-  --color-secondary: #15803d;
-  --color-accent: #facc15;
-  --color-background: #f9fafb;
-  --color-surface: #ffffff;
-  --color-error: #dc2626;
-  --color-success: #22c55e;
-  --color-text-primary: #111827;
-  --color-text-secondary: #6b7280;
-
-  /* Spacing & layout (4pt scale) */
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 32px;
-
-  /* Typography scale */
-  --font-display: 24px;
-  --font-subheading: 18px;
-  --font-body: 16px;
-  --font-button: 14px;
-  --font-caption: 12px;
-}
