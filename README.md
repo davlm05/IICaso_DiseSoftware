@@ -694,7 +694,7 @@ The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.
 | API Style | REST + OpenAPI | — | Frontend `apiClient` already REST; Swagger auto-gen in Nest |
 | Language | TypeScript / Node.js | 5.5 / 20 LTS | Shared DTOs + Zod schemas live in **`@smartcart/shared-types`**, imported 1:1 by both `frontend/` and `backend/apps/api` → zero contract drift |
 | Framework | NestJS | 10.4 | DI + modules map to template's layered design + Repository/Service/DTO patterns out-of-box |
-| ORM/DB | Prisma 5.20 / PostgreSQL | 17 | Template schema is relational; Prisma migrations + type-safety |
+| ORM/DB | Prisma 6.19 / PostgreSQL | 17 | Template schema is relational; Prisma migrations + type-safety. *(Design target was Prisma 5.20; bumped to 6.19 for Node 24 compatibility — see MVP note below.)* |
 | Async | BullMQ | 5.x | Analytics profiling + push notif queues (template 2.4) |
 | Cache | Redis | 7.2 | Session read-through cache (keeps the API stateless; PostgreSQL is authoritative), profile cache invalidation |
 | File storage | Cloudflare R2 | — | Product images |
@@ -702,6 +702,21 @@ The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.
 | Hosting | Railway / Render | — | Docker; cheap demo, scalable |
 | Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
 | Observability | Pino / OpenTelemetry SDK / Prometheus / Sentry | — | Structured logs, traces, metrics, and error tracking (detailed in §2.6) |
+
+> **MVP implementation note (versiones reales instaladas).** El MVP funcional implementado en `backend/apps/api` cubre el núcleo transaccional (auth, catálogo, sesiones/checkout, rewards) y deja fuera de alcance worker de analytics, Redis, BullMQ, IA y el stack de observabilidad. Versiones efectivamente instaladas y desviaciones respecto a la tabla de diseño:
+>
+> | Librería | Diseño | Instalado (MVP) | Motivo del cambio |
+> |---|---|---|---|
+> | Node.js | 20 LTS | 24.x | Entorno de desarrollo local |
+> | Prisma / `@prisma/client` | 5.20 | 6.19 | Compatibilidad con Node 24 |
+> | NestJS (`@nestjs/*`) | 10.4 | 10.4 | Sin cambio |
+> | Gestor de paquetes | pnpm | npm workspaces | pnpm no disponible en el entorno; npm viene con Node |
+> | `@nestjs/swagger` | (implícito) | 7.4 | OpenAPI/Swagger UI |
+> | Auth | (implícito) | `@nestjs/jwt` 10.2, `passport-jwt` 4, `bcryptjs` 2.4, `jsonwebtoken` 9 | JWT access/refresh + hashing + firma de QR |
+> | Cron | (implícito) | `@nestjs/schedule` 4.1 | Expiración de sesiones |
+> | Seguridad HTTP | Helmet (§2.5) | `helmet` 8 | Cabeceras/HSTS |
+>
+> Guía de arranque y estado detallado del MVP: ver [`backend/README.md`](backend/README.md) y [`backend/PROGRESS.md`](backend/PROGRESS.md).
 
 ## 2.2. Architecture — Implementation Guide
 
@@ -2122,5 +2137,177 @@ Analytics worker uses [`backend/infra/docker/Dockerfile.worker`](backend/infra/d
 - `pnpm test:contract` — API contract tests  
 - `pnpm docker:up` / `pnpm docker:down` — Start/stop local Docker Compose  
 - `pnpm openapi:generate` / `pnpm openapi:validate` — OpenAPI spec tasks  
+
+---
+
+# MVP — Ejecución Local y Alcance
+
+Esta sección documenta el **MVP funcional implementado** (no el diseño completo de §1/§2,
+que es la visión objetivo). El MVP se enfoca en el *problem statement*: el flujo del
+comprador **Descubrir → Escanear → Validar → Acumular → Canjear**, con una solución
+**simplificada pero funcional**. Los módulos satelitales (analytics B2B/IA, colas,
+caché, tiempo real, observabilidad) se redujeron al mínimo indispensable.
+
+> **Importante: el MVP corre 100% en ambiente local.** No hay dependencias de nube:
+> la base de datos es PostgreSQL en Docker (`localhost:5432`), la API escucha en
+> `localhost:3000` y el frontend en el dev server de Expo. No se requieren cuentas,
+> secretos de producción ni servicios externos.
+
+## Fidelidad con la arquitectura diseñada
+
+El backend sigue fielmente la arquitectura del README §2:
+
+- **Monolito modular NestJS** con un módulo por *bounded context*
+  (`auth`, `users`, `catalog`, `checkout`, `rewards`) — §2.2.
+- **Diseño por capas estricto** en cada módulo: `presentation/` (controllers) →
+  `application/` (services + interfaces-puerto) → `domain/` (entidades, máquina de
+  estados, estrategias, errores; TypeScript puro) → `infrastructure/` (repositorios
+  Prisma, signer JWT, mappers) — §2.2 Layer Rules.
+- **Contratos compartidos** `@smartcart/shared-types` (Zod + DTOs) validados en el
+  borde HTTP con `ZodValidationPipe` — §2.2 Type-Safe Contract Sharing.
+- **Patrones de negocio** §2.3: Strategy (cálculo de puntos), State Machine (sesión),
+  Factory + hash SHA-256 (QR anti-tamper), Repository + Inversión de Dependencias,
+  `$transaction` ACID (validación POS + ledger de puntos).
+- **Modelo de datos y endpoints** §2.4 implementados sobre el `schema.prisma` de
+  diseño (enums + jsonb, sin modificar).
+
+## Componentes y cómo ejecutar cada uno
+
+### 1. Base de datos / Data Layer (PostgreSQL en Docker)
+
+La capa de datos es PostgreSQL 17 levantada con Docker Compose
+(`backend/infra/docker/docker-compose.yml`). Prisma es el ORM y la fuente de verdad
+del esquema es `backend/apps/api/prisma/schema.prisma`.
+
+```bash
+# Desde la raíz del repo
+npm run db:up      # levanta el contenedor smartcart-postgres en localhost:5432
+# (para detener: npm run db:down)
+```
+
+Credenciales locales del contenedor: usuario `smartcart`, password `smartcart`,
+base `smartcart`. Datos persistidos en el volumen Docker `smartcart-pgdata`.
+
+### 2. Backend (BE) — API NestJS
+
+```bash
+# Desde la raíz del repo (npm workspaces)
+npm install              # instala dependencias de shared-types + api
+npm run build:types      # compila @smartcart/shared-types (requerido por la API)
+npm run prisma:migrate   # crea/aplica el esquema en la DB (genera Prisma Client)
+npm run db:seed          # inicializa datos demo (ver "Inicialización de datos")
+npm run api:dev          # arranca la API en http://localhost:3000/api/v1
+```
+
+- API base: <http://localhost:3000/api/v1>
+- Swagger / OpenAPI (interactivo): <http://localhost:3000/api/docs>
+- Health check: <http://localhost:3000/api/v1/health>
+- Guía detallada del backend: [`backend/README.md`](backend/README.md)
+- Estado y decisiones del MVP: [`backend/PROGRESS.md`](backend/PROGRESS.md)
+
+### 3. Frontend (FE) — App React Native (Expo)
+
+> El FE del MVP funciona de forma **autónoma con datos mock** (no consume aún la API;
+> la integración FE↔BE quedó fuera del alcance de este MVP — ver más abajo). Se ejecuta
+> con el dev server local de Expo.
+
+```bash
+cd frontend
+npm install              # dependencias del app (Expo SDK 52)
+npm start                # Metro/Expo dev server (Expo Go o dev client)
+# Atajos: npm run android | npm run ios
+# Calidad: npm run lint | npm run typecheck | npm test
+```
+
+## Variables de entorno necesarias
+
+**Backend** — archivo `backend/apps/api/.env` (plantilla en
+[`backend/apps/api/.env.example`](backend/apps/api/.env.example)). Para desarrollo local
+basta copiar el example tal cual:
+
+| Variable | Ejemplo (local) | Descripción |
+|---|---|---|
+| `NODE_ENV` | `development` | Entorno de ejecución |
+| `PORT` | `3000` | Puerto de la API |
+| `DATABASE_URL` | `postgresql://smartcart:smartcart@localhost:5432/smartcart?schema=public` | Conexión Postgres (coincide con docker-compose) |
+| `JWT_ACCESS_SECRET` | `dev-access-secret-change-me` | Secreto del access token |
+| `JWT_REFRESH_SECRET` | `dev-refresh-secret-change-me` | Secreto del refresh token |
+| `JWT_ACCESS_TTL` | `15m` | Vigencia del access token |
+| `JWT_REFRESH_TTL` | `30d` | Vigencia del refresh token |
+| `QR_SIGNING_SECRET` | `dev-qr-signing-secret-min-32-chars-long!!` | Firma del QR — **mínimo 32 caracteres** (§2.3) |
+| `POS_API_KEY` | `pos-demo-key-0001` | API key del POS (header `x-api-key`) para validar sesiones |
+| `B2B_API_KEY` | `b2b-demo-key-0001` | API key B2B (reservada; analytics fuera de alcance) |
+| `CORS_ORIGIN` | `*` | Orígenes permitidos (Expo dev) |
+
+La configuración se valida al arrancar con Zod (`src/config/env.validation.ts`); si
+falta o es inválida una variable, la API **no inicia**.
+
+**Frontend** — no requiere variables de entorno para el MVP (usa mocks).
+
+## Dependencias requeridas
+
+- **Node.js** 20+ (probado en 24) y **npm** (incluye workspaces).
+- **Docker** + Docker Compose (para PostgreSQL local).
+- **Backend**: NestJS 10.4, Prisma 6.19 / `@prisma/client`, `@nestjs/jwt` + `passport-jwt`,
+  `bcryptjs`, `jsonwebtoken`, `@nestjs/swagger`, `@nestjs/schedule`, `helmet`, `zod`
+  (instaladas vía `npm install`). Detalle y desviaciones vs. diseño en la *MVP
+  implementation note* de §2.1.
+- **Frontend**: Expo SDK 52 / React Native 0.76, instaladas con `npm install` en `frontend/`.
+  Para abrir el app: Expo Go o un emulador Android/iOS.
+
+## Procedimiento de inicialización de datos
+
+El seed (`backend/apps/api/prisma/seed.ts`) es **idempotente** (re-ejecutable) y carga:
+
+```bash
+npm run db:seed     # desde la raíz, tras prisma:migrate
+```
+
+Crea:
+- **1 tienda** demo — `storeId` `11111111-1111-4111-8111-111111111111`.
+- **6 productos** cuyos códigos de barras coinciden con el mock del frontend
+  (incluye ejemplos de las estrategias `FIXED_PER_UNIT`, `VOLUME_TIER`, `WEEKEND_BONUS`).
+- **4 recompensas** canjeables.
+- **API keys** POS y B2B (almacenadas como hash SHA-256).
+- **Usuario demo**: `shopper@example.com` / `test-password`, con **balance inicial de 120 puntos**.
+
+Flujo de demostración completo (login → sesión → escanear → QR → validación POS →
+canje) documentado con `curl` en [`backend/README.md`](backend/README.md).
+
+## Alcance del MVP
+
+### ✅ Incluido (resuelve el problem statement)
+
+- **Auth** local: registro, login, refresh, logout (JWT access/refresh, bcrypt).
+- **Perfil + puntos**: `GET/PATCH /users/me`, historial y **balance derivado** del
+  ledger inmutable (`SUM(delta)`).
+- **Catálogo**: lookup por código de barras y búsqueda.
+- **Sesión de compra y checkout** (núcleo): crear sesión, escanear/eliminar ítems,
+  **máquina de estados**, **cálculo de puntos por estrategias**, **QR firmado con hash
+  anti-tamper**, **validación POS** (acredita puntos en `$transaction`), expiración por cron.
+- **Recompensas**: listar, detalle y **canje** (genera cupón + débito atómico).
+- **Health check**, **Swagger/OpenAPI**, validación de entrada con Zod, manejo global
+  de errores, Helmet/CORS.
+- **Persistencia real** en PostgreSQL + seed de datos demo.
+
+### ❌ Fuera de alcance (reducido al mínimo o pospuesto)
+
+| Área | Estado en el MVP | Razón |
+|---|---|---|
+| Integración FE ↔ BE | FE usa mocks; BE se prueba vía Swagger/curl | Mantener estable el FE ya entregado |
+| Worker de analytics B2B / IA (§2.3 §1, §2.8 W2) | No implementado; evento `CheckoutCompletedEvent` se loguea (publisher no-op) | Módulo satelital; no parte del flujo del comprador |
+| Redis / caché Cache-Aside (§2.1) | No usado; lectura directa a Postgres | Innecesario para volumen de demo |
+| BullMQ / colas (§2.1) | No usado | Depende del worker de analytics |
+| WebSockets / `SessionGateway` (§2.3) | No implementado; el FE no hace polling en el MVP | Tiempo real es mejora, no núcleo |
+| Observabilidad: Pino/OpenTelemetry/Prometheus/Sentry (§2.6) | Solo logger por defecto de Nest | Operacional, no funcional |
+| Endpoints `/analytics/*` (§2.4) | No implementados | Producto B2B, fuera del flujo móvil |
+| Revocación de refresh tokens / denylist (§2.5) | Logout es stateless | Requiere Redis; aceptable para demo |
+| Almacenamiento de imágenes (Cloudflare R2) | No usado (`imageUrl` opcional) | Externo a nube |
+| Infra de producción: Nginx, K8s, Terraform, CI/CD, EAS (§2.9) | No aplicada | El MVP corre solo en local |
+
+> Cada deuda técnica está además registrada en [`backend/PROGRESS.md`](backend/PROGRESS.md).
+> Los archivos de los módulos fuera de alcance (p. ej. `apps/analytics-worker/`,
+> `checkout/.../gateways/`) permanecen como *stubs* del diseño para no perder la
+> trazabilidad con §2.
 
 ---

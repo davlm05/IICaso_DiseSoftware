@@ -1,0 +1,24 @@
+frontend/
+frontend/.expo
+frontend/node_modules
+.claude
+CLAUDE.MD
+
+# Node / monorepo
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.local
+backend/apps/api/.env
+
+# Prisma
+backend/apps/api/prisma/migrations/dev.db*
+
+# Logs
+*.log
+npm-debug.log*
