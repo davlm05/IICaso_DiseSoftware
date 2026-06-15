@@ -47,14 +47,11 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <RootErrorBoundary>
           <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="login" />
             <Stack.Screen name="index" />
             <Stack.Screen name="scan" options={{ presentation: "fullScreenModal" }} />
             <Stack.Screen name="checkout" />
             <Stack.Screen name="confirmation" />
             <Stack.Screen name="rewards" />
-            <Stack.Screen name="profile" />
-            <Stack.Screen name="create-user" options={{ presentation: "modal" }} />
           </Stack>
         </RootErrorBoundary>
       </QueryClientProvider>

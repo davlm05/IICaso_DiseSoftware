@@ -4,16 +4,18 @@ module.exports = {
   presets: [require("nativewind/preset")],
   theme: {
     extend: {
+      // Tokens are defined once in src/styles/global.css (:root) and referenced
+      // here via var(). See README.md#branding--style-guidelines.
       colors: {
-        primary: "#16A34A",
-        secondary: "#15803D",
-        accent: "#FACC15",
-        background: "#F9FAFB",
-        surface: "#FFFFFF",
-        error: "#DC2626",
-        success: "#22C55E",
-        "text-primary": "#111827",
-        "text-secondary": "#6B7280",
+        primary: "var(--color-primary)",
+        secondary: "var(--color-secondary)",
+        accent: "var(--color-accent)",
+        background: "var(--color-background)",
+        surface: "var(--color-surface)",
+        error: "var(--color-error)",
+        success: "var(--color-success)",
+        "text-primary": "var(--color-text-primary)",
+        "text-secondary": "var(--color-text-secondary)",
       },
       fontFamily: {
         display: ["Poppins_700Bold"],
@@ -21,12 +23,19 @@ module.exports = {
         body: ["Inter_400Regular"],
         caption: ["Inter_400Regular"],
       },
+      fontSize: {
+        display: "var(--font-display)",
+        subheading: "var(--font-subheading)",
+        body: "var(--font-body)",
+        button: "var(--font-button)",
+        caption: "var(--font-caption)",
+      },
       spacing: {
-        xs: "4px",
-        sm: "8px",
-        md: "16px",
-        lg: "24px",
-        xl: "32px",
+        xs: "var(--spacing-xs)",
+        sm: "var(--spacing-sm)",
+        md: "var(--spacing-md)",
+        lg: "var(--spacing-lg)",
+        xl: "var(--spacing-xl)",
       },
     },
   },
