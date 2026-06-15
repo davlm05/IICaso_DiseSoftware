@@ -1,3 +1,690 @@
+# UX Analysis
+
+## Test Setup
+
+- **Platform Used:** Maze | User Research and Testing Platform
+- **Prototype Link:** [https://t.maze.co/542525865]
+- **Prototype Scope:** Main onboarding, product scanning, QR checkout, and rewards redemption flow
+- **Number of Participants:** 4
+
+### Defined Tasks
+
+| # | Task Description | Success Criteria |
+|---|-----------------|-----------------|
+| 1 | Normal flow of the buyer | Scan and complete list and reach the rewards screen |
+
+---
+
+## Test Results
+
+### Task 1 — [Follow the normal flow of the application]
+
+| Participant | Outcome | Duration |
+|-------------|---------|----------|
+| [542985010]        | Success | [00:02:13] |
+| [542830539]        | Success | [00:05:20] |
+| [542990056]        | Success | [00:02:57] |
+| [542985511]        | Fail | [00:01:52] |
+
+---
+
+## Heatmaps
+
+| Screen | Heatmap |
+|--------|----------------|
+|Lobby (empty) | ![MazeLobby](media/mazeLobby.jpg) |
+|Camera Scanning | ![MazeScanning](media/mazeScanning.jpg) |
+|Pending Items / QR Generation | ![MazePendingItems](media/mazePendingItems.jpg) |
+|QR Validation | ![MazeQRValidation](media/mazeQRValidation.jpg) |
+| Rewards | ![MazeRewards](media/mazeRewards.jpg) |
+
+---
+
+## Usability Attributes
+
+| Attribute | Target |
+|-----------|--------|
+| **Learnability** | A first-time shopper completes the scan → validate → redeem loop with no instructions, guided by one primary CTA per screen ("Escanear producto" → "Generar QR de salida" → "Ver mis recompensas"). |
+| **Efficiency** | Scanning a product and adding it to the pending list takes ≤ 3 interactions: tap CTA → align barcode → confirm. |
+| **Error Prevention** | After a scan, the app requires explicit confirmation of the detected product before adding it (prevents wrong-product accrual). Point accrual is blocked unless the location pill confirms the user is inside an affiliated store. |
+| **Visibility of Status** | Current points, pending points (yellow tags), and the live QR validation state ("Esperando validación…") are always visible. The points card progress bar shows the deficit to the next reward. |
+| **Confidence Feedback** | Green success toast on each scan ("+15 pts pendientes"), full-green confirmation hero with checkmark, and explicit warning/error messages for failed scans or expired QR. |
+| **Consistency** | Uniform design tokens (color, spacing, typography) applied via NativeWind across all 7 screens; the green brand color signals "valid / earn points" everywhere. |
+| **Error Recovery** | A failed camera scan offers retry or manual barcode entry without leaving the flow (**Strategy** pattern). A wrongly scanned item can be deleted before validation via the red X (**Command** pattern with undo). |
+| **Accessibility** | WCAG 2.1 AA: contrast ≥ 4.5:1 (verified against the green palette), screen-reader labels on camera/QR/CTAs, scalable text, and non-color-only status cues (icons + text alongside green/yellow/red). |
+
+---
+
+## Branding & Style Guidelines
+
+SmartCart's visual identity is **green-forward** — green communicates "valid scan / points earned" and dominates the checkout and confirmation screens for cashier visibility.
+
+The tokens are defined once as CSS custom properties in [`frontend/src/styles/global.css`](frontend/src/styles/global.css) (`:root`) and exposed as NativeWind utility classes by [`frontend/tailwind.config.js`](frontend/tailwind.config.js).
+
+#### Color Palette
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `--color-primary` | `#16A34A` | Primary actions, CTAs ("Escanear", "Generar QR"), confirmation hero |
+| `--color-secondary` | `#15803D` | Secondary green elements, pressed states, gradient base for featured reward |
+| `--color-accent` | `#FACC15` | Pending-points tags, "Nuevo" highlights, badges |
+| `--color-background` | `#F9FAFB` | App background |
+| `--color-surface` | `#FFFFFF` | Cards, modals, product list rows |
+| `--color-error` | `#DC2626` | Error states, delete (red X), expired QR |
+| `--color-success` | `#22C55E` | Success toast, validated-product checkmarks |
+| `--color-text-primary` | `#111827` | Main text |
+| `--color-text-secondary` | `#6B7280` | Subtitles, captions, motivational subtitle |
+
+### Typography
+
+| Role | Font Family | Weight | Size | Usage |
+|------|-------------|--------|------|-------|
+| Display / Heading | Poppins | 700 | 24px | Screen titles, points total |
+| Subheading | Poppins | 600 | 18px | Section headers ("Productos con puntos hoy") |
+| Body | Inter | 400 | 16px | General text, product names |
+| Caption | Inter | 400 | 12px | Labels, hints, expiry dates, alphanumeric QR fallback |
+| Button | Poppins | 600 | 14px | CTA text |
+
+### Spacing & Layout
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--spacing-xs` | 4px | Tight spacing (tag padding) |
+| `--spacing-sm` | 8px | Internal component padding |
+| `--spacing-md` | 16px | Default padding, card gaps |
+| `--spacing-lg` | 24px | Section spacing |
+| `--spacing-xl` | 32px | Screen-level padding |
+
+- **Grid System:** Single-column, mobile-first stacked layout (one primary action per screen); 4pt spacing scale.
+- **Breakpoints:** `sm: 375px` (baseline phone), `md: 768px` (large phones/tablet), `lg: 1024px` (tablet landscape).
+- **Iconography:** Lucide React Native (`lucide-react-native` 0.468.0) — consistent outline set for nav, scan, flash, delete, rewards.
+- **Logo Usage Rules:** Minimum 24px height; maintain clear space equal to the cart glyph height; never recolor outside the primary/secondary green or white-on-green.
+
+---
+
+## Core Business Process
+
+### Onboarding & Home (Lobby)
+1. The user opens the app upon arriving at a store.
+2. The system detects the user's presence in an affiliated store and enables point accumulation for the session.
+3. The user reviews their current point balance, progress toward the next reward, and the day's sponsored products.
+4. The user chooses to begin scanning or to review pending items from a prior moment in the session.
+
+### Product Scanning & Pending List
+1. The user initiates scanning.
+2. The system activates barcode capture (camera by default).
+3. Alternatively, the user provides the barcode manually when the printed code is damaged.
+4. Once a code is captured, the system retrieves the product details and asks the user to confirm the detected product.
+5. Upon confirmation, the system validates that the user is in-store, the format is valid, the product is sponsored, and it is not already in the session, then adds it with its pending points.
+6. The user may continue scanning or move toward checkout.
+
+### Checkout & Points Validation
+1. With shopping complete, the user requests a checkout validation code.
+2. The system issues a unique, time-limited (10-minute) code representing the pending items.
+3. The user presents the code to the cashier.
+4. The system waits for the store's confirmation of the purchase.
+5. Upon confirmation, the system credits the corresponding points and informs the user that the purchase was verified.
+
+### Rewards Redemption
+1. The user opens the rewards section.
+2. The system shows the available point balance and the redeemable rewards, marking those still out of reach with the missing amount.
+3. The user selects a reward and confirms spending the points.
+4. The system deducts the points and issues a coupon ready to use.
+
+---
+
+## Wireframes
+
+| Screen | Prototype | Purpose |
+|--------|----------------|---------|
+| 1 — Lobby (empty) | ![1](media/wireframes/1.png) | Overview of points, sponsored products, primary scan CTA, location pill. |
+| 2 — Camera Scanning | ![2](media/wireframes/2.png) | Capture barcode via camera with manual-entry fallback and in-store confirmation. |
+| 3 — Lobby (1 product) | ![3](media/wireframes/3.png) | First scanned product with toast, pending-points subsection, delete option. |
+| 4 — Lobby (multiple) | ![4](media/wireframes/4.png) | Full pending list with dual CTAs (scan more / generate QR). |
+| 5 — QR Validation | ![5](media/wireframes/5.png) | Full-green QR + alphanumeric fallback, 10-min validity, polling status. |
+| 6 — Confirmation | ![6](media/wireframes/6.png) | Points-credited hero, validated products, new total, paths to home or rewards. |
+| 7 — My Rewards | ![7](media/wireframes/7.png) | Available rewards + redeemed coupons tabs; locked rewards show point deficit. |
+
+---
+
+## UX Test Results
+
+- **Platform Used:** Maze (unmoderated remote) + in-person sessions with external design students.
+- **Key Findings (expected focus areas):** discoverability of the manual-entry fallback on the scan screen; clarity of the "pending vs credited" points distinction; one-tap QR generation satisfaction.
+- **Corrections Integrated:** track each finding in the Phase 1 "Key Findings & Applied Corrections" table and reflect the applied fix in the final NativeWind component styles.
+
+---
+
+## Key Findings & Applied Corrections
+
+| # | Finding / Problem Detected | Usability Dimension Affected | Correction Applied | Design Decision Justification |
+|---|---------------------------|-----------------------------|--------------------|-------------------------------|
+| 1 | Some screens give greater visual prominence to secondary actions over the intended primary action (P542990056). Correlates with P542985511's failure — this participant completed the flow in the shortest time but did not reach the goal, suggesting flow confusion rather than a readability issue. | Learnability / Visual Hierarchy | Increase the visual weight (size and color contrast) of the primary CTA on each screen; reduce the prominence of secondary controls so they do not compete with the priority action. | A clearly differentiated primary CTA reduces action ambiguity and guides the user toward the correct step in the Discover → Scan → Validate → Earn → Redeem loop without requiring exploration. |
+| 2 | Users lack context about which step of the flow they are on and what action is expected from them at each screen (P542985010). | Learnability / Feedback | Add a lightweight progress indicator (e.g., "Step 2 of 3 — Scan your product") and contextual micro-copy on the key screens of the main flow. | Progress feedback aligns user expectations with the app flow, reduces navigation anxiety, and lowers the likelihood of drop-off at intermediate steps. |
+| 3 | The interface presents too many visual elements simultaneously, creating a sense of overwhelm (P542830539). This participant had the highest completion time in the group (00:05:20 vs. avg ~00:02:47), directly supporting the efficiency impact. | Efficiency / Cognitive Load | Apply progressive disclosure: hide advanced or infrequent options until the user requests them; reduce the number of elements visible by default on high-density screens (lobby and product list). | Lowering information density per screen reduces cognitive load, speeds up decision-making, and improves the overall perception of product simplicity. |
+| 4 | Positive finding: text legibility was rated as clear by participants (P542985511). This participant's task failure is attributed to visual hierarchy (finding #1), not typography. | N/A (positive validation) | No correction needed — retain the current typographic system. | Confirmed text clarity indicates that the font, size, and contrast decisions are appropriate for the use context. No adjustment required. |
+
+# Frontend Design
+
+## 1.1. Technology Stack
+
+SmartCart is a **consumer-facing mobile app** whose core features — barcode scanning via the device camera, in-store presence detection (GPS/BLE beacons), QR generation at checkout, and push notifications on point credit — all require **native device APIs**. A native cross-platform stack is therefore the correct application type.
+
+| Concern | Choice | Version | Justification |
+|---------|--------|---------|---------------|
+| **Application Type** | Native Mobile App (managed via Expo) | — | The Discover → Scan → Validate → Accumulate → Redeem loop depends on camera, BLE/GPS, QR rendering, and push — all native capabilities. A native app delivers the in-store performance and hardware access a PWA cannot reliably provide. |
+| **Framework** | React Native (Expo SDK 52) | RN **0.76.6** / Expo SDK **52** | A single codebase targets both iOS and Android, halving cost for a consumer app aimed at supermarket shoppers. Expo SDK 52 bundles native modules (camera, secure storage, notifications) with guaranteed inter-compatibility and provides EAS Build/OTA updates. New Architecture (Fabric/TurboModules) is enabled by default for smooth camera/scan UI. |
+| **UI Runtime** | React | **18.3.1** | The exact React version shipped and validated by Expo SDK 52 / RN 0.76.6. |
+| **Language** | TypeScript | **5.3.3** | Static typing makes the session state machine, command objects, and DTOs (`ProductDTO`) safe to refactor. Version 5.3.3 is the version pinned by `jest-expo` 52 and RN 0.76.6 templates. |
+| **State Management** | Zustand | **4.5.5** | Lightweight global store with no boilerplate — ideal for the single active shopping session (points total, pending items, session status). Its subscription model is the natural substrate for the **Observer** and **Singleton** patterns. Compatible with React 18.3.1. |
+| **Server State / Data Fetching** | TanStack Query (React Query) | **5.59.16** | Implements the client side of the **Cache-Aside** product lookup (cached barcode → product), automatic retries, and request de-duplication. Decouples server cache from UI state. Works with React 18.3.1 and Axios. |
+| **HTTP Client** | Axios | **1.7.7** | Request/response interceptors automate JWT attachment and silent token refresh, and centralize error mapping (the **Facade** over the backend API). |
+| **Navigation** | Expo Router (on React Navigation 7) | **4.0.x** | File-based routing over RN screens (Lobby, Scan, QR, Confirmation, Rewards). Bundled with and compatible with Expo SDK 52. |
+| **Barcode / Camera Scanning** | expo-camera | **16.0.x** | Provides the live camera feed and barcode recognition for `CameraStrategy`. Shipped with Expo SDK 52, so native compatibility is guaranteed. |
+| **In-Store Presence** | expo-location + react-native-ble-plx | location **18.0.x** / ble-plx **3.2.1** | GPS + BLE beacon detection gates point accrual to "user inside affiliated store" (required by the location pill on Screens 1 & 2). ble-plx 3.2.1 supports RN 0.76 New Architecture. |
+| **QR Rendering** | react-native-qrcode-svg + react-native-svg | qrcode-svg **6.3.2** / svg **15.8.0** | Renders the large checkout QR on Screen 5. `react-native-svg` 15.8.0 is the version vendored by Expo SDK 52. |
+| **Real-time Validation Status** | socket.io-client | **4.8.0** | Pushes POS validation status to the `ValidatingState` screen so "Esperando validación…" flips to the Confirmation screen without manual polling. Falls back to interval polling. |
+| **Push Notifications** | expo-notifications (FCM/APNs) | **0.29.x** | Fires the "Puntos acreditados" notification when the backend credits points. Shipped with Expo SDK 52. |
+| **Forms & Validation** | React Hook Form + Zod | RHF **7.53.0** / Zod **3.23.8** | Validates the manual-barcode-entry fallback and auth forms. Zod schemas double as the runtime guard for API DTOs. Both compatible with React 18.3.1 / TS 5.3.3. |
+| **Styling / Design Tokens** | NativeWind (Tailwind CSS) | NativeWind **4.1.x** / Tailwind **3.4.x** | Utility-first styling enforces the design tokens (color/spacing/typography) consistently across all 7 screens. NativeWind 4 requires RN ≥ 0.76 — aligned with our framework. |
+| **List Virtualization** | @shopify/flash-list | **1.7.x** | High-performance virtualized lists for `PendingItemsList`, `RewardsCatalog`, and `CouponsList` — faster and lower-memory than `FlatList`. Compatible with RN 0.76 New Architecture. |
+| **Image Loading** | expo-image | **2.0.x** | Cached, performant images for the sponsored carousel (`cachePolicy="memory-disk"`, WebP). Shipped with Expo SDK 52. |
+| **Iconography** | lucide-react-native | **0.468.0** | Consistent outline icon set (nav, scan, flash, delete, rewards) wrapped by the `Icon` atom. |
+| **Secure Storage** | expo-secure-store | **14.0.x** | Stores JWT access/refresh tokens in the iOS Keychain / Android Keystore (never `AsyncStorage`). Shipped with Expo SDK 52. |
+| **Linting** | ESLint | **9.12.0** | Enforces code quality via flat config with the Expo/React Native preset. |
+| **Formatting** | Prettier | **3.3.3** | Deterministic formatting; integrated with ESLint to avoid rule conflicts. |
+| **Unit Testing** | Jest (jest-expo) | Jest **29.7.0** / jest-expo **52.0.x** | jest-expo 52 is the preset matched to Expo SDK 52 / RN 0.76.6. Covers utils, stores, commands, and validation handlers. |
+| **Integration / UI Testing** | React Native Testing Library | **12.8.0** | Tests component interactions (scan confirmation modal, delete-with-undo, QR generation) on RN 0.76.6. |
+| **E2E Testing** | Maestro | **1.39.x** | Flow-based E2E across real devices/simulators for the critical scan → checkout → redeem journey. Simpler than Detox for Expo-managed apps. |
+| **Monitoring** | Sentry (sentry-expo) | **9.x** | Captures uncaught exceptions, performance traces, and crash reports in production. |
+| **CI/CD** | GitHub Actions + EAS Build | — | GitHub Actions runs lint/test/build; EAS Build produces signed iOS/Android binaries and EAS Submit ships to the stores. |
+| **Distribution / Hosting** | Expo EAS → Apple App Store + Google Play | — | Native app distribution channel; EAS Update delivers OTA JS patches between store releases. |
+
+### Environments
+
+| Environment | URL / Endpoint | Purpose |
+|-------------|----------------|---------|
+| Development | `http://localhost:8081` (Metro) → API `http://localhost:3000/api/v1` | Local development on simulator/Expo Go (dev client) |
+| Staging | `https://api-staging.smartcart.app/api/v1` | QA and pre-release validation; internal EAS distribution build |
+| Production | `https://api.smartcart.app/api/v1` | Live users; App Store / Play Store release |
+
+---
+
+## 1.2. Component Design Strategy
+
+#### Atoms — `/components/atoms/`
+
+| Component | File | How to build it | Token classes (NativeWind) |
+|-----------|------|-----------------|----------------------------|
+| `Button` | [`/components/atoms/Button.tsx`](/frontend/src/components/atoms/Button.tsx) | Stateless `Pressable`; props `variant` (`'primary' \| 'secondary' \| 'ghost'`), `label`, `icon?`, `onPress`, `disabled?`. Maps `variant` → NativeWind token classes — the single source for the primary-vs-secondary CTA hierarchy (usability Finding #1). Sets `accessibilityRole="button"` + `accessibilityLabel`. | container `rounded-md px-lg py-md`; primary `bg-primary` + label `text-surface text-button font-heading`; secondary `bg-secondary text-surface`; ghost `bg-transparent text-primary`; `disabled?` → `opacity-50` |
+| `Input` | [`/components/atoms/Input.tsx`](/frontend/src/components/atoms/Input.tsx) | Controlled wrapper over RN `TextInput`; props `value`, `onChangeText`, `error?`, `keyboardType?`. Driven by React Hook Form `Controller`; renders the Zod error message; `accessibilityLabel` required. Used by the manual-barcode fallback and auth forms. | field `bg-surface text-text-primary text-body px-md py-sm rounded-md`; `error?` border + message `text-error text-caption` |
+| `Icon` | [`/components/atoms/Icon.tsx`](/frontend/src/components/atoms/Icon.tsx) | Thin wrapper over `lucide-react-native`; props `name`, `size`, `color` (from tokens). Decorative icons set `accessibilityElementsHidden`; meaningful icons pair with text. | `color` from token (`text-primary` / `text-text-secondary` / `text-error`); no background |
+| `Badge` | [`/components/atoms/Badge.tsx`](/frontend/src/components/atoms/Badge.tsx) | Small label pill; props `text`, `tone` (`'neutral' \| 'new'`). Renders the "Nuevo" tag on the latest scanned item. | pill `px-xs py-xs rounded-sm text-caption`; `new` → `bg-accent text-text-primary`; `neutral` → `bg-background text-text-secondary` |
+| `PointsTag` | [`/components/atoms/PointsTag.tsx`](/frontend/src/components/atoms/PointsTag.tsx) | Points pill; props `points`, `state` (`'pending' \| 'credited'`). Color **and** icon by state (accent for pending, success for credited) — never color alone (a11y). | pill `px-sm py-xs rounded-sm text-caption`; `pending` → `bg-accent text-text-primary`; `credited` → `bg-success text-surface` |
+| `LocationPill` | [`/components/atoms/LocationPill.tsx`](/frontend/src/components/atoms/LocationPill.tsx) | Props `storeName`, `verified`. Dot + text; the visual gate that signals point accrual is enabled (user inside affiliated store). | container `bg-surface px-sm py-xs rounded-md`; text `text-text-secondary text-caption`; verified dot `bg-success`, else `bg-text-secondary` |
+| `Toast` | [`/components/atoms/Toast.tsx`](/frontend/src/components/atoms/Toast.tsx) | Transient banner; props `message`, `tone` (`success \| warning \| error`), `visible`. Subscribes to the global notification slice (Observer), auto-dismisses, and sets `accessibilityLiveRegion="polite"`. | banner `px-md py-sm rounded-md text-surface text-body`; `success` → `bg-success`; `warning` → `bg-accent text-text-primary`; `error` → `bg-error` |
+
+#### Molecules — `/components/molecules/`
+
+| Component | File | How to build it | Token classes (NativeWind) |
+|-----------|------|-----------------|----------------------------|
+| `ProductCard` | [`/components/molecules/ProductCard.tsx`](/frontend/src/components/molecules/ProductCard.tsx) | Composes `Icon` + `PointsTag` + delete `Button`; props `product: ProductDTO`, `isNew?`, `onDelete`. Wrapped in `React.memo`. Delete dispatches `RemoveProductCommand` (supports undo). | card `bg-surface rounded-md p-md gap-sm`; title `text-text-primary text-body`; delete icon `text-error` |
+| `PointsCard` | [`/components/molecules/PointsCard.tsx`](/frontend/src/components/molecules/PointsCard.tsx) | Points total + progress bar + pending subsection; props `total`, `pending`, `nextRewardAt`. Reads from the session store via a selective Zustand selector. | card `bg-surface rounded-md p-lg`; total `text-text-primary text-display font-display`; progress fill `bg-primary`; pending caption `text-text-secondary text-caption` |
+| `ScanConfirmationModal` | [`/components/molecules/ScanConfirmationModal.tsx`](/frontend/src/components/molecules/ScanConfirmationModal.tsx) | Props `product`, `onConfirm`, `onCancel`. Focus is trapped; confirm is the primary CTA. Enforces error prevention — explicit confirmation before accrual. | sheet `bg-surface rounded-lg p-lg gap-md`; confirm = primary `Button`; cancel = ghost `Button` |
+| `RewardCard` | [`/components/molecules/RewardCard.tsx`](/frontend/src/components/molecules/RewardCard.tsx) | Props `reward: RewardDTO`, `balance`, `onRedeem`. Locked state shows the point deficit; redeem `Button` is disabled when `balance < reward.cost`. | card `bg-surface rounded-md p-md`; cost `text-text-primary text-body`; locked deficit `text-text-secondary text-caption` + redeem `Button` `opacity-50` |
+| `QRCodeView` | [`/components/molecules/QRCodeView.tsx`](/frontend/src/components/molecules/QRCodeView.tsx) | Wraps `react-native-qrcode-svg`; props `token`, `expiresAt`. Renders the alphanumeric fallback code and a countdown to the 10-minute expiry. | wrapper `bg-primary p-xl rounded-lg`; fallback code `text-surface text-caption font-caption`; countdown `text-surface text-body` |
+
+#### Organisms — `/components/organisms/`
+
+| Component | File | How to build it |
+|-----------|------|-----------------|
+| `BottomNav` | [`/components/organisms/BottomNav.tsx`](/frontend/src/components/organisms/BottomNav.tsx) | Tab bar (Home/Scan/Rewards/Profile); props `active`. Each tab sets `accessibilityRole="tab"`; navigation via Expo Router. |
+| `PendingItemsList` | [`/components/organisms/PendingItemsList.tsx`](/frontend/src/components/organisms/PendingItemsList.tsx) | `FlashList` of `ProductCard`; props `items`, `onDelete`. Empty list renders the dashed empty-state card. |
+| `SponsoredCarousel` | [`/components/organisms/SponsoredCarousel.tsx`](/frontend/src/components/organisms/SponsoredCarousel.tsx) | Horizontal list of sponsored cards; props `products`, `onSeeAll`. Implements the "Ver todos" progressive-disclosure affordance (usability Finding #3). |
+| `RewardsCatalog` | [`/components/organisms/RewardsCatalog.tsx`](/frontend/src/components/organisms/RewardsCatalog.tsx) | Tabs ("Disponibles" / "Mis cupones") wrapping a list of `RewardCard` and `CouponsList`; props `rewards`, `coupons`, `balance`. |
+| `CouponsList` | [`/components/organisms/CouponsList.tsx`](/frontend/src/components/organisms/CouponsList.tsx) | `FlashList` of redeemed coupons ready to use; props `coupons`. |
+
+#### Product decorators — `/components/product/decorators/`
+
+`SponsoredProductDecorator`, `NewlyScannedDecorator`, `ValidatedProductDecorator`, `LockedRewardDecorator` wrap a base card to add a visual state (badge / green highlight / check / lock) **without** modifying it (Decorator pattern). They are stacked per screen context — e.g. a sponsored + newly-scanned item composes two decorators.
+
+#### Templates / Screens — `/app/`
+
+| Screen component | Route file | How to build it |
+|------------------|-----------|-----------------|
+| `LobbyScreen` | [`/app/index.tsx`](/frontend/app/index.tsx) | Container: calls `useSession`, composes `PointsCard` + `SponsoredCarousel` + `PendingItemsList` + `BottomNav`. |
+| `ScanScreen` | [`/app/scan.tsx`](/frontend/app/scan.tsx) | Container: calls `useScan` (Strategy: camera/manual), mounts the camera, renders `ScanConfirmationModal`. |
+| `QRValidationScreen` | [`/app/checkout.tsx`](/frontend/app/checkout.tsx) | Container: calls the checkout hook (socket/poll), renders `QRCodeView` + waiting status. |
+| `ConfirmationScreen` | [`/app/confirmation.tsx`](/frontend/app/confirmation.tsx) | Container: renders the credited-points hero, validated list, and home/rewards CTAs. |
+| `RewardsScreen` | [`/app/rewards.tsx`](/frontend/app/rewards.tsx) | Container: calls `useRewards`, composes `RewardsCatalog`. |
+
+Screens are **containers**: they own data/state (hooks + stores), compose organisms, and pass plain props down. Presentational children hold no business logic (Container/Presentational split).
+
+---
+
+## 1.3. Security
+
+The authentication, session, and authorization classes are modeled below; the
+`Authentication`, `Session Management`, and `Authorization (RBAC)` subsections
+each reference it.
+
+```mermaid
+classDiagram
+    class AuthService {
+        -api: ApiClient
+        -tokens: ITokenStore
+        -session: AuthSessionStore
+        +login(email: string, pwd: string) AuthUser
+        +logout() void
+        +refresh() string
+    }
+
+    class ITokenStore {
+        <<interface>>
+        +getAccess() string
+        +getRefresh() string
+        +setTokens(access: string, refresh: string) void
+        +clear() void
+    }
+
+    class SecureTokenStore {
+        -store: SecureStore
+        +getAccess() string
+        +getRefresh() string
+        +setTokens(access: string, refresh: string) void
+        +clear() void
+    }
+
+    class ApiClient {
+        -instance: AxiosInstance
+        -refreshQueue: RefreshQueue
+        +request(config) Response
+        -attachBearer(config) config
+        -onUnauthorized(error) Response
+    }
+
+    class RefreshQueue {
+        -inFlight: Promise~string~
+        -waiters: Request[]
+        +enqueue(req: Request) Response
+        +runRefresh() string
+    }
+
+    class AuthSessionStore {
+        +user: AuthUser
+        +role: Role
+        +status: SessionStatus
+        +setSession(user: AuthUser) void
+        +reset() void
+    }
+
+    class AuthUser {
+        +id: string
+        +email: string
+        +role: Role
+    }
+
+    class Role {
+        <<enumeration>>
+        USER
+        BACKOFFICE_OPERATOR
+        CATALOG_MANAGER
+        STORE_ADMIN
+        SUPER_ADMIN
+    }
+
+    class SessionStatus {
+        <<enumeration>>
+        ANONYMOUS
+        AUTHENTICATED
+        REFRESHING
+        EXPIRED
+    }
+
+    SecureTokenStore ..|> ITokenStore
+    AuthService --> ITokenStore : reads/writes tokens
+    AuthService --> ApiClient : sends requests
+    AuthService --> AuthSessionStore : updates session
+    ApiClient --> RefreshQueue : single-flight refresh
+    ApiClient --> ITokenStore : attaches Bearer
+    AuthSessionStore --> AuthUser
+    AuthSessionStore --> SessionStatus
+    AuthUser --> Role
+```
+
+### Authentication
+
+- **Provider / Method:** JWT (access + refresh) issued by the SmartCart backend.
+- **Flow:**
+  1. User submits email + password (validated client-side with Zod).
+  2. Backend validates credentials and returns an access token (short-lived) and a refresh token.
+  3. Frontend stores both tokens in **expo-secure-store** (Keychain/Keystore) — never in `AsyncStorage`.
+  4. The Axios request interceptor attaches `Authorization: Bearer <access>` to every protected request.
+  5. On a `401`, the response interceptor uses the refresh token to obtain a new access token once, then retries the original request; concurrent requests queue behind a single refresh.
+
+### Authorization (RBAC)
+
+This **consumer mobile app only ever authenticates `USER`-scoped accounts** — it never issues a privileged token. The back office is a **separate web tool** and, importantly, is **not staffed only by admins**: it has several distinct non-admin operational roles. All roles are documented here because RBAC is a shared, server-enforced concern.
+
+| Role | Surface | Key permissions |
+|------|---------|-----------------|
+| `USER` | **This mobile app** | Scan products, manage pending session, generate checkout QR, browse/redeem rewards, view own points history |
+| `BACKOFFICE_OPERATOR` | Back-office fraud dashboard | Review the HITL queue: approve/reject high-risk `ReviewItem`s coming from the `FraudDetectionAgent`. **Cannot** review a session they are party to (segregation of duties). No catalog or user-management rights. |
+| `CATALOG_MANAGER` | Back-office | Manage the product catalog & sponsored list, edit daily promotions, trigger `ProductCacheService.invalidateAllPromotions()`. No fraud-review or user-management rights. |
+| `STORE_ADMIN` | Back-office | Per-store analytics, rewards-catalog configuration, monitor validations for their store(s). No global user management. |
+| `SUPER_ADMIN` | Back-office | User & role management, cross-store administration, configure fraud-risk thresholds. Full back-office authority. |
+
+### Session Management
+
+- **Token Expiry:** Access token **15 min** / Refresh token **7 days**. On access-token expiry the `ApiClient` response interceptor transitions `AuthSessionStore.status` to `REFRESHING`.
+- **Refresh Strategy:** Silent refresh handled by `ApiClient.onUnauthorized()` on `401`. `RefreshQueue` guarantees a **single in-flight refresh** (`runRefresh()`): concurrent requests are queued behind one promise and replayed once a new access token arrives. If the **refresh request itself returns `401`** (refresh token expired/revoked), the queue rejects all waiters and triggers a **hard logout** (`status → EXPIRED`).
+- **Storage Decision:** `SecureTokenStore` wraps `expo-secure-store` (hardware-backed Keychain/Keystore) instead of `AsyncStorage`/`localStorage`, because tokens are sensitive and `AsyncStorage` is unencrypted on device. `ITokenStore` is the injected interface, so the store is mockable in tests.
+- **Logout Behavior:** `SecureTokenStore.clear()` wipes both tokens; the refresh token is revoked **server-side**; `AuthSessionStore.reset()` returns status to `ANONYMOUS`; the React Query cache is cleared to drop any user-scoped data.
+
+### Secure Configuration
+
+- **Environment Variables:** Managed per environment via `app.config.ts` `extra` + EAS environment variables; only non-secret, public config (API base URL) is bundled. No secrets committed to VCS.
+- **Secret Management Platform:** EAS Secrets for build-time values; the mobile client holds **no** server secrets (POS/B2B API keys live exclusively in the backend).
+
+### OWASP Compliance
+
+> **"What you code"** names the concrete artifact a developer builds for each control — file paths refer to the [§1.9 scaffold](#19-project-scaffold). Rows marked *config / no app code* are satisfied by configuration or by the backend, not by client logic.
+
+| MASVS control group | Risk it addresses | What you code (file / artifact) | Validation criterion |
+|---------------------|-------------------|---------------------------------|----------------------|
+| **MASVS-STORAGE** (data storage) | A lost/stolen phone could leak session tokens and personal data. | `SecureTokenStore` wrapper over `expo-secure-store` (`src/lib/secureTokenStore.ts`) with `get/set/clear`; a PII-stripping helper used by the logger; an ESLint `no-restricted-imports` rule banning `AsyncStorage` for tokens. | Device-dump test recovers no token/PII; unit test asserts writes go only to secure-store. |
+| **MASVS-CRYPTO** (cryptography) | Home-grown or misused cryptography can be broken, exposing secrets. | *No app crypto code.* Use platform primitives only (`expo-secure-store`, TLS). Secrets injected via **EAS Secrets** in `eas.json` — never committed or bundled. | Secret/SCA scan finds no bundled secrets or custom crypto primitives; build config shows EAS Secrets injection only. |
+| **MASVS-NETWORK** (network comms) | Traffic over untrusted networks can be intercepted (man-in-the-middle). | `app.json`: iOS ATS on / Android `usesCleartextTraffic:false`. `src/api/client.ts`: `baseURL` pinned to `https://…`. Optional: cert-pinning interceptor on the API host. | MITM-proxy test cannot read traffic; a cleartext request is blocked; ATS/cleartext config asserted in native config. |
+| **MASVS-AUTH** (authentication) | Stolen tokens or weak auth let attackers hijack accounts or escalate roles. | `src/api/client.ts`: request interceptor attaches the JWT; `401` interceptor + `RefreshQueue` single-flight refresh, hard-logout on refresh failure. RBAC itself is **server-enforced** (client only renders by role). | Expired/revoked refresh token forces hard logout; a `USER`-scoped token is rejected on back-office endpoints. |
+| **MASVS-PLATFORM** (platform interaction) | Unvalidated input or over-broad permissions enable injection and data leakage. | Zod schemas for every user input (`src/features/scan/validation/*`, auth forms) wired through RHF `Controller`; request camera/location permission **on first use** inside the scan/location features (not at launch). | Malformed barcode/form input rejected by Zod schema tests; permission prompts fire only on use; sensitive screens flagged no-screenshot. |
+| **MASVS-CODE** (code quality) | Vulnerable dependencies or trusting client-supplied IDs (IDOR) expose data. | `npm audit` / SCA step in `.github/workflows/ci.yml`; Zod `.parse()` guard on every response in `src/api/endpoints/*`; never derive authorization from client-supplied IDs (server checks per-token). | CI fails on high-severity advisories; DTO contract tests reject malformed payloads; a cross-user ID request returns 403 from the server. |
+| **MASVS-RESILIENCE** (anti-tampering) | A tampered or reverse-engineered build could be repackaged or abused. | `babel.config.js`: `transform-remove-console` in the production env; `app.json`: `jsEngine: "hermes"`; Sentry init in `app/_layout.tsx`. Optional: jailbreak/root-detection signal. | Release bundle contains no `console.*` and uses Hermes bytecode; Sentry receives anomaly events; a root/jailbreak flag is emitted on a compromised device. |
+
+---
+
+## 1.4. Layered Architecture
+
+- **Layer Responsibilities:**
+
+| Layer | Responsibility | Examples |
+|-------|---------------|----------|
+| Presentation | Render UI, handle gestures/events | Screens, atoms/molecules/organisms |
+| Application / Use Cases | Orchestrate use cases: drive the session flow, apply Domain rules, reach Infrastructure through interfaces | Custom hooks, Zustand session store (**Singleton**), **Command** objects (Add/Remove/GenerateQR/Redeem), session **State** machine + states, scan-validation **Chain of Responsibility** |
+| Domain | Pure business entities & rules — no React, no Infrastructure | **Entities:** `Product`, `Reward`, `Session` (+ `Points` value object). **Rules (pure functions):** `pointsRules` (accrual & redemption math), `barcodeRules` (format validation), `scanEligibilityRules` (in-store / sponsored / duplicate checks the CoR handlers call), `rewardTypes` (**Factory** product definitions), `sessionStatus` (allowed state transitions). The `*DTO` types are **data contracts** (Infrastructure ⇄ Application), *not* the domain — they live in `/types`. |
+| Infrastructure | External communication & device APIs | Axios client (**Facade**), socket.io client, React Query cache (**Cache-Aside**), secure-store, camera/BLE adapters (**Strategy**) |
+
+- **Layer Access Rules:** Presentation may call only the Application layer (hooks/stores). Application drives the session **State** machine, dispatches **Command** objects, and runs the scan-validation **chain** — applying Domain rules and reaching Infrastructure only through interfaces. **Domain stays pure** — the entities (`Product`, `Reward`, `Session`) and rule functions (`pointsRules`, `barcodeRules`, `scanEligibilityRules`, `rewardTypes`, `sessionStatus`) import neither Infrastructure nor React, so each is unit-testable in isolation. Application objects (the scan **chain**, **Command** objects, the session **State** machine) hold no business math themselves — they **delegate** to these Domain rules.
+
+- **Diagram:**
+
+```mermaid
+flowchart TD
+    subgraph Presentation
+        S1[LobbyScreen]
+        S2[ScanScreen]
+        S3[QRValidationScreen]
+        S4[ConfirmationScreen]
+        S5[RewardsScreen]
+    end
+
+    subgraph Application["Application / Use Cases"]
+        H[Custom Hooks]
+        ST[Zustand Session Store · Singleton]
+        CMD[Command Objects · Add/Remove/GenerateQR/Redeem]
+        SM[Session State Machine]
+        VAL[Scan Validation Chain · CoR]
+    end
+
+    subgraph Domain
+        ENT[Entities · Product, Reward, Session]
+        PRULES[pointsRules · accrual/redemption]
+        BRULES[barcodeRules · format]
+        SRULES[scanEligibilityRules · in-store/sponsored/duplicate]
+        RT[rewardTypes · Factory]
+        SS[sessionStatus · transitions]
+    end
+
+    subgraph Infrastructure
+        API[Axios API Facade]
+        WS[socket.io Client]
+        CAM[Camera / BLE Adapters · Strategy]
+        SEC[Secure Store]
+        RQ[React Query Cache · Cache-Aside]
+    end
+
+    Presentation --> Application
+    Application --> Domain
+    Application --> Infrastructure
+    Domain -.no dependency.-> Infrastructure
+    API --> Backend[(SmartCart Backend API)]
+    WS --> Backend
+```
+
+---
+
+## 1.5. Design Patterns
+### Asynchronous Operations
+
+| # | Operation | Trigger | Mechanism | Loading state | Retry policy | Error handling | Implements (where) |
+|---|-----------|---------|-----------|---------------|--------------|----------------|--------------------|
+| 1 | **Product catalog lookup** | Barcode scanned | TanStack Query over the backend **Cache-Aside** (`async/await` + Axios) | Inline skeleton on the scan-confirm modal | **Auto** retry on network/5xx, exponential backoff (max 3) — *idempotent read* | Fallback message "Servicio temporalmente no disponible"; user can retry | `useProductLookup` query in `src/features/scan/`; `queryKey: ['product', barcode]`; `retry: 3` + exponential `retryDelay` (QueryClient default); calls `src/api/endpoints/products.ts` |
+| 2 | **Scan validation (CoR)** | After a successful lookup | Chain of Responsibility (format → location → sponsored → duplicate) | Spinner on the confirm action | **No** retry — re-scan instead | Inline reason: out-of-store / invalid / duplicate | Handlers in `src/features/scan/validation/` calling `scanEligibilityRules` (Domain); pure, synchronous — no query |
+| 3 | **QR generation** | Tap "Generar QR de salida" | `POST` via `GenerateQRCommand` — **non-idempotent** | Spinner on the primary button | **No** auto-retry; manual retry only (avoids duplicate codes) | Toast error; session left unchanged | `GenerateQRCommand` in `src/features/session/commands/` + `useGenerateQR` mutation (`retry: 0`); endpoint `src/api/endpoints/sessions.ts` |
+| 4 | **POS validation status** | QR shown (`ValidatingState`) | socket.io room `session:{id}`, **fallback polling** `GET /sessions/:id` every 3 s | "Esperando validación de la cajera…" | Reconnect / keep polling until the 10-min expiry | Expiry/timeout → QR expired, prompt to regenerate | `useCheckoutStatus` hook in `src/features/checkout/` (socket.io subscribe + `refetchInterval: 3000` poll fallback); drives the session **State** machine |
+| 5 | **Fraud review (HITL)** | During POS validation | Backend human-in-the-loop, asynchronous, ≤ 2 min | "Verificando…" | n/a — resolves on push/socket or timeout | Never blocks indefinitely; timeout auto-resolves the session | No client code beyond op #4's socket/poll — backend-driven; client only reacts to the pushed status |
+| 6 | **Reward redemption** | Tap "Canjear" | `POST` via `RedeemCouponCommand` — **non-idempotent** | Spinner on the redeem button | **No** auto-retry | **No optimistic update**: the Zustand balance is mutated **only after** the server returns `200`. On error, the Axios interceptor → `ApiErrorMapper` builds an `AppError` (`VALIDATION_REJECTED`/`SERVER_ERROR`) → `NotificationSlice.notify` → `Toast`. Because nothing was mutated optimistically, the balance "stays intact" with **no rollback needed**. | `RedeemCouponCommand` in `src/features/rewards/` + `useRedeem` mutation (`retry: 0`); on `onSuccess` write the new balance to `sessionStore`; endpoint `src/api/endpoints/rewards.ts` |
+| 7 | **Login / token refresh** | `401` on a protected request | `RefreshQueue` **single-flight** refresh (see §1.4) | Silent (no UI) | One in-flight refresh; concurrent requests queue behind it | Refresh `401` → hard logout (`status → EXPIRED`) | `RefreshQueue` + 401 interceptor in `src/api/client.ts`; on hard logout dispatch session → `EXPIRED` |
+
+**Cross-cutting (apply to all of the above):**
+
+- **Loading States:** Skeleton placeholders for the sponsored carousel and rewards catalog; an animated scan line signals active barcode processing (operations 1–2).
+- **Error Boundaries:** A React Error Boundary per feature (`scan`, `checkout`, `rewards`) prevents a single failure from crashing the app.
+
+### Error Handling & Observability
+
+Errors are handled by a single pipeline: every API error is caught by the Axios response interceptor. A `401` is intercepted first by `onUnauthorized()`; every other error is normalized into a typed `AppError` by `ApiErrorMapper` via `onError()`, and then either retried or surfaced to the user through the global `NotificationSlice`. Render-time crashes are caught by per-feature Error Boundaries. The design below makes the components, the error taxonomy, and the flow explicit.
+
+#### Components
+
+```mermaid
+classDiagram
+    class ApiClient {
+        -instance: AxiosInstance
+        +request(config) Response
+        -onUnauthorized(error) Response
+        -onError(error) AppError
+    }
+
+    class ApiErrorMapper {
+        +toAppError(error: AxiosError) AppError
+        -mapStatus(status: number) ErrorCode
+        -resolveMessage(code: ErrorCode) string
+    }
+
+    class AppError {
+        +code: ErrorCode
+        +userMessage: string
+        +severity: Severity
+        +retryable: boolean
+        +context: Record~string, any~
+    }
+
+    class ErrorCode {
+        <<enumeration>>
+        NETWORK_ERROR
+        SERVER_ERROR
+        SESSION_EXPIRED
+        SCAN_OUT_OF_STORE
+        SCAN_REJECTED
+        QR_EXPIRED
+        VALIDATION_REJECTED
+        UNKNOWN
+    }
+
+    class Severity {
+        <<enumeration>>
+        INFO
+        WARNING
+        ERROR
+    }
+
+    class NotificationSlice {
+        +current: AppError
+        +notify(error: AppError) void
+        +dismiss() void
+    }
+
+    class Toast {
+        +message: string
+        +tone: Tone
+        +onShow(error: AppError) void
+    }
+
+    class FeatureErrorBoundary {
+        +feature: string
+        +componentDidCatch(error, info) void
+        +renderFallback() ReactNode
+    }
+
+    class Monitoring {
+        +captureException(error: AppError) void
+        +captureRenderError(error, info) void
+    }
+
+    ApiClient --> ApiErrorMapper : normalizes
+    ApiErrorMapper --> AppError : produces
+    AppError --> ErrorCode
+    AppError --> Severity
+    ApiClient --> NotificationSlice : dispatches non-retryable
+    NotificationSlice --> Toast : observed by
+    ApiClient --> Monitoring : reports ERROR severity
+    FeatureErrorBoundary --> Monitoring : reports render crashes
+```
+
+#### Error taxonomy
+
+| Category | Origin / Trigger | `AppError` code | User message (es) | Retryable | Sentry |
+|----------|------------------|-----------------|-------------------|-----------|--------|
+| Network / offline | No connectivity | `NETWORK_ERROR` | "Sin conexión. Reintentando…" | Yes (auto, op. 1) | Breadcrumb |
+| Server unavailable | Backend 5xx / `ProductLookupException` | `SERVER_ERROR` | "Servicio temporalmente no disponible" | Yes (idempotent reads only) | Yes |
+| Session expired | Refresh `401` (hard logout) | `SESSION_EXPIRED` | "Tu sesión expiró, inicia de nuevo" | No | Yes |
+| Out-of-store scan | `LocationHandler` rejects (CoR) | `SCAN_OUT_OF_STORE` | "Acércate a una tienda afiliada para sumar puntos" | No (user action) | No |
+| Invalid / duplicate scan | Format or `DuplicateScanHandler` rejects | `SCAN_REJECTED` | "Producto no válido o ya está en tu lista" | No (re-scan) | No |
+| Expired QR | QR > 10 min at POS | `QR_EXPIRED` | "El código expiró, genéralo de nuevo" | Regenerate | No |
+| Validation rejected | POS / fraud review rejects | `VALIDATION_REJECTED` | "No pudimos verificar tu compra" | No | Yes |
+| Render crash | Component throws | (caught by `FeatureErrorBoundary`) | "Algo salió mal. Vuelve a intentarlo." | Reload feature | Yes |
+
+#### Flow
+
+```mermaid
+flowchart TD
+    ERR[Error origin] --> INT[ApiClient response interceptor]
+    INT --> MAP[ApiErrorMapper - toAppError]
+    MAP --> DEC{AppError type}
+    DEC -->|retryable| RQ[React Query retry - backoff]
+    DEC -->|auth 401| REFRESH[RefreshQueue single-flight]
+    DEC -->|otherwise| NS[NotificationSlice.notify]
+    NS --> TOAST[Toast - Observer]
+    REFRESH -->|refresh 401| LOGOUT[Hard logout - EXPIRED]
+    RENDER[Render crash] --> EB[FeatureErrorBoundary]
+    EB --> FB[Fallback UI]
+    NS --> SENTRY[Sentry]
+    EB --> SENTRY
+    INT --> SENTRY
+```
+
+- **Frontend Monitoring:** Sentry captures uncaught exceptions and performance traces, tagged with screen and session state.
+- **Logging:** `console.*` stripped from production via Babel plugin; errors are forwarded to Sentry only.
+
+---
+
+## 1.6. Performance
+
+| Strategy | Where (file / config) | How |
+|----------|-----------------------|-----|
+| **Lazy Loading** | `/app/*.tsx` (Expo Router routes), `/app/scan.tsx` | Expo Router code-loads each route on demand by default. Mount the camera only while the Scan route is focused — gate `<CameraView>` behind `useIsFocused()` so it unmounts on blur. |
+| **Code Splitting** | `metro.config.js`, `/features/*` | Enable `transformer.inlineRequires` in Metro. Import heavy modules (`expo-camera`, `react-native-qrcode-svg`) **inside** their feature module, never from a root barrel, so Metro splits them out. |
+| **Bundle Optimization** | `metro.config.js` (tree-shaking: `experimentalImportSupport`), `expo-build-properties` in `app.json` (`enableProguardInReleaseBuilds`, `enableShrinkResourcesInReleaseBuilds`), `eas.json` (`production`, Android `buildType: app-bundle`), `app.json` (`jsEngine: "hermes"`) | Shrink shipped size with distinct levers: Metro tree-shaking strips unused ESM imports from the JS bundle (opt-in via `EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH=1`); R8 code shrinking + resource shrinking remove unused native code and unreferenced assets; the AAB lets Play serve per-ABI/density/language splits so each user downloads only their slice; assets are pre-compressed. Hermes is kept for **startup** (AOT bytecode), with only a minor secondary size gain — not the main size lever. Measure JS composition with `EXPO_UNSTABLE_ATLAS=true npx expo export` + `npx expo-atlas`, and the shipped AAB with the Play Console app-size report. |
+| **Image Optimization** | `/components/molecules/ProductCard.tsx`, `/components/organisms/SponsoredCarousel.tsx` | Use `expo-image`'s `<Image>` with `cachePolicy="memory-disk"` and `contentFit="cover"`; serve sponsored images as WebP at device-appropriate resolution. |
+| **Memoization** | `/components/molecules/ProductCard.tsx`, `RewardCard.tsx`, `/store/sessionStore.ts`, `/hooks/` | Wrap list items in `React.memo`; compute pending-points totals with `useMemo` and pass stable callbacks via `useCallback`; read state with selective Zustand selectors (`useSessionStore(s => s.pending)`) to avoid whole-store re-renders. |
+| **Virtualization** | `/components/organisms/PendingItemsList.tsx`, `RewardsCatalog.tsx`, `CouponsList.tsx` | Render long lists with `FlashList` (1.7.x) instead of `FlatList`; set `estimatedItemSize` and a stable `keyExtractor`. |
+| **Caching** | `/api/`, `QueryClient` in `/app/_layout.tsx`, `eas.json` | Configure per-query `staleTime`/`gcTime` on the TanStack Query client (Cache-Aside for product/rewards lookups); ship JS-only fixes via `eas update` (OTA) without a store release. |
+
+---
+
+## 1.7. Testing Strategy
+
+| Level | Tool | Where (location / naming) | How | Min. Coverage |
+|-------|------|---------------------------|-----|---------------|
+| **Unit** | Jest 29.7.0 (jest-expo 52) | `__tests__/*.test.ts` co-located beside source: `/features/session/commands/`, `/features/scan/validation/`, `/store/`, `/lib/`; config in `jest.config.js` + `jest.setup.ts`. Template: [`addItemCommand.test.ts`](/frontend/src/features/session/commands/__tests__/addItemCommand.test.ts) | Pure-logic tests with mocked dependencies: command objects incl. `undo`, each CoR validation handler in isolation, points rules. No rendering. | 80% |
+| **Integration** | React Native Testing Library 12.8.0 | `/components/**/__tests__/*.test.tsx`. Template: [`ScanConfirmationModal.test.tsx`](/frontend/src/components/molecules/__tests__/ScanConfirmationModal.test.tsx) | `render()` the component, drive it with `fireEvent`/`userEvent`, assert via accessibility queries (`getByRole`/`getByLabelText`); mock the API layer (jest mocks / MSW). Covers scan-confirm modal, delete-with-undo, QR generation, manual-entry fallback, redemption. | 70% |
+| **UI / E2E** | Maestro 1.39.x | `.maestro/*.yaml` flow files. Template: [`scan-to-redeem.yaml`](/.maestro/scan-to-redeem.yaml) | One YAML flow per critical journey (login → scan → generate QR → confirm → redeem); run with `maestro test .maestro/` locally and in CI. | Key flows 100% |
+| **Accessibility** | `@axe-core/react` + manual VoiceOver/TalkBack passes | Component `__tests__` (automated) + manual device passes. Template: [`Button.a11y.test.tsx`](/frontend/src/components/atoms/__tests__/Button.a11y.test.tsx) | Wire `@axe-core/react` in dev and assert no violations in component tests; complete manual VoiceOver (iOS) / TalkBack (Android) passes on each interactive screen. | 0 critical violations |
+
+---
+
+## 1.8. CI/CD Pipeline (Frontend)
+
+```
+[Trigger: Push to PR / main branch]
+        │
+        ▼
+┌─────────────────────────┐
+│  1. Install & Cache Deps │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  2. Lint (ESLint 9)      │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  3. Format Check         │
+│     (Prettier 3)         │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  4. Type Check (tsc)     │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  5. Unit & Integration   │
+│     Tests (Jest / RTL)   │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  6. EAS Build (iOS/And.) │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  7. E2E Tests (Maestro)  │
+└────────────┬────────────┘
+             ▼
+┌─────────────────────────┐
+│  8. Deploy: EAS Update   │
+│  (staging) → Submit (prod)│
+└─────────────────────────┘
+```
+
+The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.yml)**; each step runs an `npm` script from `package.json` or an EAS command driven by `eas.json`. The `EXPO_TOKEN` secret lives in the GitHub repo settings (Settings → Secrets).
+
+| Step | Where (file / config) | How |
+|------|-----------------------|-----|
+| 1. Install & cache | `ci.yml`, `package.json` | `actions/setup-node` with `cache: npm`, then `npm ci` |
+| 2. Lint | `ci.yml` → `npm run lint` | ESLint 9 flat config (`eslint.config.js`) |
+| 3. Format check | `ci.yml` → `npm run format:check` | `prettier --check .` |
+| 4. Type check | `ci.yml` → `npm run typecheck` | `tsc --noEmit` |
+| 5. Unit & integration | `ci.yml` → `npm test -- --coverage` | Jest + RTL; fails below the §1.8 coverage thresholds |
+| 6. EAS Build | `ci.yml`, `eas.json` (`production` profile) | `eas build --platform all --profile production --non-interactive` via `expo/expo-github-action` (auth with `EXPO_TOKEN`) |
+| 7. E2E | `ci.yml`, `.maestro/` | `maestro test .maestro/` against the build artifact |
+| 8. Deploy | `ci.yml`, `eas.json` | `eas update --branch staging` on merge → `eas submit` to store tracks after QA |
+
+- **Tooling:** GitHub Actions for lint/type/test; `expo/expo-github-action` + EAS Build/Submit for binaries and store submission.
+- **Branch Strategy:** GitHub Flow — feature branches → PR → `main`.
+- **Quality Gates:** A PR cannot merge if lint, type check, tests, or build fail; minimum coverage thresholds enforced.
+- **Deployment Strategy:** Merge to `main` → automatic **EAS Update** to the staging channel; manual promotion (EAS Submit) to production store tracks after QA sign-off.
+
+---
+
 # 2. Backend Design
 
 ## 2.1. Technology Stack
@@ -5,15 +692,16 @@
 | Concern | Choice | Version | Justification |
 |---|---|---|---|
 | API Style | REST + OpenAPI | — | Frontend `apiClient` already REST; Swagger auto-gen in Nest |
-| Language | TypeScript / Node.js | 5.5 / 20 LTS | **Reuse frontend `types.ts` 1:1** (`Product`, `QrTicket`, `ValidationResult`) → zero contract drift |
+| Language | TypeScript / Node.js | 5.5 / 20 LTS | Shared DTOs + Zod schemas live in **`@smartcart/shared-types`**, imported 1:1 by both `frontend/` and `backend/apps/api` → zero contract drift |
 | Framework | NestJS | 10.4 | DI + modules map to template's layered design + Repository/Service/DTO patterns out-of-box |
 | ORM/DB | Prisma 5.20 / PostgreSQL | 17 | Template schema is relational; Prisma migrations + type-safety |
 | Async | BullMQ | 5.x | Analytics profiling + push notif queues (template 2.4) |
-| Cache | Redis | 7.2 | Session state (stateless API), profile cache invalidation |
+| Cache | Redis | 7.2 | Session read-through cache (keeps the API stateless; PostgreSQL is authoritative), profile cache invalidation |
 | File storage | Cloudflare R2 | — | Product images |
 | AI segment | External inference (OpenAI / local sklearn microservice) | — | Consumer profiling classifier |
 | Hosting | Railway / Render | — | Docker; cheap demo, scalable |
 | Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
+| Observability | Pino / OpenTelemetry SDK / Prometheus / Sentry | — | Structured logs, traces, metrics, and error tracking (detailed in §2.6) |
 
 ## 2.2. Architecture — Implementation Guide
 
@@ -204,26 +892,49 @@ graph TB
     %% System
     SmartCart["🛒 SmartCart System<br/><i>Mobile POS + Consumer Analytics Platform</i>"]
 
-    %% Relationships
+    %% External systems
+    AISvc["🤖 AI Inference Service<br/><i>Consumer segment classifier</i>"]
+    PushSvc["📲 Expo Push API<br/><i>FCM / APNs delivery</i>"]
+
+    %% Inbound — actor → system
     Shopper -->|"Scans products<br/>Generates QR codes<br/>Redeems rewards"| SmartCart
-    Cashier -->|"Validates QR codes<br/>Confirms checkout<br/>Authorizes payment"| SmartCart
-    Admin -->|"Downloads consumer segments<br/>Views product insights<br/>Exports B2B reports"| SmartCart
-    CSR -->|"Deducts points<br/>Manages reward fulfillment"| SmartCart
+    Cashier -->|"Validates QR codes<br/>Confirms checkout"| SmartCart
+    Admin -->|"Requests consumer segments<br/>& product insights"| SmartCart
+    CSR -->|"Adjusts points<br/>Manages reward fulfillment"| SmartCart
+
+    %% Outbound — system → actor / external (the Outputs)
+    SmartCart -->|"Validation result<br/>& credited points"| Cashier
+    SmartCart -->|"Anonymized segment<br/>& insight reports"| Admin
+    SmartCart -->|"Feature vector to classify"| AISvc
+    AISvc -->|"Predicted segment"| SmartCart
+    SmartCart -->|"Push: points credited"| PushSvc
+    PushSvc -->|"Delivers notification"| Shopper
 
     %% Styling
     classDef actor fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1,rx:8,ry:8
     classDef system fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px,color:#1b5e20,rx:12,ry:12
+    classDef external fill:#ffebee,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5,color:#b71c1c
 
     class Shopper,Cashier,Admin,CSR actor
     class SmartCart system
+    class AISvc,PushSvc external
 ```
 
-The system context diagram shows SmartCart as a single system with four external actors:
+The system context diagram shows SmartCart as a single system with four external actors, two external systems, and the outputs flowing back out.
+
+**Actors (inputs):**
 
 - Shopper (Mobile) — Scans products, generates checkout QR codes, redeems rewards
 - Cashier (POS) — Validates QR codes against physical cart contents, confirms checkout
-- Admin / B2B Partner — Downloads aggregated consumer segment reports and product insights
-- Customer Service Rep — Manually deducts points from user accounts for reward fulfillment
+- Admin / B2B Partner — Requests aggregated consumer segment reports and product insights
+- Customer Service Rep — Adjusts points on user accounts for reward fulfillment
+
+**External systems:**
+
+- AI Inference Service — receives anonymized feature vectors, returns a predicted consumer segment
+- Expo Push API — delivers "points credited" notifications to the Shopper's device
+
+**Outputs:** validation results and credited-point totals return to the Cashier; the predicted segment returns from the AI service; push notifications reach the Shopper via Expo; anonymized segment and product-insight reports are returned to the Admin / B2B Partner.
 
 ##### Level 2 — Container Diagram
 
@@ -287,7 +998,7 @@ graph TB
         PG[("PostgreSQL<br/><i>Primary DB</i>")]
         Redis[("Redis<br/><i>Cache & Sessions</i>")]
         BullMQ[("BullMQ<br/><i>Job Queue</i>")]
-        S3[("S3 / R2<br/><i>Images & Reports</i>")]
+        S3[("Cloudflare R2<br/><i>Images & Reports</i>")]
     end
 
     subgraph ExternalSvc["☁️ External Services"]
@@ -349,7 +1060,7 @@ The container diagram shows five runtime containers and four actors:
 - **Customer Service Rep** — Adjusts points balances and manages reward fulfillment via REST API
 - **Mobile App (React Native/Expo)** — Consumer-facing native app with camera, GPS, and push notifications
 - **API Gateway (Nginx/Cloud LB)** — Routes REST to NestJS API, WebSocket connections for real-time status
-- **NestJS Modular Monolith** — Single Node.js process containing Auth, Catalog, Checkout, Rewards, and Analytics modules with strict layer separation
+- **NestJS Modular Monolith** — Single Node.js process containing Auth, Catalog, Checkout, Rewards, Analytics, and Notifications modules with strict layer separation
 - **Analytics Worker** — Independent BullMQ consumer for long-running consumer profiling pipeline
 - **Data Stores** — PostgreSQL (primary), Redis (cache/sessions), BullMQ (job queue), Cloudflare R2 (file storage)
 - **AI Inference Service (External)** — HTTP endpoint that classifies consumer behavior into segments
@@ -361,18 +1072,18 @@ graph TB
     %% ==========================================
     %% PRESENTATION LAYER
     %% ==========================================
-    subgraph Presentation["🎯 Presentation Layer"]
+    subgraph Presentation["Presentation Layer"]
         direction LR
         SessionCtrl["<b>SessionController</b><br/><i>REST</i><br/>POST /sessions<br/>POST /sessions/:id/items"]
         QrCtrl["<b>QrController</b><br/><i>REST</i><br/>POST /sessions/:id/qr"]
-        ValidationCtrl["<b>ValidationController</b><br/><i>REST</i><br/>POST /sessions/validate"]
-        SessionGW["<b>SessionGateway</b><br/><i>WebSocket</i><br/>emit: sessionStatusChanged<br/>on: subscribe:session"]
+        ValidationCtrl["<b>ValidationController</b><br/><i>REST</i><br/>POST /sessions/:id/validate"]
+        SessionGW["<b>SessionGateway</b><br/><i>WebSocket · JWT handshake auth</i><br/>emit: sessionStatusChanged<br/>on: subscribe:session (ownership-checked)"]
     end
 
     %% ==========================================
     %% APPLICATION LAYER
     %% ==========================================
-    subgraph Application["⚙️ Application Layer"]
+    subgraph Application["Application Layer"]
         direction TB
         
         CheckoutSvc["<b>CheckoutService</b><br/>createSession()<br/>addItem()<br/>generateQr()<br/>validateSession()"]
@@ -399,7 +1110,7 @@ graph TB
     %% ==========================================
     %% DOMAIN LAYER
     %% ==========================================
-    subgraph Domain["🧠 Domain Layer"]
+    subgraph Domain["Domain Layer"]
         direction TB
         
         Session["<b>ShoppingSession</b><br/><i>Aggregate Root</i><br/>+id: string<br/>+userId: string<br/>+storeId: string<br/>+status: SessionStatus<br/>+items: SessionItem[]<br/>+addItem()<br/>+requestCheckout()<br/>+validateItems()"]
@@ -412,19 +1123,23 @@ graph TB
         
         SessionStatus["<b>SessionStatus</b><br/><i>Enum</i><br/>ACTIVE<br/>PENDING_CHECKOUT<br/>COMPLETED<br/>VALIDATION_FAILED<br/>EXPIRED"]
 
-        FixedStrat["<b>FixedPointsStrategy</b><br/>rate: 50 pts/unit"]
-        MultiplierStrat["<b>MultiplierStrategy</b><br/>multiplier: 2x spend"]
+        FixedStrat["<b>FixedPointsStrategy</b><br/>FIXED_PER_UNIT"]
+        MultiplierStrat["<b>SpendMultiplierStrategy</b><br/>SPEND_MULTIPLIER"]
+        VolumeStrat["<b>VolumeTierStrategy</b><br/>VOLUME_TIER"]
+        WeekendStrat["<b>WeekendBonusStrategy</b><br/>WEEKEND_BONUS"]
 
         Session --> SessionItem
         Session --> SessionStatus
         IPointsCalc -.-> FixedStrat
         IPointsCalc -.-> MultiplierStrat
+        IPointsCalc -.-> VolumeStrat
+        IPointsCalc -.-> WeekendStrat
     end
 
     %% ==========================================
     %% INFRASTRUCTURE LAYER
     %% ==========================================
-    subgraph Infrastructure["🏗️ Infrastructure Layer"]
+    subgraph Infrastructure["Infrastructure Layer"]
         direction TB
         
         PrismaSessionRepo["<b>PrismaSessionRepository</b><br/><i>implements ISessionRepository</i><br/>- prisma: PrismaService<br/>- redis: RedisService"]
@@ -436,7 +1151,7 @@ graph TB
         SessionMapper["<b>SessionMapper</b><br/>toDomain()<br/>toPersistence()"]
     end
 
-    subgraph ExternalDep["🔗 External Dependencies"]
+    subgraph ExternalDep["External Dependencies"]
         direction LR
         PG[("PostgreSQL")]
         RedisCache[("Redis")]
@@ -493,7 +1208,7 @@ graph TB
     class SessionCtrl,QrCtrl,ValidationCtrl,SessionGW presentation
     class CheckoutSvc,PointsSvc,QrSigner,StateMachine application
     class ISessionRepo,IEventPub,IQrSignerInt,IPointsCalc interfaces
-    class Session,SessionItem,QrTicket,CheckoutEvent,SessionStatus,FixedStrat,MultiplierStrat domain
+    class Session,SessionItem,QrTicket,CheckoutEvent,SessionStatus,FixedStrat,MultiplierStrat,VolumeStrat,WeekendStrat domain
     class PrismaSessionRepo,BullMqPublisher,JwtQrSignerImpl,SessionMapper infrastructure
     class PG,RedisCache,BullMQQueue external
 ```
@@ -519,7 +1234,7 @@ The Checkout module component diagram illustrates:
 - `ShoppingSession` aggregate root with composed SessionItem entities
 - `QrTicket` value object
 - `CheckoutCompletedEvent` domain event
-- `PointsCalculationStrategy` interface with `FixedPointsStrategy` and `MultiplierStrategy` implementations
+- `PointsCalculationStrategy` interface with `FixedPointsStrategy`, `SpendMultiplierStrategy`, `VolumeTierStrategy`, and `WeekendBonusStrategy` implementations
 
 **Infrastructure components**:
 
@@ -554,12 +1269,12 @@ The Checkout module component diagram illustrates:
 | 5. Segment Persistence | [`backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts`](backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts) | UPSERT into `consumer_segments` table. Invalidate B2B aggregated cache keys: `analytics:store:{storeId}:segments`, `analytics:global:segment-distribution`. |
 | 6. B2B Data Availability | [`backend/apps/api/src/modules/analytics/application/services/analytics.service.ts`](backend/apps/api/src/modules/analytics/application/services/analytics.service.ts) | B2B partners query `GET /analytics/segments?storeId=X`. Response includes segment distribution with counts and percentages. All data is anonymized and aggregated — no individual user data exposed. |
 
-**Key Rules:**
+**Key Rules (and how to implement each):**
 
-- Guard: Minimum 5 transactions required for statistically meaningful classification  
-- Cache: AI results cached for 24 hours to avoid redundant API calls  
-- Data Privacy: B2B endpoints return only aggregated, anonymized data  
-- Resilience: Worker retries via BullMQ if AI service is unavailable  
+- **Guard — min 5 transactions:** in `ProfileAggregatorService`, `return null` when the 90-day query yields fewer than 5 rows, so the processor skips the AI call for users with too little history to classify meaningfully.
+- **Cache — 24 h:** after a successful AI response, write the segment to Redis as `segment:{userId}` with `EX 86400`, and read that key before every classification so repeat checkouts don't re-hit the AI service.
+- **Data Privacy — aggregated only:** `AnalyticsService` selects counts/percentages grouped by `segment_name` and never selects `userId`; any segment with fewer than 50 users is merged into `"other"` before the response leaves the service.
+- **Resilience — retry on AI failure:** register the queue with `attempts: 3` and exponential `backoff`, and let the processor `throw` when the AI call fails so BullMQ re-queues the job instead of silently dropping it.  
 
 **What you need to implement:**
 
@@ -579,7 +1294,7 @@ All files in the "Location" column are empty stubs. Open each one and implement 
 | Aspect | Implementation Directive |
 |--------|---------------------------|
 | Purpose | Generate a signed, time-sensitive JWT token embedding a deterministic hash of session items. At checkout, validate the token signature, expiration, and item hash against physical cart contents. |
-| Generation | Called by `CheckoutService.generateQr()`. Domain validation: session must be ACTIVE with ≥ 1 item. Compute deterministic item hash (sort barcodes alphabetically, concatenate with `|`, SHA-256). Sign JWT with HS256, 5-minute expiry. |
+| Generation | Called by `CheckoutService.generateQr()`. Domain validation: session must be ACTIVE with ≥ 1 item. Compute deterministic item hash (sort barcodes alphabetically, concatenate with `|`, SHA-256). Sign JWT with HS256, 10-minute expiry. |
 | Validation | Called by `CheckoutService.validateSession()`. Verify JWT signature. Check expiration. Compute hash of POS-scanned items using same algorithm. Compare hashes — mismatch throws `QrItemMismatchError`. |
 | Participants | `CheckoutService`, `JwtQrSigner` (infrastructure), `ShoppingSession.computeItemHash()` (domain), `ShoppingSession.validateItems()` (domain) |
 
@@ -595,16 +1310,16 @@ Steps:
 2. Concatenate as `"barcode1|barcode2|barcode3"`  
 3. Compute SHA-256 hash of the concatenated string  
 
-**Key Rules:**
+**Key Rules (and how to implement each):**
 
-- QR tokens expire after 5 minutes (JWT `exp` claim + factory enforcement)  
-- 10-second clock skew tolerance for validation  
-- `QR_SIGNING_SECRET` must be at least 32 characters  
-- Tampered tokens fail signature verification; modified items fail hash comparison  
+- **10-minute expiry, single source of truth:** pass `expiresIn: '10m'` to `jwt.sign`; the factory reads the decoded `exp` claim and never computes its own expiry, so there is exactly one place expiry is defined.
+- **10-second clock-skew tolerance:** pass `{ clockTolerance: 10 }` to `jwt.verify`, so a small clock drift between API instances does not reject a token that is still valid.
+- **Secret ≥ 32 characters:** enforce `QR_SIGNING_SECRET: z.string().min(32)` in `env.validation.ts`; the app fails to boot if the secret is too short to resist brute-forcing.
+- **Tamper detection (two layers):** `JwtQrSigner.verify()` rejects a tampered signature (→ `InvalidQrTokenError`); `ShoppingSession.validateItems()` rejects a modified cart through the SHA-256 hash compare (→ `QrItemMismatchError`).  
 
 **What you need to implement:**
 
-- [`backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`](backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts) — Implement `sign(payload)` using `jsonwebtoken`: `jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn: '5m' })`. Implement `verify(token)`: call `jwt.verify(token, secret)` — catch `TokenExpiredError` and re-throw as a typed `QrTokenExpiredError`, catch `JsonWebTokenError` as `InvalidQrTokenError`.
+- [`backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts`](backend/apps/api/src/modules/checkout/infrastructure/crypto/jwt-qr.signer.ts) — Implement `sign(payload)` using `jsonwebtoken`: `jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn: '10m' })`. Implement `verify(token)`: call `jwt.verify(token, secret)` — catch `TokenExpiredError` and re-throw as a typed `QrTokenExpiredError`, catch `JsonWebTokenError` as `InvalidQrTokenError`.
 - [`backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts`](backend/apps/api/src/modules/checkout/domain/entities/shopping-session.entity.ts) — Add `computeItemHash()` following the three steps above using Node's built-in `crypto.createHash('sha256')`. Add `validateItems(scannedBarcodes: string[])`: compute the hash of the scanned barcodes and compare against the stored hash — throw `QrItemMismatchError` on mismatch.
 - [`backend/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts`](backend/apps/api/src/modules/checkout/domain/factories/qr-ticket.factory.ts) — Implement `create(session, signer)`: call `session.requestCheckout()` to transition state, compute the item hash, call `signer.sign({ sessionId, itemHash, userId })`, and return a `QrTicket` value object wrapping the resulting token.  
 
@@ -677,7 +1392,7 @@ All four strategy files and both service files are empty stubs:
 
 | Step | Layer        | Pattern(s) Active | Action |
 |------|--------------|-------------------|--------|
-| 1    | Presentation | DTO               | `ZodValidationPipe` validates `ValidationRequestSchema` against request body |
+| 1    | Presentation | DTO               | `ZodValidationPipe` validates `ValidateSessionRequestSchema` against request body |
 | 2    | Application → Domain | Service Layer, Repository | `CheckoutService` calls `ISessionRepository.findById()` |
 | 3    | Infrastructure → Domain | Repository, Factory | `PrismaSessionRepository` maps row to entity via `SessionFactory.reconstitute()` |
 | 4    | Application → Infrastructure | Service Layer, Transaction | `CheckoutService` opens Prisma `$transaction`; calls `ISessionRepository.save()` with COMPLETED status, credits points via `IPointsRepository`, inserts immutable ledger record |
@@ -699,13 +1414,53 @@ All four strategy files and both service files are empty stubs:
 
 ---
 
+### Data Model
+
+The relational model below is the single source of truth for the Prisma schema. The canonical
+schema lives at `backend/apps/api/prisma/schema.prisma` (to be generated from this table);
+domain entities are mapped to/from these rows by the infrastructure-layer mappers (§2.2 Rule 3).
+
+```mermaid
+erDiagram
+    User ||--o{ ShoppingSession : owns
+    User ||--o{ PointsTransaction : has
+    User ||--o{ Redemption : makes
+    User ||--o| ConsumerSegment : classified_as
+    Store ||--o{ ShoppingSession : hosts
+    Store ||--o{ ApiKey : scopes
+    ShoppingSession ||--o{ SessionItem : contains
+    ShoppingSession ||--o{ PointsTransaction : credits
+    Product ||--o{ SessionItem : referenced_by
+    Reward ||--o{ Redemption : redeemed_as
+```
+
+| Entity | Key fields | Notes |
+|--------|-----------|-------|
+| `User` | `id` (uuid, pk), `email` (unique), `fullName`, `passwordHash`, `phone?`, `pushToken?`, `role` (enum), `createdAt` | `role` ∈ `USER, BACKOFFICE_OPERATOR, CATALOG_MANAGER, STORE_ADMIN, SUPER_ADMIN` (§2.5). PII fields encrypted at rest. |
+| `Store` | `id` (uuid, pk), `name`, `createdAt` | Referenced by `storeId` throughout sessions and analytics. |
+| `Product` | `id` (uuid, pk), `barcode` (unique, EAN-8/13), `name`, `brand`, `imageUrl?`, `pointsConfig` (jsonb), `sponsored` (bool) | `pointsConfig` shape drives the strategy resolver (§2.3 Points). |
+| `ShoppingSession` | `id` (uuid, pk), `userId` (fk→User), `storeId` (fk→Store), `status` (enum), `itemHash?`, `createdAt`, `updatedAt` | `status` ∈ `ACTIVE, PENDING_CHECKOUT, COMPLETED, VALIDATION_FAILED, EXPIRED` (§2.3 state machine). `itemHash` set at QR generation. |
+| `SessionItem` | `id` (uuid, pk), `sessionId` (fk→Session, cascade), `productId` (fk→Product), `barcode`, `quantity` (int), `pointsValue` (int) | Composed under the `ShoppingSession` aggregate. |
+| `PointsTransaction` | `id` (uuid, pk), `userId` (fk→User), `delta` (int, signed), `reason` (enum), `sessionId?` (fk→Session), `createdAt` | **Append-only ledger** — never updated/deleted. Balance = `SUM(delta)`. `reason` ∈ `PURCHASE, REDEMPTION, ADJUSTMENT`. Indexed on `(userId, createdAt)` for the 90-day analytics window. |
+| `Reward` | `id` (uuid, pk), `name`, `description`, `cost` (int, points), `imageUrl?`, `active` (bool) | Catalog of redeemable rewards. |
+| `Redemption` | `id` (uuid, pk), `userId` (fk→User), `rewardId` (fk→Reward), `couponCode` (unique), `status` (enum), `redeemedAt` | The issued coupon. `status` ∈ `ISSUED, USED, EXPIRED`. |
+| `ConsumerSegment` | `userId` (fk→User, unique, pk), `segmentName`, `features` (jsonb), `updatedAt` | Upsert target of the analytics worker (§2.3 step 5). One row per user. |
+| `ApiKey` | `id` (uuid, pk), `hashedKey` (SHA-256, unique), `type` (enum), `storeId?` (fk→Store), `label`, `createdAt` | Non-JWT auth for POS/B2B surfaces. `type` ∈ `POS, B2B`. |
+
+**Integrity rules:** the points balance is *derived* (never stored) from `PointsTransaction`,
+making it tamper-evident (§2.5 Audit Logging). `SessionItem` deletes cascade with the session;
+`PointsTransaction` rows are immutable and never cascade. `ConsumerSegment` holds aggregated
+features only — no raw transaction rows — supporting the B2B anonymization guarantee (§2.5 PII).
+
+---
+
 ### Key Endpoints
 
 | Method | Path                        | Description                                                                 | Auth Required        |
 |--------|-----------------------------|-----------------------------------------------------------------------------|----------------------|
-| POST   | `/auth/register`            | Register a new shopper account. Receives access token in body and refresh token via HTTP-only cookie. | No                   |
-| POST   | `/auth/login`               | Authenticate with email/password. Receives access token in body and refresh token via HTTP-only cookie. | No                   |
-| POST   | `/auth/refresh`             | Exchange the refresh token cookie for a new access token (token rotation).  | Refresh token (cookie) |
+| POST   | `/auth/register`            | Register a new shopper account. Receives access token and refresh token in the response body. | No                   |
+| POST   | `/auth/login`               | Authenticate with email/password. Receives access token and refresh token in the response body. | No                   |
+| POST   | `/auth/refresh`             | Exchange the refresh token (sent in the request body) for a new access token (token rotation). | Refresh token (body) |
 | POST   | `/auth/logout`              | Revoke the current refresh token.                                           | Yes (JWT)            |
 | GET    | `/users/me`                 | Get current user profile with points balance.                               | Yes (JWT)            |
 | PATCH  | `/users/me`                 | Update profile (name, phone).                                               | Yes (JWT)            |
@@ -734,6 +1489,8 @@ All four strategy files and both service files are empty stubs:
 All DTOs are defined as TypeScript interfaces with accompanying Zod validation schemas in the shared package. Controllers use a global `ZodValidationPipe` for enforcement.  
 **Source:** [`packages/shared-types/src/`](packages/shared-types/src/)
 
+**Why DTOs and not Prisma's generated types?** They serve different layers and are not interchangeable. Prisma types describe *database rows* — they include sensitive columns (e.g., `passwordHash`), exist only in the backend bundle, and perform no input validation. DTOs are the *API contract*: shared with the React Native app through `@smartcart/shared-types` (Prisma cannot be imported into the mobile bundle), validated at runtime by Zod at the controller boundary, and mapped to/from domain entities and Prisma rows by the infrastructure layer (§2.2 Rule 3). Returning Prisma types directly would leak the persistence schema and bypass validation.
+
 ---
 
 ## 2.5. Security
@@ -741,13 +1498,13 @@ All DTOs are defined as TypeScript interfaces with accompanying Zod validation s
 | Concern              | Strategy                                                                                                                                                                                                                                                                                                                                 |
 |----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Transport            | HTTPS enforced via Nginx reverse proxy; all HTTP requests 301-redirected to HTTPS. TLS 1.3 minimum (TLS 1.2 accepted for legacy Android API < 26). HSTS header set to `max-age=31536000; includeSubDomains; preload` via Helmet middleware. Let's Encrypt certificates auto-renewed via Certbot. Config: [`backend/infra/docker/nginx/default.conf`](backend/infra/docker/nginx/default.conf). |
-| Authentication       | JWT `accessToken` (HS256, 15-min expiry) sent in `Authorization: Bearer` header. `refreshToken` (7-day expiry) stored in HTTP-only, Secure, SameSite=Strict cookie. Passwords hashed with `bcrypt` (cost factor 12). Account lockout after 5 failed attempts within 15 minutes (30-min lockout) via Redis. Token rotation on refresh; old tokens invalidated. JWT service: [`backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts). Password service: [`backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts). Auth service: [`backend/apps/api/src/modules/auth/application/services/auth.service.ts`](backend/apps/api/src/modules/auth/application/services/auth.service.ts). |
-| Authorization        | Role-Based Access Control (RBAC) with five roles: `shopper`, `pos_operator`, `customer_service`, `b2b_partner`, `admin`. Endpoints decorated with `@Roles()` and enforced by `RolesGuard`. Resource ownership verified by `ResourceOwnershipGuard` (compares JWT `sub` with resource IDs). POS and B2B endpoints secured with separate API Key authentication (`X-API-Key` header), hashed with SHA-256 and stored in DB. Roles guard: [`backend/apps/api/src/common/guards/roles.guard.ts`](backend/apps/api/src/common/guards/roles.guard.ts). Resource ownership guard: [`backend/apps/api/src/common/guards/resource-ownership.guard.ts`](backend/apps/api/src/common/guards/resource-ownership.guard.ts). API key guard: [`backend/apps/api/src/common/guards/api-key.guard.ts`](backend/apps/api/src/common/guards/api-key.guard.ts). |
+| Authentication       | JWT `accessToken` (HS256, 15-min expiry) sent in `Authorization: Bearer` header. `refreshToken` (7-day expiry) returned in the response body; the React Native client stores it in **expo-secure-store** (hardware-backed Keychain/Keystore), never `AsyncStorage`. Passwords hashed with `bcrypt` (cost factor 12). Account lockout after 5 failed attempts within 15 minutes (30-min lockout) via Redis. Token rotation on refresh; old tokens invalidated. JWT service: [`backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts). Password service: [`backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/password.service.ts). Auth service: [`backend/apps/api/src/modules/auth/application/services/auth.service.ts`](backend/apps/api/src/modules/auth/application/services/auth.service.ts). |
+| Authorization        | Role-Based Access Control (RBAC) with five JWT roles defined once in `@smartcart/shared-types` (single source of truth shared with the frontend): `USER` (consumer mobile app), `BACKOFFICE_OPERATOR`, `CATALOG_MANAGER`, `STORE_ADMIN`, `SUPER_ADMIN` (back-office web tool). The mobile app only ever issues `USER`-scoped tokens; the Customer Service Rep's point-adjustment and reward-fulfillment actions run under `STORE_ADMIN`. Endpoints decorated with `@Roles()` and enforced by `RolesGuard`. Resource ownership verified by `ResourceOwnershipGuard` (compares JWT `sub` with resource IDs). The POS and B2B surfaces are **not** JWT roles — they authenticate with separate API Key authentication (`X-API-Key` header), hashed with SHA-256 and stored in DB. Roles guard: [`backend/apps/api/src/common/guards/roles.guard.ts`](backend/apps/api/src/common/guards/roles.guard.ts). Resource ownership guard: [`backend/apps/api/src/common/guards/resource-ownership.guard.ts`](backend/apps/api/src/common/guards/resource-ownership.guard.ts). API key guard: [`backend/apps/api/src/common/guards/api-key.guard.ts`](backend/apps/api/src/common/guards/api-key.guard.ts). |
 | Database Encryption  | Encryption at rest: AES-256 provider-managed (Railway/Render/GCP Cloud SQL). Encryption in transit: TLS 1.3 enforced for all connections; Prisma client configured with `sslmode=require`. Connection strings never hardcoded; sourced from `DATABASE_URL` environment variable. |
-| Secrets Management   | All secrets stored in environment variables (Railway Shared Variables / Render Environment Groups in production). Never committed to Git (`.env` in `.gitignore`). JWT secrets rotated quarterly; database credentials rotated every 90 days. Application validates all required secrets at startup using a Zod schema and fails fast if any are missing or invalid. Validation: [`backend/apps/api/src/config/env.validation.ts`](backend/apps/api/src/config/env.validation.ts). |
+| Secrets Management   | All secrets stored in environment variables (Railway Shared Variables / Render Environment Groups in production). Never committed to Git (`.env` in `.gitignore`). JWT secrets rotated quarterly using a `kid` (key-ID) header with a dual-key overlap window — the previous key stays valid for verification until all live tokens expire, so rotation never forces a mass logout; database credentials rotated every 90 days. Application validates all required secrets at startup using a Zod schema and fails fast if any are missing or invalid. Validation: [`backend/apps/api/src/config/env.validation.ts`](backend/apps/api/src/config/env.validation.ts). |
 | Rate Limiting        | Redis-based rate limiter middleware applied globally (`100 req/min` per authenticated user or IP, configurable via `RATE_LIMIT_MAX`). Stricter limits on auth endpoints (`10 req/min` for login/register) to prevent brute-force. `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers included in responses. Middleware: [`backend/apps/api/src/common/middleware/rate-limiter.middleware.ts`](backend/apps/api/src/common/middleware/rate-limiter.middleware.ts). |
 | Input Validation     | All inputs validated at the controller boundary using Zod schemas via a global `ZodValidationPipe`. Schemas enforce strict types (UUIDs, numeric-only barcodes, length caps) preventing SQL injection, XSS, path traversal, and ReDoS. Validation pipe: [`backend/apps/api/src/common/pipes/zod-validation.pipe.ts`](backend/apps/api/src/common/pipes/zod-validation.pipe.ts). Shared schemas: [`packages/shared-types/src/`](packages/shared-types/src/). |
-| OWASP Compliance     | SQL Injection: 100% parameterized queries via Prisma ORM. XSS: Helmet CSP headers block inline scripts; all user input validated by Zod schemas. CSRF: SameSite=Strict cookies; API auth uses `Authorization` header. Path Traversal: UUID validation on all path parameters. ReDoS: Zod regex patterns tested for catastrophic backtracking; input lengths capped. Security headers configured via Helmet: [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts). |
+| OWASP Compliance     | SQL Injection: 100% parameterized queries via Prisma ORM. XSS: Helmet CSP headers block inline scripts; all user input validated by Zod schemas. CSRF: not applicable — no cookie-based sessions; the access token is sent in the `Authorization` header and the refresh token in the request body, so there are no ambient credentials for a cross-site request to abuse. Path Traversal: UUID validation on all path parameters. ReDoS: Zod regex patterns tested for catastrophic backtracking; input lengths capped. Security headers configured via Helmet: [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts). |
 | Audit Logging        | All sensitive operations (`login`, `register`, `logout`, `refresh`, `redeemReward`, `validateSession`, `updateProfile`, `deleteAccount`) logged as structured JSON with `userId`, `action`, `IP address`, and `correlationId`. Points transactions are append-only — immutable ledger where balance is derived via `SUM(delta)`, making it tamper-evident. Audit interceptor: [`backend/apps/api/src/common/interceptors/audit.interceptor.ts`](backend/apps/api/src/common/interceptors/audit.interceptor.ts). Points ledger: [`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-points.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-points.repository.ts). |
 
 ---
@@ -756,13 +1513,14 @@ All DTOs are defined as TypeScript interfaces with accompanying Zod validation s
 
 | OWASP Security | Risk it addresses | How we comply | Validation criterion |
 |---------------------|-------------------|---------------|----------------------|
-| **A01 — Broken Access Control** | An authenticated user reads or modifies another user's sessions, points balance, or profile (IDOR). A low-privilege role reaches an admin or B2B endpoint. | `RolesGuard` + `@Roles()` decorator enforces role-based access on every endpoint. `ResourceOwnershipGuard` compares the JWT `sub` claim against the resource's `userId` on every session/points request. POS and B2B surfaces are separated behind API Key auth (`X-API-Key`), not JWT. | A shopper JWT on `GET /sessions/:otherId` returns 403. A missing/invalid `X-API-Key` on `POST /sessions/:id/validate` returns 401. Guard unit tests cover both cases. |
+| **A01 — Broken Access Control** | An authenticated user reads or modifies another user's sessions, points balance, or profile (IDOR). A low-privilege role reaches an admin or B2B endpoint. | `RolesGuard` + `@Roles()` decorator enforces role-based access on every endpoint. `ResourceOwnershipGuard` compares the JWT `sub` claim against the resource's `userId` on every session/points request. POS and B2B surfaces are separated behind API Key auth (`X-API-Key`), not JWT. | A `USER` JWT on `GET /sessions/:otherId` returns 403. A missing/invalid `X-API-Key` on `POST /sessions/:id/validate` returns 401. Guard unit tests cover both cases. |
 | **A02 — Cryptographic Failures** | Leaked password hashes can be cracked. Weak or short JWT/QR secrets can be brute-forced. Unencrypted DB connections expose data in transit. | Passwords hashed with `bcrypt` cost 12. `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `QR_SIGNING_SECRET` validated as `z.string().min(32)` at startup. `DATABASE_URL` enforces `sslmode=require`. Password fields redacted from all logs via Pino's `redact` config. | App fails to start if any secret is under 32 chars. A grep for `password` in log output returns zero results. DB connection without SSL is refused. |
-| **A03 — Injection (SQL & XSS)** | User-supplied input concatenated into SQL queries allows data extraction or destruction. Stored malicious strings served to the mobile client could trigger XSS. | 100% Prisma ORM parameterized queries for all DB access. `Prisma.sql` tagged templates required for any `$queryRaw`. Zod schemas enforce strict types and length caps at every controller boundary. Helmet CSP headers block inline script execution. | Grep for `$queryRaw` with string interpolation returns zero results. A barcode of `'; DROP TABLE--` is rejected by Zod with 400. Response includes `Content-Security-Policy` header. |
+| **A03 — Injection** | User-supplied input concatenated into SQL queries allows data extraction or destruction. (Classic browser XSS is largely N/A here: the API returns JSON to a React Native client, which has no HTML/DOM to execute injected scripts.) | 100% Prisma ORM parameterized queries for all DB access; `Prisma.sql` tagged templates required for any `$queryRaw`. Zod schemas enforce strict types and length caps at every controller boundary, rejecting injection payloads before they reach a service. Helmet CSP headers are defense-in-depth for the served Swagger/Redoc HTML, not the mobile client. | Grep for `$queryRaw` with string interpolation returns zero results. A barcode of `'; DROP TABLE--` is rejected by Zod with 400. The served `/api/docs` HTML carries a `Content-Security-Policy` header. |
+| **A04 — Insecure Design** | Logic that is exploitable even when implemented bug-free — replayable QR codes, mutable point balances, re-identifiable analytics, or unthrottled auth. | Security is built into the domain design: the session state machine (§2.3) rejects invalid transitions; points live in an append-only ledger (balance = `SUM(delta)`, never mutated); QR tokens are single-use and time-boxed; analytics enforce k-anonymity (segments < 50 users merged into `"other"`); auth endpoints are rate-limited and lock out after 5 failures. | A replayed QR on an already-`COMPLETED` session is rejected. No code path performs a direct `UPDATE` on a balance. A segment with < 50 users never appears in a B2B response. |
 | **A05 — Security Misconfiguration** | Missing security headers, verbose error messages exposing stack traces, debug endpoints exposed in production, or an app that starts with missing secrets. | Helmet middleware sets CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`. `GlobalExceptionFilter` strips stack traces from 500 responses in production. Swagger UI disabled when `NODE_ENV=production`. Startup fails fast via Zod env schema if any required secret is absent. | `curl -I` on any endpoint shows all Helmet headers. A triggered 500 in production returns `{ errorCode, message }` only — no stack trace. App does not start without `JWT_ACCESS_SECRET`. |
 | **A06 — Vulnerable and Outdated Components** | A known CVE in an npm dependency can be directly exploited (e.g., prototype pollution, RCE). | `pnpm audit --audit-level=critical` runs as a CI quality gate and blocks merges on critical/high severity findings. Dependencies reviewed and updated regularly. | CI pipeline fails on any new critical or high CVE. `pnpm audit` in a clean install returns zero critical/high findings. |
-| **A07 — Authentication Failures** | Brute-forced passwords, stolen refresh tokens reused after logout, or expired tokens still accepted allow account takeover. | bcrypt cost 12 for passwords. Account lockout after 5 failed login attempts within 15 minutes (30-min lockout stored in Redis). Access token expires in 15 minutes. Refresh token rotation: old token is invalidated on each use; reuse returns 401. Refresh token stored in HTTP-only `SameSite=Strict` cookie — inaccessible to JavaScript. | The 6th login attempt within 15 min returns 429. A refresh token used twice returns 401 on the second call. An access token accepted 16 minutes after issue returns 401. |
-| **A08 — Software & Data Integrity / ReDoS** | A crafted input triggers catastrophic regex backtracking, blocking the Node.js event loop. A tampered QR token passes validation if signing is weak. | All Zod regex patterns avoid nested quantifiers and have hard `maxLength` caps. QR tokens signed with HS256; `JwtQrSigner.verify()` rejects any tampered or expired token before it reaches domain logic. | A 10 000-character barcode field is rejected in <1 ms. A QR token with a modified payload (but valid signature format) returns `INVALID_QR_TOKEN`. |
+| **A07 — Authentication Failures** | Brute-forced passwords, stolen refresh tokens reused after logout, or expired tokens still accepted allow account takeover. | bcrypt cost 12 for passwords. Account lockout after 5 failed login attempts within 15 minutes (30-min lockout stored in Redis). Access token expires in 15 minutes. Refresh token rotation: old token is invalidated on each use; reuse returns 401. Refresh token stored client-side in **expo-secure-store** (hardware-backed Keychain/Keystore), never `AsyncStorage`; the server stores only its hash in Redis for revocation. | The 6th login attempt within 15 min returns 429. A refresh token used twice returns 401 on the second call. An access token accepted 16 minutes after issue returns 401. |
+| **A08 — Software & Data Integrity Failures** | A forged QR token, a tampered build artifact, or a compromised dependency bypasses integrity controls and reaches production. | QR tokens are HS256-signed and `JwtQrSigner.verify()` rejects any tampered or expired token before it reaches domain logic. The build pins dependencies with `pnpm install --frozen-lockfile`, gates them with `pnpm audit`, and ships immutable Docker images tagged `main-{sha}` to GHCR. The points ledger is append-only, so financial records cannot be silently rewritten. | A QR token with a modified payload returns `INVALID_QR_TOKEN`. A lockfile mismatch fails CI. (ReDoS — a regex-backtracking DoS — is handled at the input-validation boundary; see the A03 detail.) |
 | **A09 — Security Logging & Monitoring Failures** | Undetected breaches or no audit trail for sensitive operations make incident response impossible. | Structured JSON logs via Pino with `correlationId`, `userId`, `action`, and `IP` on every request. `AuditInterceptor` logs all sensitive operations. Sentry captures every unhandled 500 with context. Points ledger is append-only (immutable audit trail). PII fields auto-redacted by Pino's `redact` config. | `validateSession` appears in audit log with correct fields after each call. A triggered 500 creates a Sentry event within 30 seconds. `email` never appears in plain text in any log line. |
 | **A10 — Server-Side Request Forgery (SSRF)** | The analytics worker makes outbound HTTP calls to the AI inference service. If the target URL is attacker-controllable, internal services could be probed. | `AI_INFERENCE_URL` is set only via environment variable, validated as `z.string().url()` (must be HTTPS) at worker startup. No user-supplied URLs are ever passed to HTTP clients. The analytics worker has no public API surface — it only consumes BullMQ jobs from an internal queue. | Worker fails to start if `AI_INFERENCE_URL` is not a valid HTTPS URL. Grep for any `fetch`/`axios` call that uses a runtime-variable URL other than `AI_INFERENCE_URL` returns zero results. |
 
@@ -778,7 +1536,7 @@ Apply both guards at the controller level so they cannot be accidentally skipped
 ```typescript
 @Controller('sessions')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('shopper')
+@Roles('USER')
 export class SessionController { ... }
 ```
 
@@ -822,7 +1580,7 @@ await prisma.$queryRaw(Prisma.sql`SELECT * FROM products WHERE barcode = ${barco
 ```
 Add a CI lint rule or pre-commit hook that greps for `$queryRaw\`` (the dangerous form) and fails the build if found. All repository files live under [`backend/apps/api/src/modules/`](backend/apps/api/src/modules/) and [`backend/apps/analytics-worker/src/infrastructure/repositories/`](backend/apps/analytics-worker/src/infrastructure/repositories/).
 
-**XSS — Helmet configuration in [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts):**
+**XSS — scope and headers.** This API returns JSON to a React Native client, which has no HTML/DOM to execute injected scripts, so classic stored/reflected XSS does not apply to the mobile path. The one HTML surface is the Swagger/Redoc docs page, so Helmet's CSP is configured as defense-in-depth for it. Configure all HTTP security headers in one place — [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts):
 ```typescript
 import helmet from 'helmet';
 app.use(helmet({
@@ -830,7 +1588,25 @@ app.use(helmet({
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 ```
-This is the single place all HTTP security headers are configured. Do not split them across middleware files.
+Do not split these across middleware files.
+
+**ReDoS — input-validation boundary.** A crafted string can make a poorly written regex backtrack catastrophically and block the event loop. This is an availability/DoS risk rather than injection, but it is caught at the same Zod boundary, so it is handled here. When writing Zod schemas in [`packages/shared-types/src/validation/`](packages/shared-types/src/validation/), for any `.regex()`:
+- No nested quantifiers — `(a+)+` or `(\w+\s)+` are dangerous.
+- Always pair `.regex()` with `.max(N)` to bound worst-case input length.
+- Prefer explicit character classes (`[a-z0-9]`) over shorthand (`\w`) inside repeated groups.
+
+The barcode regex `z.string().regex(/^\d{8,14}$/).max(14)` is safe — anchored, no alternation, fixed character class.
+
+---
+
+#### A04 — Insecure Design
+
+These controls are design-level — they hold even if every line is implemented bug-free:
+
+- **Session state machine (§2.3):** illegal transitions (e.g., adding an item to a `COMPLETED` session, validating an `EXPIRED` one) are rejected by the entity itself, not by scattered `if` checks. A replayed QR on an already-`COMPLETED` session cannot re-credit points.
+- **Append-only points ledger:** balance is derived (`SUM(delta)`), never stored, so there is no mutable field to corrupt or race.
+- **K-anonymity for analytics:** `AnalyticsService` merges any segment with fewer than 50 users into `"other"`, so an individual is never re-identifiable from a B2B response.
+- **Throttled authentication:** auth endpoints are rate-limited and lock an account after 5 failed attempts — brute-force is designed out, not detected after the fact.
 
 ---
 
@@ -863,14 +1639,15 @@ Refresh token rotation: when `/auth/refresh` is called, delete the old token has
 
 ---
 
-#### A08 — ReDoS
+#### A08 — Software & Data Integrity Failures
 
-When writing Zod schemas in [`packages/shared-types/src/validation/`](packages/shared-types/src/validation/), follow these rules for any `.regex()` call:
-- No nested quantifiers: `(a+)+` or `(\w+\s)+` are dangerous.
-- Always pair a `.regex()` with `.max(N)` — caps the worst-case input length and bounds backtracking time.
-- Prefer explicit character classes (`[a-z0-9]`) over shorthand (`\w`) inside repeated groups.
+Two integrity surfaces matter here: the QR token and the build supply chain.
 
-The barcode regex `z.string().regex(/^\d{8,14}$/).max(14)` is safe — anchored, no alternation, fixed character class.
+- **QR token integrity:** `JwtQrSigner.verify()` (§2.3) checks the HS256 signature before any domain logic runs, so a forged or edited token is rejected outright. The embedded item hash (`validateItems()`) additionally proves the cart was not altered after the QR was issued.
+- **Supply-chain integrity:** CI installs with `pnpm install --frozen-lockfile` (no unpinned versions), the `pnpm audit` gate blocks known-vulnerable packages, and deploys ship immutable Docker images tagged `main-{sha}` to GHCR — the image that passed CI is byte-for-byte the image that runs in production.
+- **Data integrity:** the `PointsTransaction` ledger is append-only (balance = `SUM(delta)`); there is no update/delete path, so credited points cannot be silently rewritten.
+
+(ReDoS guidance moved to the A03 input-validation detail above.)
 
 ---
 
@@ -925,7 +1702,7 @@ The `AI_INFERENCE_URL` environment variable is validated in the worker's startup
 | **Monitoring**        | Prometheus metrics exposed at `/metrics` via `@willsoto/nestjs-prometheus`. Default metrics (CPU, memory, event loop lag, GC pauses) plus custom business metrics: checkout completions, points awarded, QR generations, active sessions, BullMQ queue depth, and AI classification latency. Business metrics service: [`backend/apps/api/src/common/metrics/business-metrics.service.ts`](backend/apps/api/src/common/metrics/business-metrics.service.ts). Queue depth reporter: [`backend/apps/api/src/common/queues/queue-metrics.service.ts`](backend/apps/api/src/common/queues/queue-metrics.service.ts). |
 | **Distributed Tracing** | OpenTelemetry SDK with automatic instrumentation for HTTP, Express, `ioredis`, BullMQ, and Prisma. Traces exported via OTLP gRPC to Jaeger. W3C Trace Context propagated across HTTP calls and injected into BullMQ job metadata. Manual spans for critical business operations (checkout validation). Tracing initialization: [`backend/apps/api/src/tracing.ts`](backend/apps/api/src/tracing.ts). |
 | **Alerting**          | Prometheus alerting rules evaluated by Alertmanager. P1 (critical) alerts routed to PagerDuty with 5-minute on-call escalation. P2/P3 warnings sent to Slack `#smartcart-alerts`. Alerts defined for: service down, high error rate (>1% 5xx over 5 min), queue backpressure (>1000 waiting jobs), high checkout latency (P95 > 2s), database connection pool exhaustion (>80% utilized), and AI service degradation (P95 > 10s). Alert rules: [`backend/infra/prometheus/rules/smartcart-alerts.yml`](backend/infra/prometheus/rules/smartcart-alerts.yml). |
-| **Health Checks**     | Three-tier health probes via `@nestjs/terminus`. `/api/v1/health/liveness` — lightweight process check for Kubernetes restart decisions. `/api/v1/health/readiness` — validates DB and Redis connectivity for traffic routing. `GET /health` — full dependency check for load balancers. Health controller: [`backend/apps/api/src/common/health/health.controller.ts`](backend/apps/api/src/common/health/health.controller.ts). |
+| **Health Checks**     | Three-tier health probes via `@nestjs/terminus`. `/api/v1/health/liveness` — lightweight process check the Railway/Render platform uses to restart an unhealthy container. `/api/v1/health/readiness` — validates DB and Redis connectivity for traffic routing. `GET /health` — full dependency check for load balancers. Health controller: [`backend/apps/api/src/common/health/health.controller.ts`](backend/apps/api/src/common/health/health.controller.ts). |
 | **Error Tracking**    | Sentry via `@ntegral/nestjs-sentry` and `@sentry/node`. Captures unhandled exceptions (500 errors), Prisma errors, and BullMQ job failures. Expected business errors (4xx: 404, 409, 422) are intentionally excluded. Every Sentry event enriched with `userId`, `correlationId`, `sessionId`, and release version. Sentry configuration: [`backend/apps/api/src/config/sentry.config.ts`](backend/apps/api/src/config/sentry.config.ts). Global exception filter with Sentry integration: [`backend/apps/api/src/common/filters/global-exception.filter.ts`](backend/apps/api/src/common/filters/global-exception.filter.ts). |
 
 ---
@@ -967,14 +1744,14 @@ To implement the graceful shutdown handler, modify the application's entry point
 - **Strategy:** Horizontal scaling. Multiple stateless NestJS API containers run behind a load balancer. The analytics worker (`analytics-worker`) is a separate Railway/Render service that scales independently. The primary bottleneck is the database, mitigated by Redis Cache-Aside for product lookups, and PgBouncer connection pooling.
 
 - **Scaling Configuration:**
-  - **API service:** Configure Railway/Render to scale horizontally. A CPU threshold of ~70% is a reasonable trigger. Because the API is fully stateless (all session data lives in Redis), adding more instances requires zero code changes.
+  - **API service:** Configure Railway/Render to scale horizontally. A CPU threshold of ~70% is a reasonable trigger. Because the API is fully stateless (no session state is held in-process — PostgreSQL is the source of truth and Redis is a shared read-through cache), adding more instances requires zero code changes.
   - **Analytics worker:** The worker is CPU-bound during AI classification. Scale its instance count based on BullMQ queue depth — if `analytics-profile-update` consistently has >100 waiting jobs, add worker instances.
 
 - **Stateless Services:**
   - **What to implement:** All session state externalized to Redis, not stored in-process.
-  - **How to implement:** In service logic (e.g., `CheckoutService` at [`backend/apps/api/src/modules/checkout/application/services/checkout.service.ts`](backend/apps/api/src/modules/checkout/application/services/checkout.service.ts)), load session data via `sessionRepo.findById()`. Repository (e.g., `PrismaSessionRepository` at [`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts)) implements **Read-Through/Write-Through cache**:
+  - **How to implement:** In service logic (e.g., `CheckoutService` at [`backend/apps/api/src/modules/checkout/application/services/checkout.service.ts`](backend/apps/api/src/modules/checkout/application/services/checkout.service.ts)), load session data via `sessionRepo.findById()`. Repository (e.g., `PrismaSessionRepository` at [`backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts`](backend/apps/api/src/modules/checkout/infrastructure/repositories/prisma-session.repository.ts)) implements a **Read-Through cache with cache-after-commit writes**:
     1. **On `findById`:** Check Redis (`redis.get`). On miss, query PostgreSQL, hydrate Redis with TTL (e.g., 7200s), return data.
-    2. **On `save`:** Update Redis immediately, then persist to PostgreSQL. Guarantees consistency across containers.
+    2. **On `save`:** Persist to PostgreSQL first — inside the active `$transaction` when a `tx` client is passed. Update or invalidate the Redis entry **only after the transaction commits** (via a post-commit hook), never inside the callback. This prevents a rolled-back transaction from leaving a stale `COMPLETED` session in cache while the database still shows `PENDING_CHECKOUT`.
 
 - **Connection Pooling & PgBouncer:**
   - **What to implement:** PgBouncer in **Transaction Pooling** mode between API containers and PostgreSQL.
@@ -996,6 +1773,15 @@ This section traces the four main workflows through every architectural layer. F
 
 **Prerequisites:** Shopper has created a session, scanned items, and requested a QR code. QR contains a signed JWT embedding a deterministic SHA-256 hash of session items.
 
+**Business Rules:**
+
+- Validation succeeds only from `PENDING_CHECKOUT`; a `COMPLETED`, `EXPIRED`, or `VALIDATION_FAILED` session is rejected — this is what makes the operation replay-safe (a re-submitted QR never double-credits).
+- The POS-scanned item hash must equal the session's frozen hash exactly. Any add/remove/swap → `QR_ITEM_MISMATCH` and the session moves to `VALIDATION_FAILED` (terminal).
+- A QR past its 10-minute `exp` is invalid regardless of session state.
+- Session completion, point credit, and the ledger insert commit in a single `$transaction` — all-or-nothing; a partial credit is impossible.
+- Only a POS API key may call this endpoint, and the key must be scoped to the session's `storeId`.
+- Post-commit side effects (analytics event, WebSocket push, metrics) are best-effort — their failure never rolls back the sale.
+
 **Steps:**
 
 1. **POS Terminal Request:** `POST /api/v1/sessions/{id}/validate` with `qrToken` and `scannedItems[]`. Requires valid POS API Key in `X-API-Key`.
@@ -1016,7 +1802,7 @@ This section traces the four main workflows through every architectural layer. F
 
 5. **Post-Commit Side Effects:**
    - Event publishing via `BullMqEventPublisher` ([`backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts`](backend/apps/api/src/modules/checkout/infrastructure/events/bullmq-event.publisher.ts)). *What to code:* Implement `publish(event)` — call `this.analyticsQueue.add('profile-update', event)`. This enqueues the job for the analytics worker.
-   - Real-time notification via `SessionGateway` ([`backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts`](backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts)). *What to code:* Implement a `@WebSocketGateway` class. On the `sessionStatusChanged` event, call `this.server.to(sessionId).emit('sessionStatusChanged', { status, pointsAwarded })`.
+   - Real-time notification via `SessionGateway` ([`backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts`](backend/apps/api/src/modules/checkout/presentation/gateways/session.gateway.ts)). *What to code:* Implement a `@WebSocketGateway` class with a **JWT handshake guard** — authenticate the token on `handleConnection` and reject unauthenticated sockets. On `subscribe:session`, verify the JWT `sub` owns the session **before** joining room `session:{id}` (reject otherwise, so no client can observe another user's checkout). On the `sessionStatusChanged` event, emit to the per-session room — `this.server.to('session:' + sessionId).emit('sessionStatusChanged', { status, pointsAwarded })`.
    - Metrics via `BusinessMetricsService` ([`backend/apps/api/src/common/metrics/business-metrics.service.ts`](backend/apps/api/src/common/metrics/business-metrics.service.ts)). *What to code:* Call `this.checkoutCounter.inc()` and `this.pointsHistogram.observe(total)` after the transaction.
 
 **Error Handling Matrix:**
@@ -1036,6 +1822,14 @@ This section traces the four main workflows through every architectural layer. F
 ### Workflow 2: Consumer Data Pipeline (B2B Analytics)
 
 **Business Criticality:** B2B revenue path — must be **asynchronous**, **resilient**, and **anonymized**.
+
+**Business Rules:**
+
+- The pipeline is fire-and-forget: it runs only after the checkout transaction commits and must never block, delay, or fail the checkout that triggered it.
+- Classify only users with ≥ 5 `PURCHASE` transactions in the trailing 90 days; below that, skip — no segment is written.
+- Exactly one `ConsumerSegment` per user (upsert), holding aggregated features only — never raw transaction rows.
+- B2B output is aggregate-only; any segment with < 50 users collapses into `"other"` so no individual is re-identifiable (k-anonymity).
+- Jobs are idempotent and retried with backoff; a repeated delivery re-computes the same segment without side effects.
 
 **Steps:**
 
@@ -1062,6 +1856,15 @@ This section traces the four main workflows through every architectural layer. F
 
 **Business Criticality:** All other workflows depend on this — no JWT means no session, no checkout.
 
+**Business Rules:**
+
+- `email` is unique; a duplicate registration → `409`.
+- Failed login is indistinguishable whether the email is unknown or the password is wrong — same error, no user enumeration.
+- Access token lives 15 min, refresh token 7 days; refresh tokens are single-use and rotated on every refresh.
+- The server persists only the refresh-token *hash* (Redis). Revocation = deleting that hash; a token whose hash is absent → `401`.
+- The mobile app only ever issues `USER`-scoped tokens (see §2.5); privileged roles are never minted here.
+- Five failed logins within 15 min lock the account for 30 min.
+
 **Steps:**
 
 1. **Register:** `POST /api/v1/auth/register` with `email`, `password`, `fullName`.
@@ -1072,19 +1875,28 @@ This section traces the four main workflows through every architectural layer. F
 
 3. **Token Issuance:**
    - *What to code:* In [`backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts`](backend/apps/api/src/modules/auth/infrastructure/crypto/jwt.service.ts), implement `signAccessToken(userId, role): string` — call `jwt.sign({ sub: userId, role }, accessSecret, { expiresIn: '15m' })`. Implement `signRefreshToken(userId): string` — sign with a separate `refreshSecret`, `expiresIn: '7d'`. Store the refresh token hash in Redis (`refresh:{userId}:{tokenId}`) so it can be revoked.
-   - Return `accessToken` in the response body. Set `refreshToken` as an HTTP-only, `Secure`, `SameSite=Strict` cookie via `response.cookie()`.
+   - Return both `accessToken` and `refreshToken` in the response body. The React Native client persists the `refreshToken` in expo-secure-store; the server keeps only its hash in Redis for revocation.
 
-4. **Token Refresh:** `POST /api/v1/auth/refresh` — reads the `refreshToken` cookie.
-   - *What to code:* In `auth.service.ts`, implement `refresh(refreshToken)`. Verify the token with `jwtService.verifyRefreshToken()`. Look up the token hash in Redis — if missing, it was revoked, throw `UnauthorizedException`. Delete the old token from Redis, issue a new `accessToken` and a new `refreshToken` (rotation), set the new cookie.
+4. **Token Refresh:** `POST /api/v1/auth/refresh` — reads the `refreshToken` from the request body.
+   - *What to code:* In `auth.service.ts`, implement `refresh(refreshToken)`. Verify the token with `jwtService.verifyRefreshToken()`. Look up the token hash in Redis — if missing, it was revoked, throw `UnauthorizedException`. Delete the old token from Redis, issue a new `accessToken` and a new `refreshToken` (rotation), and return both in the response body.
 
 5. **Logout:** `POST /api/v1/auth/logout`.
-   - *What to code:* Delete the refresh token entry from Redis. Clear the cookie by calling `response.clearCookie('refreshToken')`.
+   - *What to code:* Delete the refresh token entry from Redis (server-side revocation). The client deletes its stored token from expo-secure-store.
 
 ---
 
 ### Workflow 4: Session Creation & Item Scanning
 
 **Business Criticality:** The user-facing happy path — everything before QR generation.
+
+**Business Rules:**
+
+- At most one `ACTIVE` session per user; attempting a second → `409`.
+- Items may be added or removed only while the session is `ACTIVE`; the entity enforces the guard, not the controller.
+- Every session/item mutation requires `session.userId === caller` — otherwise `403` (ownership, not just authentication).
+- QR generation requires ≥ 1 item and transitions `ACTIVE → PENDING_CHECKOUT`, freezing the cart and computing its item hash.
+- Once `PENDING_CHECKOUT`, the cart is immutable — no further add/remove is permitted.
+- A session left `ACTIVE` for more than 2 hours is expired by the cleanup cron (§2.3).
 
 **Steps:**
 
@@ -1125,7 +1937,7 @@ flowchart TD
     merge(["Merge PR to main"])
 
     subgraph CI_Stage ["CI Pipeline (Feature Branch / PR)"]
-        s1["1. Install Deps<br/>• npm ci<br/>• Cache: node_modules"]
+        s1["1. Install Deps<br/>• pnpm install --frozen-lockfile<br/>• Cache: pnpm store"]
         s2["2. Static Analysis<br/>• ESLint<br/>• Prettier check<br/>• TypeScript check (tsc --noEmit)"]
         
         s3a["3a. Unit Tests<br/>(Jest)"]
