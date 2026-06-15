@@ -567,13 +567,6 @@ classDiagram
 | Validation rejected | POS / fraud review rejects | `VALIDATION_REJECTED` | "No pudimos verificar tu compra" | No | Yes |
 | Render crash | Component throws | (caught by `FeatureErrorBoundary`) | "Algo salió mal. Vuelve a intentarlo." | Reload feature | Yes |
 
-> **Canonical codes:** The backend wire error codes (§2.8) are the source of truth, defined
-> once in `@smartcart/shared-types`. `ApiErrorMapper` maps them to the client-side `AppError.code`
-> above: `QR_TOKEN_EXPIRED → QR_EXPIRED`, `QR_ITEM_MISMATCH → VALIDATION_REJECTED`,
-> `SESSION_NOT_FOUND → VALIDATION_REJECTED`, `UNAUTHORIZED`/`INVALID_QR_TOKEN → SESSION_EXPIRED`
-> (or a security alert). Client-only conditions (`NETWORK_ERROR`, `SERVER_ERROR`, `UNKNOWN`)
-> have no backend code.
-
 #### Flow
 
 ```mermaid
@@ -682,54 +675,6 @@ The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.
 - **Branch Strategy:** GitHub Flow — feature branches → PR → `main`.
 - **Quality Gates:** A PR cannot merge if lint, type check, tests, or build fail; minimum coverage thresholds enforced.
 - **Deployment Strategy:** Merge to `main` → automatic **EAS Update** to the staging channel; manual promotion (EAS Submit) to production store tracks after QA sign-off.
-
----
-
-## 1.9. Project Scaffold
-
-- **Root:** [`/frontend/scr`](/frontend/src/) 
-
-```
-/frontend/src
-├── /api/                  # API Facade + Cache-Aside
-│   ├── client.ts          # Axios instance: interceptors, JWT refresh (Singleton)
-│   └── /endpoints/        # products.ts, sessions.ts, rewards.ts, auth.ts, validation.ts
-├── /assets/               # Images, fonts (Poppins, Inter), icons
-├── /components/           # Reusable UI (Atomic Design)
-│   ├── /atoms/            # Button, Input, Badge, PointsTag, LocationPill, Toast
-│   ├── /molecules/        # ProductCard, PointsCard, ScanConfirmationModal, RewardCard, QRCodeView
-│   ├── /organisms/        # BottomNav, PendingItemsList, SponsoredCarousel, RewardsCatalog
-│   └── /product/decorators/  # Sponsored/NewlyScanned/Validated/LockedReward (Decorator)
-├── /features/             # Feature logic & local state
-│   ├── /scan/             # scannerService.ts, /strategies/ (Camera, Manual), /validation/ (CoR chain)
-│   ├── /session/          # /states/ (State machine), /commands/ (Command + undo)
-│   ├── /checkout/         # QR generation + validation status (WebSocket/polling)
-│   └── /rewards/          # /factories/ (RewardFactory), redemption hooks
-├── /hooks/                # useSession, useScan, useRewards, useAuth
-├── /lib/                  # utils, constants, /i18n/ (es-CR, en)
-├── /store/                # Zustand stores (sessionStore = Singleton), slices
-├── /styles/               # NativeWind theme, design tokens
-└── /types/                # Shared TS types & DTOs (ProductDTO, RewardDTO, SessionDTO)
-
-/app                       # Expo Router screens
-├── _layout.tsx            # Root nav + providers (Query, SafeArea, ErrorBoundary)
-├── index.tsx              # Lobby
-├── scan.tsx               # Camera scanning
-├── checkout.tsx           # QR validation
-├── confirmation.tsx       # Points credited
-└── rewards.tsx            # Rewards & coupons
-
-# Project root — config & tooling
-├── app.json               # Expo config (jsEngine: hermes) — §1.7 Bundle Optimization
-├── eas.json               # EAS Build/Update/Submit profiles — §1.7, §1.9
-├── metro.config.js        # Metro bundler (inlineRequires) — §1.7 Code Splitting
-├── package.json           # Scripts: lint, format:check, typecheck, test — §1.9
-├── eslint.config.js       # ESLint 9 flat config — §1.9
-├── jest.config.js         # Jest (jest-expo preset) — §1.8
-├── jest.setup.ts          # Test setup (RTL, @axe-core/react) — §1.8
-├── /.maestro/             # Maestro E2E flow files (*.yaml) — §1.8, §1.9
-└── /.github/workflows/    # ci.yml — lint → test → EAS build → E2E → deploy — §1.9
-```
 
 ---
 
@@ -1506,12 +1451,6 @@ features only — no raw transaction rows — supporting the B2B anonymization g
 | GET    | `/analytics/stores/:id/overview` | Get store-level metrics (avg ticket, peak hours, segment mix).           | B2B API Key          |
 | GET    | `/health`                   | Service health check (database, redis, uptime).                             | No                   |
 
-> **Module coverage:** `auth`, `checkout`, and `analytics` are scaffolded (§2.10). The
-> `users` (`/users/me*`), `catalog` (`/products/*`), `rewards` (`/rewards/*`), and
-> `notifications` modules are in MVP scope but **not yet scaffolded** — each follows the same
-> four-layer structure (§2.2) and needs a controller, an application service, and (where
-> stateful) a Prisma repository added before the endpoints above go live.
-
 ---
 
 ### Data Contracts (DTOs)
@@ -1781,10 +1720,6 @@ This section traces the four main workflows through every architectural layer. F
 
 **Prerequisites:** Shopper has created a session, scanned items, and requested a QR code. QR contains a signed JWT embedding a deterministic SHA-256 hash of session items.
 
-> **Note:** Store-presence ("inside an affiliated store") is gated **client-side** by the
-> mobile app (LocationPill, §1.2); the server does not re-verify geolocation. Point accrual is
-> implicitly bound to the physical POS that scans the QR, not to a server-side location check.
-
 **Steps:**
 
 1. **POS Terminal Request:** `POST /api/v1/sessions/{id}/validate` with `qrToken` and `scannedItems[]`. Requires valid POS API Key in `X-API-Key`.
@@ -1819,9 +1754,6 @@ This section traces the four main workflows through every architectural layer. F
 | Session not found | `SESSION_NOT_FOUND` | 404 | Ask shopper to create new session | N/A |
 | Items mismatch | `QR_ITEM_MISMATCH` | 422 | Display mismatch | Session → `VALIDATION_FAILED` |
 | DB connection lost | `INTERNAL_ERROR` | 500 | "System error. Retry." | Full `$transaction` rollback |
-
-> These wire error codes are the canonical set, defined in `@smartcart/shared-types`; the
-> frontend `ApiErrorMapper` maps them to its client-side `AppError.code` (§1.5 Error taxonomy).
 
 ---
 
@@ -2102,193 +2034,5 @@ Analytics worker uses [`backend/infra/docker/Dockerfile.worker`](backend/infra/d
 - `pnpm test:contract` — API contract tests  
 - `pnpm docker:up` / `pnpm docker:down` — Start/stop local Docker Compose  
 - `pnpm openapi:generate` / `pnpm openapi:validate` — OpenAPI spec tasks  
-
----
-
-## 2.10 Project scaffold
-
-Shared packages and CI/CD config live at the repository root, outside `backend/`, so both `frontend/` and `backend/apps/api` can consume them as equal workspace members. `.github/` is read by GitHub Actions only from the repo root.
-
-### Repository Root
-
-```
-/ (repo root)
-├── .github/
-│   ├── settings.yml
-│   └── workflows/
-│       ├── ci.yml
-│       └── deploy.yml
-├── packages/
-│   └── shared-types/
-│       ├── test/
-│       └── src/
-│           ├── dto/
-│           │   ├── session.dto.ts
-│           │   ├── auth.dto.ts
-│           │   └── analytics.dto.ts
-│           └── validation/
-│               ├── session.schemas.ts
-│               ├── auth.schemas.ts
-│               └── analytics.schemas.ts
-├── frontend/
-│   └── (React Native / Expo app — existing)
-└── backend/
-    └── (see below)
-```
-
-### `backend/`
-
-```
-backend/
-├── .env.example
-├── package.json
-├── pnpm-lock.yaml
-├── apps/
-│   ├── api/
-│   │   ├── eslint.config.mjs
-│   │   ├── jest.unit.config.ts
-│   │   ├── jest.integration.config.ts
-│   │   ├── prisma/
-│   │   │   └── schema.prisma
-│   │   ├── docker/
-│   │   ├── test/
-│   │   └── src/
-│   │       ├── main.ts
-│   │       ├── tracing.ts
-│   │       ├── config/
-│   │       │   ├── env.validation.ts
-│   │       │   ├── pino.config.ts
-│   │       │   └── sentry.config.ts
-│   │       ├── common/
-│   │       │   ├── decorators/
-│   │       │   │   └── current-user.decorator.ts
-│   │       │   ├── filters/
-│   │       │   │   └── global-exception.filter.ts
-│   │       │   ├── guards/
-│   │       │   │   ├── api-key.guard.ts
-│   │       │   │   ├── resource-ownership.guard.ts
-│   │       │   │   └── roles.guard.ts
-│   │       │   ├── health/
-│   │       │   │   └── health.controller.ts
-│   │       │   ├── interceptors/
-│   │       │   │   └── audit.interceptor.ts
-│   │       │   ├── metrics/
-│   │       │   │   └── business-metrics.service.ts
-│   │       │   ├── middleware/
-│   │       │   │   └── rate-limiter.middleware.ts
-│   │       │   ├── pipes/
-│   │       │   │   └── zod-validation.pipe.ts
-│   │       │   └── queues/
-│   │       │       ├── queue.config.ts
-│   │       │       └── queue-metrics.service.ts
-│   │       ├── infrastructure/
-│   │       │   └── messaging/
-│   │       │       └── analytics-queue.producer.ts
-│   │       └── modules/
-│   │           ├── analytics/
-│   │           │   ├── application/
-│   │           │   │   └── services/
-│   │           │   │       └── analytics.service.ts
-│   │           │   └── presentation/
-│   │           │       └── controllers/
-│   │           │           └── analytics.controller.ts
-│   │           ├── auth/
-│   │           │   ├── application/
-│   │           │   │   └── services/
-│   │           │   │       └── auth.service.ts
-│   │           │   └── infrastructure/
-│   │           │       └── crypto/
-│   │           │           ├── jwt.service.ts
-│   │           │           └── password.service.ts
-│   │           ├── catalog/
-│   │           │   ├── catalog.module.ts
-│   │           │   └── application/
-│   │           │       └── interfaces/
-│   │           │           └── catalog-service.interface.ts
-│   │           ├── checkout/
-│   │           │   ├── checkout.module.ts
-│   │           │   ├── application/
-│   │           │   │   ├── interfaces/
-│   │           │   │   │   ├── event-publisher.interface.ts
-│   │           │   │   │   ├── qr-signer.interface.ts
-│   │           │   │   │   └── session-repository.interface.ts
-│   │           │   │   └── services/
-│   │           │   │       ├── checkout.service.ts
-│   │           │   │       ├── points-strategy-resolver.ts
-│   │           │   │       ├── points.service.ts
-│   │           │   │       └── session-expiration.service.ts
-│   │           │   ├── domain/
-│   │           │   │   ├── entities/
-│   │           │   │   │   └── shopping-session.entity.ts
-│   │           │   │   ├── factories/
-│   │           │   │   │   └── qr-ticket.factory.ts
-│   │           │   │   ├── state-machine/
-│   │           │   │   │   └── session-state-machine.ts
-│   │           │   │   └── strategies/
-│   │           │   │       ├── points-calculation-strategy.interface.ts
-│   │           │   │       ├── fixed-points.strategy.ts
-│   │           │   │       ├── spend-multiplier.strategy.ts
-│   │           │   │       ├── volume-tier.strategy.ts
-│   │           │   │       └── weekend-bonus.strategy.ts
-│   │           │   ├── infrastructure/
-│   │           │   │   ├── crypto/
-│   │           │   │   │   └── jwt-qr.signer.ts
-│   │           │   │   ├── events/
-│   │           │   │   │   └── bullmq-event.publisher.ts
-│   │           │   │   ├── mappers/
-│   │           │   │   │   └── session.mapper.ts
-│   │           │   │   └── repositories/
-│   │           │   │       ├── prisma-points.repository.ts
-│   │           │   │       └── prisma-session.repository.ts
-│   │           │   └── presentation/
-│   │           │       ├── controllers/
-│   │           │       │   ├── qr.controller.ts
-│   │           │       │   ├── session.controller.ts
-│   │           │       │   └── validation.controller.ts
-│   │           │       └── gateways/
-│   │           │           └── session.gateway.ts
-│   │           ├── notifications/
-│   │           └── rewards/
-│   │
-│   └── analytics-worker/
-│       ├── test/
-│       └── src/
-│           ├── infrastructure/
-│           │   ├── ai/
-│           │   │   └── ai-inference.client.ts
-│           │   └── repositories/
-│           │       └── segment.repository.ts
-│           ├── processors/
-│           │   └── profile-update.processor.ts
-│           └── services/
-│               └── profile-aggregator.service.ts
-│
-├── infra/
-│   ├── docker/
-│   │   ├── Dockerfile.api
-│   │   ├── Dockerfile.worker
-│   │   ├── docker-compose.yml
-│   │   └── nginx/
-│   │       └── default.conf
-│   ├── grafana/
-│   │   └── dashboards/
-│   │       └── smartcart-overview.json
-│   ├── kubernetes/
-│   │   ├── analytics-worker-hpa.yaml
-│   │   └── api-hpa.yaml
-│   ├── pgbouncer/
-│   │   └── pgbouncer.ini
-│   ├── prometheus/
-│   │   └── rules/
-│   │       └── smartcart-alerts.yml
-│   └── terraform/
-│       └── environments/
-│           └── production/
-│               └── main.tf
-│
-└── docs/
-    └── api/
-        └── openapi.yaml
-```
 
 ---
