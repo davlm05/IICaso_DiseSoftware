@@ -11,7 +11,7 @@
 
 | # | Task Description | Success Criteria |
 |---|-----------------|-----------------|
-| 1 | [Follow the normal flow of the application] | [Scan and complete list and reach the rewards screen] |
+| 1 | Normal flow of the buyer | Scan and complete list and reach the rewards screen |
 
 ---
 
@@ -456,9 +456,6 @@ flowchart TD
 ---
 
 ## 1.5. Design Patterns
-
-Mapped directly from `designPatterns.md` to their frontend implementation locations.
-
 ### Asynchronous Operations
 
 | # | Operation | Trigger | Mechanism | Loading state | Retry policy | Error handling |
@@ -1099,7 +1096,7 @@ graph TB
     %% ==========================================
     %% PRESENTATION LAYER
     %% ==========================================
-    subgraph Presentation["🎯 Presentation Layer"]
+    subgraph Presentation["Presentation Layer"]
         direction LR
         SessionCtrl["<b>SessionController</b><br/><i>REST</i><br/>POST /sessions<br/>POST /sessions/:id/items"]
         QrCtrl["<b>QrController</b><br/><i>REST</i><br/>POST /sessions/:id/qr"]
@@ -1110,7 +1107,7 @@ graph TB
     %% ==========================================
     %% APPLICATION LAYER
     %% ==========================================
-    subgraph Application["⚙️ Application Layer"]
+    subgraph Application["Application Layer"]
         direction TB
         
         CheckoutSvc["<b>CheckoutService</b><br/>createSession()<br/>addItem()<br/>generateQr()<br/>validateSession()"]
@@ -1137,7 +1134,7 @@ graph TB
     %% ==========================================
     %% DOMAIN LAYER
     %% ==========================================
-    subgraph Domain["🧠 Domain Layer"]
+    subgraph Domain["Domain Layer"]
         direction TB
         
         Session["<b>ShoppingSession</b><br/><i>Aggregate Root</i><br/>+id: string<br/>+userId: string<br/>+storeId: string<br/>+status: SessionStatus<br/>+items: SessionItem[]<br/>+addItem()<br/>+requestCheckout()<br/>+validateItems()"]
@@ -1166,7 +1163,7 @@ graph TB
     %% ==========================================
     %% INFRASTRUCTURE LAYER
     %% ==========================================
-    subgraph Infrastructure["🏗️ Infrastructure Layer"]
+    subgraph Infrastructure["Infrastructure Layer"]
         direction TB
         
         PrismaSessionRepo["<b>PrismaSessionRepository</b><br/><i>implements ISessionRepository</i><br/>- prisma: PrismaService<br/>- redis: RedisService"]
@@ -1178,7 +1175,7 @@ graph TB
         SessionMapper["<b>SessionMapper</b><br/>toDomain()<br/>toPersistence()"]
     end
 
-    subgraph ExternalDep["🔗 External Dependencies"]
+    subgraph ExternalDep["External Dependencies"]
         direction LR
         PG[("PostgreSQL")]
         RedisCache[("Redis")]
