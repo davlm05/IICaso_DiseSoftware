@@ -59,6 +59,8 @@
 
 SmartCart's visual identity is **green-forward** — green communicates "valid scan / points earned" and dominates the checkout and confirmation screens for cashier visibility.
 
+The tokens are defined once as CSS custom properties in [`frontend/src/styles/global.css`](frontend/src/styles/global.css) (`:root`) and exposed as NativeWind utility classes by [`frontend/tailwind.config.js`](frontend/tailwind.config.js).
+
 #### Color Palette
 
 | Token | Hex | Usage |
@@ -212,25 +214,25 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 
 #### Atoms — `/components/atoms/`
 
-| Component | File | How to build it |
-|-----------|------|-----------------|
-| `Button` | [`/components/atoms/Button.tsx`](/frontend/src/components/atoms/Button.tsx) | Stateless `Pressable`; props `variant` (`'primary' \| 'secondary' \| 'ghost'`), `label`, `icon?`, `onPress`, `disabled?`. Maps `variant` → NativeWind token classes — the single source for the primary-vs-secondary CTA hierarchy (usability Finding #1). Sets `accessibilityRole="button"` + `accessibilityLabel`. |
-| `Input` | [`/components/atoms/Input.tsx`](/frontend/src/components/atoms/Input.tsx) | Controlled wrapper over RN `TextInput`; props `value`, `onChangeText`, `error?`, `keyboardType?`. Driven by React Hook Form `Controller`; renders the Zod error message; `accessibilityLabel` required. Used by the manual-barcode fallback and auth forms. |
-| `Icon` | [`/components/atoms/Icon.tsx`](/frontend/src/components/atoms/Icon.tsx) | Thin wrapper over `lucide-react-native`; props `name`, `size`, `color` (from tokens). Decorative icons set `accessibilityElementsHidden`; meaningful icons pair with text. |
-| `Badge` | [`/components/atoms/Badge.tsx`](/frontend/src/components/atoms/Badge.tsx) | Small label pill; props `text`, `tone` (`'neutral' \| 'new'`). Renders the "Nuevo" tag on the latest scanned item. |
-| `PointsTag` | [`/components/atoms/PointsTag.tsx`](/frontend/src/components/atoms/PointsTag.tsx) | Points pill; props `points`, `state` (`'pending' \| 'credited'`). Color **and** icon by state (accent for pending, success for credited) — never color alone (a11y). |
-| `LocationPill` | [`/components/atoms/LocationPill.tsx`](/frontend/src/components/atoms/LocationPill.tsx) | Props `storeName`, `verified`. Dot + text; the visual gate that signals point accrual is enabled (user inside affiliated store). |
-| `Toast` | [`/components/atoms/Toast.tsx`](/frontend/src/components/atoms/Toast.tsx) | Transient banner; props `message`, `tone` (`success \| warning \| error`), `visible`. Subscribes to the global notification slice (Observer), auto-dismisses, and sets `accessibilityLiveRegion="polite"`. |
+| Component | File | How to build it | Token classes (NativeWind) |
+|-----------|------|-----------------|----------------------------|
+| `Button` | [`/components/atoms/Button.tsx`](/frontend/src/components/atoms/Button.tsx) | Stateless `Pressable`; props `variant` (`'primary' \| 'secondary' \| 'ghost'`), `label`, `icon?`, `onPress`, `disabled?`. Maps `variant` → NativeWind token classes — the single source for the primary-vs-secondary CTA hierarchy (usability Finding #1). Sets `accessibilityRole="button"` + `accessibilityLabel`. | container `rounded-md px-lg py-md`; primary `bg-primary` + label `text-surface text-button font-heading`; secondary `bg-secondary text-surface`; ghost `bg-transparent text-primary`; `disabled?` → `opacity-50` |
+| `Input` | [`/components/atoms/Input.tsx`](/frontend/src/components/atoms/Input.tsx) | Controlled wrapper over RN `TextInput`; props `value`, `onChangeText`, `error?`, `keyboardType?`. Driven by React Hook Form `Controller`; renders the Zod error message; `accessibilityLabel` required. Used by the manual-barcode fallback and auth forms. | field `bg-surface text-text-primary text-body px-md py-sm rounded-md`; `error?` border + message `text-error text-caption` |
+| `Icon` | [`/components/atoms/Icon.tsx`](/frontend/src/components/atoms/Icon.tsx) | Thin wrapper over `lucide-react-native`; props `name`, `size`, `color` (from tokens). Decorative icons set `accessibilityElementsHidden`; meaningful icons pair with text. | `color` from token (`text-primary` / `text-text-secondary` / `text-error`); no background |
+| `Badge` | [`/components/atoms/Badge.tsx`](/frontend/src/components/atoms/Badge.tsx) | Small label pill; props `text`, `tone` (`'neutral' \| 'new'`). Renders the "Nuevo" tag on the latest scanned item. | pill `px-xs py-xs rounded-sm text-caption`; `new` → `bg-accent text-text-primary`; `neutral` → `bg-background text-text-secondary` |
+| `PointsTag` | [`/components/atoms/PointsTag.tsx`](/frontend/src/components/atoms/PointsTag.tsx) | Points pill; props `points`, `state` (`'pending' \| 'credited'`). Color **and** icon by state (accent for pending, success for credited) — never color alone (a11y). | pill `px-sm py-xs rounded-sm text-caption`; `pending` → `bg-accent text-text-primary`; `credited` → `bg-success text-surface` |
+| `LocationPill` | [`/components/atoms/LocationPill.tsx`](/frontend/src/components/atoms/LocationPill.tsx) | Props `storeName`, `verified`. Dot + text; the visual gate that signals point accrual is enabled (user inside affiliated store). | container `bg-surface px-sm py-xs rounded-md`; text `text-text-secondary text-caption`; verified dot `bg-success`, else `bg-text-secondary` |
+| `Toast` | [`/components/atoms/Toast.tsx`](/frontend/src/components/atoms/Toast.tsx) | Transient banner; props `message`, `tone` (`success \| warning \| error`), `visible`. Subscribes to the global notification slice (Observer), auto-dismisses, and sets `accessibilityLiveRegion="polite"`. | banner `px-md py-sm rounded-md text-surface text-body`; `success` → `bg-success`; `warning` → `bg-accent text-text-primary`; `error` → `bg-error` |
 
 #### Molecules — `/components/molecules/`
 
-| Component | File | How to build it |
-|-----------|------|-----------------|
-| `ProductCard` | [`/components/molecules/ProductCard.tsx`](/frontend/src/components/molecules/ProductCard.tsx) | Composes `Icon` + `PointsTag` + delete `Button`; props `product: ProductDTO`, `isNew?`, `onDelete`. Wrapped in `React.memo`. Delete dispatches `RemoveProductCommand` (supports undo). |
-| `PointsCard` | [`/components/molecules/PointsCard.tsx`](/frontend/src/components/molecules/PointsCard.tsx) | Points total + progress bar + pending subsection; props `total`, `pending`, `nextRewardAt`. Reads from the session store via a selective Zustand selector. |
-| `ScanConfirmationModal` | [`/components/molecules/ScanConfirmationModal.tsx`](/frontend/src/components/molecules/ScanConfirmationModal.tsx) | Props `product`, `onConfirm`, `onCancel`. Focus is trapped; confirm is the primary CTA. Enforces error prevention — explicit confirmation before accrual. |
-| `RewardCard` | [`/components/molecules/RewardCard.tsx`](/frontend/src/components/molecules/RewardCard.tsx) | Props `reward: RewardDTO`, `balance`, `onRedeem`. Locked state shows the point deficit; redeem `Button` is disabled when `balance < reward.cost`. |
-| `QRCodeView` | [`/components/molecules/QRCodeView.tsx`](/frontend/src/components/molecules/QRCodeView.tsx) | Wraps `react-native-qrcode-svg`; props `token`, `expiresAt`. Renders the alphanumeric fallback code and a countdown to the 10-minute expiry. |
+| Component | File | How to build it | Token classes (NativeWind) |
+|-----------|------|-----------------|----------------------------|
+| `ProductCard` | [`/components/molecules/ProductCard.tsx`](/frontend/src/components/molecules/ProductCard.tsx) | Composes `Icon` + `PointsTag` + delete `Button`; props `product: ProductDTO`, `isNew?`, `onDelete`. Wrapped in `React.memo`. Delete dispatches `RemoveProductCommand` (supports undo). | card `bg-surface rounded-md p-md gap-sm`; title `text-text-primary text-body`; delete icon `text-error` |
+| `PointsCard` | [`/components/molecules/PointsCard.tsx`](/frontend/src/components/molecules/PointsCard.tsx) | Points total + progress bar + pending subsection; props `total`, `pending`, `nextRewardAt`. Reads from the session store via a selective Zustand selector. | card `bg-surface rounded-md p-lg`; total `text-text-primary text-display font-display`; progress fill `bg-primary`; pending caption `text-text-secondary text-caption` |
+| `ScanConfirmationModal` | [`/components/molecules/ScanConfirmationModal.tsx`](/frontend/src/components/molecules/ScanConfirmationModal.tsx) | Props `product`, `onConfirm`, `onCancel`. Focus is trapped; confirm is the primary CTA. Enforces error prevention — explicit confirmation before accrual. | sheet `bg-surface rounded-lg p-lg gap-md`; confirm = primary `Button`; cancel = ghost `Button` |
+| `RewardCard` | [`/components/molecules/RewardCard.tsx`](/frontend/src/components/molecules/RewardCard.tsx) | Props `reward: RewardDTO`, `balance`, `onRedeem`. Locked state shows the point deficit; redeem `Button` is disabled when `balance < reward.cost`. | card `bg-surface rounded-md p-md`; cost `text-text-primary text-body`; locked deficit `text-text-secondary text-caption` + redeem `Button` `opacity-50` |
+| `QRCodeView` | [`/components/molecules/QRCodeView.tsx`](/frontend/src/components/molecules/QRCodeView.tsx) | Wraps `react-native-qrcode-svg`; props `token`, `expiresAt`. Renders the alphanumeric fallback code and a countdown to the 10-minute expiry. | wrapper `bg-primary p-xl rounded-lg`; fallback code `text-surface text-caption font-caption`; countdown `text-surface text-body` |
 
 #### Organisms — `/components/organisms/`
 
@@ -386,15 +388,17 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 
 ### OWASP Compliance
 
-| MASVS control group | Risk it addresses | What we will do (how) | Validation criterion |
-|---------------------|-------------------|-----------------------|----------------------|
-| **MASVS-STORAGE** (data storage) | A lost/stolen phone could leak session tokens and personal data. | Persist access/refresh tokens **only** in the hardware-backed Keychain/Keystore via `SecureTokenStore`; never `AsyncStorage`; strip PII from logs/analytics. | Device-dump test recovers no token/PII; unit test asserts writes go only to secure-store. |
-| **MASVS-CRYPTO** (cryptography) | Home-grown or misused cryptography can be broken, exposing secrets. | Rely **only** on platform crypto (`expo-secure-store`, TLS); no hand-rolled crypto; no secrets in the bundle (EAS Secrets only). | Secret/SCA scan finds no bundled secrets or custom crypto primitives; build config shows EAS Secrets injection only. |
-| **MASVS-NETWORK** (network comms) | Traffic over untrusted networks can be intercepted (man-in-the-middle). | HTTPS-only with TLS 1.2+; iOS ATS enabled / Android cleartext **disabled**; optional certificate pinning on the API host. | MITM-proxy test cannot read traffic; a cleartext request is blocked; ATS/cleartext config asserted in native config. |
-| **MASVS-AUTH** (authentication) | Stolen tokens or weak auth let attackers hijack accounts or escalate roles. | Short-lived JWT (15 min) + server-side refresh revocation; server-enforced **RBAC** (see Authorization above); biometric re-auth as a future option. | Expired/revoked refresh token forces hard logout; a `USER`-scoped token is rejected on back-office endpoints. |
-| **MASVS-PLATFORM** (platform interaction) | Unvalidated input or over-broad permissions enable injection and data leakage. | Validate **all** input with Zod (manual barcode + auth forms); request **least-privilege** native permissions (camera/location) only when needed; keep sensitive data out of screenshots/`pasteboard`. | Malformed barcode/form input rejected by Zod schema tests; permission prompts fire only on use; sensitive screens flagged no-screenshot. |
-| **MASVS-CODE** (code quality) | Vulnerable dependencies or trusting client-supplied IDs (IDOR) expose data. | Pin dependencies + run `npm audit` / SCA gate in CI; Zod runtime guards on every API DTO; server-side per-token authorization so the client never trusts raw IDs. | CI fails on high-severity advisories; DTO contract tests reject malformed payloads; a cross-user ID request returns 403 from the server. |
-| **MASVS-RESILIENCE** (anti-tampering) | A tampered or reverse-engineered build could be repackaged or abused. | Strip `console.*` in production; ship **Hermes bytecode**; Sentry monitors anomalies; optional jailbreak/root detection signal. | Release bundle contains no `console.*` and uses Hermes bytecode; Sentry receives anomaly events; a root/jailbreak flag is emitted on a compromised device. |
+> **"What you code"** names the concrete artifact a developer builds for each control — file paths refer to the [§1.9 scaffold](#19-project-scaffold). Rows marked *config / no app code* are satisfied by configuration or by the backend, not by client logic.
+
+| MASVS control group | Risk it addresses | What you code (file / artifact) | Validation criterion |
+|---------------------|-------------------|---------------------------------|----------------------|
+| **MASVS-STORAGE** (data storage) | A lost/stolen phone could leak session tokens and personal data. | `SecureTokenStore` wrapper over `expo-secure-store` (`src/lib/secureTokenStore.ts`) with `get/set/clear`; a PII-stripping helper used by the logger; an ESLint `no-restricted-imports` rule banning `AsyncStorage` for tokens. | Device-dump test recovers no token/PII; unit test asserts writes go only to secure-store. |
+| **MASVS-CRYPTO** (cryptography) | Home-grown or misused cryptography can be broken, exposing secrets. | *No app crypto code.* Use platform primitives only (`expo-secure-store`, TLS). Secrets injected via **EAS Secrets** in `eas.json` — never committed or bundled. | Secret/SCA scan finds no bundled secrets or custom crypto primitives; build config shows EAS Secrets injection only. |
+| **MASVS-NETWORK** (network comms) | Traffic over untrusted networks can be intercepted (man-in-the-middle). | `app.json`: iOS ATS on / Android `usesCleartextTraffic:false`. `src/api/client.ts`: `baseURL` pinned to `https://…`. Optional: cert-pinning interceptor on the API host. | MITM-proxy test cannot read traffic; a cleartext request is blocked; ATS/cleartext config asserted in native config. |
+| **MASVS-AUTH** (authentication) | Stolen tokens or weak auth let attackers hijack accounts or escalate roles. | `src/api/client.ts`: request interceptor attaches the JWT; `401` interceptor + `RefreshQueue` single-flight refresh, hard-logout on refresh failure. RBAC itself is **server-enforced** (client only renders by role). | Expired/revoked refresh token forces hard logout; a `USER`-scoped token is rejected on back-office endpoints. |
+| **MASVS-PLATFORM** (platform interaction) | Unvalidated input or over-broad permissions enable injection and data leakage. | Zod schemas for every user input (`src/features/scan/validation/*`, auth forms) wired through RHF `Controller`; request camera/location permission **on first use** inside the scan/location features (not at launch). | Malformed barcode/form input rejected by Zod schema tests; permission prompts fire only on use; sensitive screens flagged no-screenshot. |
+| **MASVS-CODE** (code quality) | Vulnerable dependencies or trusting client-supplied IDs (IDOR) expose data. | `npm audit` / SCA step in `.github/workflows/ci.yml`; Zod `.parse()` guard on every response in `src/api/endpoints/*`; never derive authorization from client-supplied IDs (server checks per-token). | CI fails on high-severity advisories; DTO contract tests reject malformed payloads; a cross-user ID request returns 403 from the server. |
+| **MASVS-RESILIENCE** (anti-tampering) | A tampered or reverse-engineered build could be repackaged or abused. | `babel.config.js`: `transform-remove-console` in the production env; `app.json`: `jsEngine: "hermes"`; Sentry init in `app/_layout.tsx`. Optional: jailbreak/root-detection signal. | Release bundle contains no `console.*` and uses Hermes bytecode; Sentry receives anomaly events; a root/jailbreak flag is emitted on a compromised device. |
 
 ---
 
@@ -406,10 +410,10 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 |-------|---------------|----------|
 | Presentation | Render UI, handle gestures/events | Screens, atoms/molecules/organisms |
 | Application / Use Cases | Orchestrate use cases: drive the session flow, apply Domain rules, reach Infrastructure through interfaces | Custom hooks, Zustand session store (**Singleton**), **Command** objects (Add/Remove/GenerateQR/Redeem), session **State** machine + states, scan-validation **Chain of Responsibility** |
-| Domain | Pure business entities & rules — no React, no Infrastructure | `Product`/`ProductDTO`, `Reward`/`RewardDTO`, `Session/SessionDTO`, points rules, barcode-format & scan-validation rules, reward-type definitions (**Factory** products) |
+| Domain | Pure business entities & rules — no React, no Infrastructure | **Entities:** `Product`, `Reward`, `Session` (+ `Points` value object). **Rules (pure functions):** `pointsRules` (accrual & redemption math), `barcodeRules` (format validation), `scanEligibilityRules` (in-store / sponsored / duplicate checks the CoR handlers call), `rewardTypes` (**Factory** product definitions), `sessionStatus` (allowed state transitions). The `*DTO` types are **data contracts** (Infrastructure ⇄ Application), *not* the domain — they live in `/types`. |
 | Infrastructure | External communication & device APIs | Axios client (**Facade**), socket.io client, React Query cache (**Cache-Aside**), secure-store, camera/BLE adapters (**Strategy**) |
 
-- **Layer Access Rules:** Presentation may call only the Application layer (hooks/stores). Application drives the session **State** machine, dispatches **Command** objects, and runs the scan-validation **chain** — applying Domain rules and reaching Infrastructure only through interfaces. **Domain stays pure** — entities and rules with no imports of Infrastructure or React, so it remains unit-testable in isolation.
+- **Layer Access Rules:** Presentation may call only the Application layer (hooks/stores). Application drives the session **State** machine, dispatches **Command** objects, and runs the scan-validation **chain** — applying Domain rules and reaching Infrastructure only through interfaces. **Domain stays pure** — the entities (`Product`, `Reward`, `Session`) and rule functions (`pointsRules`, `barcodeRules`, `scanEligibilityRules`, `rewardTypes`, `sessionStatus`) import neither Infrastructure nor React, so each is unit-testable in isolation. Application objects (the scan **chain**, **Command** objects, the session **State** machine) hold no business math themselves — they **delegate** to these Domain rules.
 
 - **Diagram:**
 
@@ -432,9 +436,12 @@ flowchart TD
     end
 
     subgraph Domain
-        ENT[Entities · Product, Reward]
-        RULES[Points Rules]
-        VRULES[Validation Rules]
+        ENT[Entities · Product, Reward, Session]
+        PRULES[pointsRules · accrual/redemption]
+        BRULES[barcodeRules · format]
+        SRULES[scanEligibilityRules · in-store/sponsored/duplicate]
+        RT[rewardTypes · Factory]
+        SS[sessionStatus · transitions]
     end
 
     subgraph Infrastructure
@@ -458,15 +465,15 @@ flowchart TD
 ## 1.5. Design Patterns
 ### Asynchronous Operations
 
-| # | Operation | Trigger | Mechanism | Loading state | Retry policy | Error handling |
-|---|-----------|---------|-----------|---------------|--------------|----------------|
-| 1 | **Product catalog lookup** | Barcode scanned | TanStack Query over the backend **Cache-Aside** (`async/await` + Axios) | Inline skeleton on the scan-confirm modal | **Auto** retry on network/5xx, exponential backoff (max 3) — *idempotent read* | Fallback message "Servicio temporalmente no disponible"; user can retry |
-| 2 | **Scan validation (CoR)** | After a successful lookup | Chain of Responsibility (format → location → sponsored → duplicate) | Spinner on the confirm action | **No** retry — re-scan instead | Inline reason: out-of-store / invalid / duplicate |
-| 3 | **QR generation** | Tap "Generar QR de salida" | `POST` via `GenerateQRCommand` — **non-idempotent** | Spinner on the primary button | **No** auto-retry; manual retry only (avoids duplicate codes) | Toast error; session left unchanged |
-| 4 | **POS validation status** | QR shown (`ValidatingState`) | socket.io room `session:{id}`, **fallback polling** `GET /sessions/:id` every 3 s | "Esperando validación de la cajera…" | Reconnect / keep polling until the 10-min expiry | Expiry/timeout → QR expired, prompt to regenerate |
-| 5 | **Fraud review (HITL)** | During POS validation | Backend human-in-the-loop, asynchronous, ≤ 2 min | "Verificando…" | n/a — resolves on push/socket or timeout | Never blocks indefinitely; timeout auto-resolves the session |
-| 6 | **Reward redemption** | Tap "Canjear" | `POST` via `RedeemCouponCommand` — **non-idempotent** | Spinner on the redeem button | **No** auto-retry | Toast error; points balance stays intact |
-| 7 | **Login / token refresh** | `401` on a protected request | `RefreshQueue` **single-flight** refresh (see §1.4) | Silent (no UI) | One in-flight refresh; concurrent requests queue behind it | Refresh `401` → hard logout (`status → EXPIRED`) |
+| # | Operation | Trigger | Mechanism | Loading state | Retry policy | Error handling | Implements (where) |
+|---|-----------|---------|-----------|---------------|--------------|----------------|--------------------|
+| 1 | **Product catalog lookup** | Barcode scanned | TanStack Query over the backend **Cache-Aside** (`async/await` + Axios) | Inline skeleton on the scan-confirm modal | **Auto** retry on network/5xx, exponential backoff (max 3) — *idempotent read* | Fallback message "Servicio temporalmente no disponible"; user can retry | `useProductLookup` query in `src/features/scan/`; `queryKey: ['product', barcode]`; `retry: 3` + exponential `retryDelay` (QueryClient default); calls `src/api/endpoints/products.ts` |
+| 2 | **Scan validation (CoR)** | After a successful lookup | Chain of Responsibility (format → location → sponsored → duplicate) | Spinner on the confirm action | **No** retry — re-scan instead | Inline reason: out-of-store / invalid / duplicate | Handlers in `src/features/scan/validation/` calling `scanEligibilityRules` (Domain); pure, synchronous — no query |
+| 3 | **QR generation** | Tap "Generar QR de salida" | `POST` via `GenerateQRCommand` — **non-idempotent** | Spinner on the primary button | **No** auto-retry; manual retry only (avoids duplicate codes) | Toast error; session left unchanged | `GenerateQRCommand` in `src/features/session/commands/` + `useGenerateQR` mutation (`retry: 0`); endpoint `src/api/endpoints/sessions.ts` |
+| 4 | **POS validation status** | QR shown (`ValidatingState`) | socket.io room `session:{id}`, **fallback polling** `GET /sessions/:id` every 3 s | "Esperando validación de la cajera…" | Reconnect / keep polling until the 10-min expiry | Expiry/timeout → QR expired, prompt to regenerate | `useCheckoutStatus` hook in `src/features/checkout/` (socket.io subscribe + `refetchInterval: 3000` poll fallback); drives the session **State** machine |
+| 5 | **Fraud review (HITL)** | During POS validation | Backend human-in-the-loop, asynchronous, ≤ 2 min | "Verificando…" | n/a — resolves on push/socket or timeout | Never blocks indefinitely; timeout auto-resolves the session | No client code beyond op #4's socket/poll — backend-driven; client only reacts to the pushed status |
+| 6 | **Reward redemption** | Tap "Canjear" | `POST` via `RedeemCouponCommand` — **non-idempotent** | Spinner on the redeem button | **No** auto-retry | **No optimistic update**: the Zustand balance is mutated **only after** the server returns `200`. On error, the Axios interceptor → `ApiErrorMapper` builds an `AppError` (`VALIDATION_REJECTED`/`SERVER_ERROR`) → `NotificationSlice.notify` → `Toast`. Because nothing was mutated optimistically, the balance "stays intact" with **no rollback needed**. | `RedeemCouponCommand` in `src/features/rewards/` + `useRedeem` mutation (`retry: 0`); on `onSuccess` write the new balance to `sessionStore`; endpoint `src/api/endpoints/rewards.ts` |
+| 7 | **Login / token refresh** | `401` on a protected request | `RefreshQueue` **single-flight** refresh (see §1.4) | Silent (no UI) | One in-flight refresh; concurrent requests queue behind it | Refresh `401` → hard logout (`status → EXPIRED`) | `RefreshQueue` + 401 interceptor in `src/api/client.ts`; on hard logout dispatch session → `EXPIRED` |
 
 **Cross-cutting (apply to all of the above):**
 
