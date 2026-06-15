@@ -701,6 +701,7 @@ The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.
 | AI segment | External inference (OpenAI / local sklearn microservice) | — | Consumer profiling classifier |
 | Hosting | Railway / Render | — | Docker; cheap demo, scalable |
 | Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
+| Observability | Pino / OpenTelemetry SDK / Prometheus / Sentry | — | Structured logs, traces, metrics, and error tracking (detailed in §2.6) |
 
 ## 2.2. Architecture — Implementation Guide
 
@@ -891,26 +892,49 @@ graph TB
     %% System
     SmartCart["🛒 SmartCart System<br/><i>Mobile POS + Consumer Analytics Platform</i>"]
 
-    %% Relationships
+    %% External systems
+    AISvc["🤖 AI Inference Service<br/><i>Consumer segment classifier</i>"]
+    PushSvc["📲 Expo Push API<br/><i>FCM / APNs delivery</i>"]
+
+    %% Inbound — actor → system
     Shopper -->|"Scans products<br/>Generates QR codes<br/>Redeems rewards"| SmartCart
-    Cashier -->|"Validates QR codes<br/>Confirms checkout<br/>Authorizes payment"| SmartCart
-    Admin -->|"Downloads consumer segments<br/>Views product insights<br/>Exports B2B reports"| SmartCart
-    CSR -->|"Deducts points<br/>Manages reward fulfillment"| SmartCart
+    Cashier -->|"Validates QR codes<br/>Confirms checkout"| SmartCart
+    Admin -->|"Requests consumer segments<br/>& product insights"| SmartCart
+    CSR -->|"Adjusts points<br/>Manages reward fulfillment"| SmartCart
+
+    %% Outbound — system → actor / external (the Outputs)
+    SmartCart -->|"Validation result<br/>& credited points"| Cashier
+    SmartCart -->|"Anonymized segment<br/>& insight reports"| Admin
+    SmartCart -->|"Feature vector to classify"| AISvc
+    AISvc -->|"Predicted segment"| SmartCart
+    SmartCart -->|"Push: points credited"| PushSvc
+    PushSvc -->|"Delivers notification"| Shopper
 
     %% Styling
     classDef actor fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1,rx:8,ry:8
     classDef system fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px,color:#1b5e20,rx:12,ry:12
+    classDef external fill:#ffebee,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5,color:#b71c1c
 
     class Shopper,Cashier,Admin,CSR actor
     class SmartCart system
+    class AISvc,PushSvc external
 ```
 
-The system context diagram shows SmartCart as a single system with four external actors:
+The system context diagram shows SmartCart as a single system with four external actors, two external systems, and the outputs flowing back out.
+
+**Actors (inputs):**
 
 - Shopper (Mobile) — Scans products, generates checkout QR codes, redeems rewards
 - Cashier (POS) — Validates QR codes against physical cart contents, confirms checkout
-- Admin / B2B Partner — Downloads aggregated consumer segment reports and product insights
-- Customer Service Rep — Manually deducts points from user accounts for reward fulfillment
+- Admin / B2B Partner — Requests aggregated consumer segment reports and product insights
+- Customer Service Rep — Adjusts points on user accounts for reward fulfillment
+
+**External systems:**
+
+- AI Inference Service — receives anonymized feature vectors, returns a predicted consumer segment
+- Expo Push API — delivers "points credited" notifications to the Shopper's device
+
+**Outputs:** validation results and credited-point totals return to the Cashier; the predicted segment returns from the AI service; push notifications reach the Shopper via Expo; anonymized segment and product-insight reports are returned to the Admin / B2B Partner.
 
 ##### Level 2 — Container Diagram
 
@@ -974,7 +998,7 @@ graph TB
         PG[("PostgreSQL<br/><i>Primary DB</i>")]
         Redis[("Redis<br/><i>Cache & Sessions</i>")]
         BullMQ[("BullMQ<br/><i>Job Queue</i>")]
-        S3[("S3 / R2<br/><i>Images & Reports</i>")]
+        S3[("Cloudflare R2<br/><i>Images & Reports</i>")]
     end
 
     subgraph ExternalSvc["☁️ External Services"]
@@ -1036,7 +1060,7 @@ The container diagram shows five runtime containers and four actors:
 - **Customer Service Rep** — Adjusts points balances and manages reward fulfillment via REST API
 - **Mobile App (React Native/Expo)** — Consumer-facing native app with camera, GPS, and push notifications
 - **API Gateway (Nginx/Cloud LB)** — Routes REST to NestJS API, WebSocket connections for real-time status
-- **NestJS Modular Monolith** — Single Node.js process containing Auth, Catalog, Checkout, Rewards, and Analytics modules with strict layer separation
+- **NestJS Modular Monolith** — Single Node.js process containing Auth, Catalog, Checkout, Rewards, Analytics, and Notifications modules with strict layer separation
 - **Analytics Worker** — Independent BullMQ consumer for long-running consumer profiling pipeline
 - **Data Stores** — PostgreSQL (primary), Redis (cache/sessions), BullMQ (job queue), Cloudflare R2 (file storage)
 - **AI Inference Service (External)** — HTTP endpoint that classifies consumer behavior into segments
@@ -1245,12 +1269,12 @@ The Checkout module component diagram illustrates:
 | 5. Segment Persistence | [`backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts`](backend/apps/analytics-worker/src/infrastructure/repositories/segment.repository.ts) | UPSERT into `consumer_segments` table. Invalidate B2B aggregated cache keys: `analytics:store:{storeId}:segments`, `analytics:global:segment-distribution`. |
 | 6. B2B Data Availability | [`backend/apps/api/src/modules/analytics/application/services/analytics.service.ts`](backend/apps/api/src/modules/analytics/application/services/analytics.service.ts) | B2B partners query `GET /analytics/segments?storeId=X`. Response includes segment distribution with counts and percentages. All data is anonymized and aggregated — no individual user data exposed. |
 
-**Key Rules:**
+**Key Rules (and how to implement each):**
 
-- Guard: Minimum 5 transactions required for statistically meaningful classification  
-- Cache: AI results cached for 24 hours to avoid redundant API calls  
-- Data Privacy: B2B endpoints return only aggregated, anonymized data  
-- Resilience: Worker retries via BullMQ if AI service is unavailable  
+- **Guard — min 5 transactions:** in `ProfileAggregatorService`, `return null` when the 90-day query yields fewer than 5 rows, so the processor skips the AI call for users with too little history to classify meaningfully.
+- **Cache — 24 h:** after a successful AI response, write the segment to Redis as `segment:{userId}` with `EX 86400`, and read that key before every classification so repeat checkouts don't re-hit the AI service.
+- **Data Privacy — aggregated only:** `AnalyticsService` selects counts/percentages grouped by `segment_name` and never selects `userId`; any segment with fewer than 50 users is merged into `"other"` before the response leaves the service.
+- **Resilience — retry on AI failure:** register the queue with `attempts: 3` and exponential `backoff`, and let the processor `throw` when the AI call fails so BullMQ re-queues the job instead of silently dropping it.  
 
 **What you need to implement:**
 
@@ -1286,12 +1310,12 @@ Steps:
 2. Concatenate as `"barcode1|barcode2|barcode3"`  
 3. Compute SHA-256 hash of the concatenated string  
 
-**Key Rules:**
+**Key Rules (and how to implement each):**
 
-- QR tokens expire after 10 minutes — the JWT `exp` claim is the single source of truth (factory reads it, never sets its own)  
-- 10-second clock skew tolerance for validation  
-- `QR_SIGNING_SECRET` must be at least 32 characters  
-- Tampered tokens fail signature verification; modified items fail hash comparison  
+- **10-minute expiry, single source of truth:** pass `expiresIn: '10m'` to `jwt.sign`; the factory reads the decoded `exp` claim and never computes its own expiry, so there is exactly one place expiry is defined.
+- **10-second clock-skew tolerance:** pass `{ clockTolerance: 10 }` to `jwt.verify`, so a small clock drift between API instances does not reject a token that is still valid.
+- **Secret ≥ 32 characters:** enforce `QR_SIGNING_SECRET: z.string().min(32)` in `env.validation.ts`; the app fails to boot if the secret is too short to resist brute-forcing.
+- **Tamper detection (two layers):** `JwtQrSigner.verify()` rejects a tampered signature (→ `InvalidQrTokenError`); `ShoppingSession.validateItems()` rejects a modified cart through the SHA-256 hash compare (→ `QrItemMismatchError`).  
 
 **What you need to implement:**
 
@@ -1465,6 +1489,8 @@ features only — no raw transaction rows — supporting the B2B anonymization g
 All DTOs are defined as TypeScript interfaces with accompanying Zod validation schemas in the shared package. Controllers use a global `ZodValidationPipe` for enforcement.  
 **Source:** [`packages/shared-types/src/`](packages/shared-types/src/)
 
+**Why DTOs and not Prisma's generated types?** They serve different layers and are not interchangeable. Prisma types describe *database rows* — they include sensitive columns (e.g., `passwordHash`), exist only in the backend bundle, and perform no input validation. DTOs are the *API contract*: shared with the React Native app through `@smartcart/shared-types` (Prisma cannot be imported into the mobile bundle), validated at runtime by Zod at the controller boundary, and mapped to/from domain entities and Prisma rows by the infrastructure layer (§2.2 Rule 3). Returning Prisma types directly would leak the persistence schema and bypass validation.
+
 ---
 
 ## 2.5. Security
@@ -1489,11 +1515,12 @@ All DTOs are defined as TypeScript interfaces with accompanying Zod validation s
 |---------------------|-------------------|---------------|----------------------|
 | **A01 — Broken Access Control** | An authenticated user reads or modifies another user's sessions, points balance, or profile (IDOR). A low-privilege role reaches an admin or B2B endpoint. | `RolesGuard` + `@Roles()` decorator enforces role-based access on every endpoint. `ResourceOwnershipGuard` compares the JWT `sub` claim against the resource's `userId` on every session/points request. POS and B2B surfaces are separated behind API Key auth (`X-API-Key`), not JWT. | A `USER` JWT on `GET /sessions/:otherId` returns 403. A missing/invalid `X-API-Key` on `POST /sessions/:id/validate` returns 401. Guard unit tests cover both cases. |
 | **A02 — Cryptographic Failures** | Leaked password hashes can be cracked. Weak or short JWT/QR secrets can be brute-forced. Unencrypted DB connections expose data in transit. | Passwords hashed with `bcrypt` cost 12. `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `QR_SIGNING_SECRET` validated as `z.string().min(32)` at startup. `DATABASE_URL` enforces `sslmode=require`. Password fields redacted from all logs via Pino's `redact` config. | App fails to start if any secret is under 32 chars. A grep for `password` in log output returns zero results. DB connection without SSL is refused. |
-| **A03 — Injection (SQL & XSS)** | User-supplied input concatenated into SQL queries allows data extraction or destruction. Stored malicious strings served to the mobile client could trigger XSS. | 100% Prisma ORM parameterized queries for all DB access. `Prisma.sql` tagged templates required for any `$queryRaw`. Zod schemas enforce strict types and length caps at every controller boundary. Helmet CSP headers block inline script execution. | Grep for `$queryRaw` with string interpolation returns zero results. A barcode of `'; DROP TABLE--` is rejected by Zod with 400. Response includes `Content-Security-Policy` header. |
+| **A03 — Injection** | User-supplied input concatenated into SQL queries allows data extraction or destruction. (Classic browser XSS is largely N/A here: the API returns JSON to a React Native client, which has no HTML/DOM to execute injected scripts.) | 100% Prisma ORM parameterized queries for all DB access; `Prisma.sql` tagged templates required for any `$queryRaw`. Zod schemas enforce strict types and length caps at every controller boundary, rejecting injection payloads before they reach a service. Helmet CSP headers are defense-in-depth for the served Swagger/Redoc HTML, not the mobile client. | Grep for `$queryRaw` with string interpolation returns zero results. A barcode of `'; DROP TABLE--` is rejected by Zod with 400. The served `/api/docs` HTML carries a `Content-Security-Policy` header. |
+| **A04 — Insecure Design** | Logic that is exploitable even when implemented bug-free — replayable QR codes, mutable point balances, re-identifiable analytics, or unthrottled auth. | Security is built into the domain design: the session state machine (§2.3) rejects invalid transitions; points live in an append-only ledger (balance = `SUM(delta)`, never mutated); QR tokens are single-use and time-boxed; analytics enforce k-anonymity (segments < 50 users merged into `"other"`); auth endpoints are rate-limited and lock out after 5 failures. | A replayed QR on an already-`COMPLETED` session is rejected. No code path performs a direct `UPDATE` on a balance. A segment with < 50 users never appears in a B2B response. |
 | **A05 — Security Misconfiguration** | Missing security headers, verbose error messages exposing stack traces, debug endpoints exposed in production, or an app that starts with missing secrets. | Helmet middleware sets CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`. `GlobalExceptionFilter` strips stack traces from 500 responses in production. Swagger UI disabled when `NODE_ENV=production`. Startup fails fast via Zod env schema if any required secret is absent. | `curl -I` on any endpoint shows all Helmet headers. A triggered 500 in production returns `{ errorCode, message }` only — no stack trace. App does not start without `JWT_ACCESS_SECRET`. |
 | **A06 — Vulnerable and Outdated Components** | A known CVE in an npm dependency can be directly exploited (e.g., prototype pollution, RCE). | `pnpm audit --audit-level=critical` runs as a CI quality gate and blocks merges on critical/high severity findings. Dependencies reviewed and updated regularly. | CI pipeline fails on any new critical or high CVE. `pnpm audit` in a clean install returns zero critical/high findings. |
 | **A07 — Authentication Failures** | Brute-forced passwords, stolen refresh tokens reused after logout, or expired tokens still accepted allow account takeover. | bcrypt cost 12 for passwords. Account lockout after 5 failed login attempts within 15 minutes (30-min lockout stored in Redis). Access token expires in 15 minutes. Refresh token rotation: old token is invalidated on each use; reuse returns 401. Refresh token stored client-side in **expo-secure-store** (hardware-backed Keychain/Keystore), never `AsyncStorage`; the server stores only its hash in Redis for revocation. | The 6th login attempt within 15 min returns 429. A refresh token used twice returns 401 on the second call. An access token accepted 16 minutes after issue returns 401. |
-| **A08 — Software & Data Integrity / ReDoS** | A crafted input triggers catastrophic regex backtracking, blocking the Node.js event loop. A tampered QR token passes validation if signing is weak. | All Zod regex patterns avoid nested quantifiers and have hard `maxLength` caps. QR tokens signed with HS256; `JwtQrSigner.verify()` rejects any tampered or expired token before it reaches domain logic. | A 10 000-character barcode field is rejected in <1 ms. A QR token with a modified payload (but valid signature format) returns `INVALID_QR_TOKEN`. |
+| **A08 — Software & Data Integrity Failures** | A forged QR token, a tampered build artifact, or a compromised dependency bypasses integrity controls and reaches production. | QR tokens are HS256-signed and `JwtQrSigner.verify()` rejects any tampered or expired token before it reaches domain logic. The build pins dependencies with `pnpm install --frozen-lockfile`, gates them with `pnpm audit`, and ships immutable Docker images tagged `main-{sha}` to GHCR. The points ledger is append-only, so financial records cannot be silently rewritten. | A QR token with a modified payload returns `INVALID_QR_TOKEN`. A lockfile mismatch fails CI. (ReDoS — a regex-backtracking DoS — is handled at the input-validation boundary; see the A03 detail.) |
 | **A09 — Security Logging & Monitoring Failures** | Undetected breaches or no audit trail for sensitive operations make incident response impossible. | Structured JSON logs via Pino with `correlationId`, `userId`, `action`, and `IP` on every request. `AuditInterceptor` logs all sensitive operations. Sentry captures every unhandled 500 with context. Points ledger is append-only (immutable audit trail). PII fields auto-redacted by Pino's `redact` config. | `validateSession` appears in audit log with correct fields after each call. A triggered 500 creates a Sentry event within 30 seconds. `email` never appears in plain text in any log line. |
 | **A10 — Server-Side Request Forgery (SSRF)** | The analytics worker makes outbound HTTP calls to the AI inference service. If the target URL is attacker-controllable, internal services could be probed. | `AI_INFERENCE_URL` is set only via environment variable, validated as `z.string().url()` (must be HTTPS) at worker startup. No user-supplied URLs are ever passed to HTTP clients. The analytics worker has no public API surface — it only consumes BullMQ jobs from an internal queue. | Worker fails to start if `AI_INFERENCE_URL` is not a valid HTTPS URL. Grep for any `fetch`/`axios` call that uses a runtime-variable URL other than `AI_INFERENCE_URL` returns zero results. |
 
@@ -1553,7 +1580,7 @@ await prisma.$queryRaw(Prisma.sql`SELECT * FROM products WHERE barcode = ${barco
 ```
 Add a CI lint rule or pre-commit hook that greps for `$queryRaw\`` (the dangerous form) and fails the build if found. All repository files live under [`backend/apps/api/src/modules/`](backend/apps/api/src/modules/) and [`backend/apps/analytics-worker/src/infrastructure/repositories/`](backend/apps/analytics-worker/src/infrastructure/repositories/).
 
-**XSS — Helmet configuration in [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts):**
+**XSS — scope and headers.** This API returns JSON to a React Native client, which has no HTML/DOM to execute injected scripts, so classic stored/reflected XSS does not apply to the mobile path. The one HTML surface is the Swagger/Redoc docs page, so Helmet's CSP is configured as defense-in-depth for it. Configure all HTTP security headers in one place — [`backend/apps/api/src/main.ts`](backend/apps/api/src/main.ts):
 ```typescript
 import helmet from 'helmet';
 app.use(helmet({
@@ -1561,7 +1588,25 @@ app.use(helmet({
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 ```
-This is the single place all HTTP security headers are configured. Do not split them across middleware files.
+Do not split these across middleware files.
+
+**ReDoS — input-validation boundary.** A crafted string can make a poorly written regex backtrack catastrophically and block the event loop. This is an availability/DoS risk rather than injection, but it is caught at the same Zod boundary, so it is handled here. When writing Zod schemas in [`packages/shared-types/src/validation/`](packages/shared-types/src/validation/), for any `.regex()`:
+- No nested quantifiers — `(a+)+` or `(\w+\s)+` are dangerous.
+- Always pair `.regex()` with `.max(N)` to bound worst-case input length.
+- Prefer explicit character classes (`[a-z0-9]`) over shorthand (`\w`) inside repeated groups.
+
+The barcode regex `z.string().regex(/^\d{8,14}$/).max(14)` is safe — anchored, no alternation, fixed character class.
+
+---
+
+#### A04 — Insecure Design
+
+These controls are design-level — they hold even if every line is implemented bug-free:
+
+- **Session state machine (§2.3):** illegal transitions (e.g., adding an item to a `COMPLETED` session, validating an `EXPIRED` one) are rejected by the entity itself, not by scattered `if` checks. A replayed QR on an already-`COMPLETED` session cannot re-credit points.
+- **Append-only points ledger:** balance is derived (`SUM(delta)`), never stored, so there is no mutable field to corrupt or race.
+- **K-anonymity for analytics:** `AnalyticsService` merges any segment with fewer than 50 users into `"other"`, so an individual is never re-identifiable from a B2B response.
+- **Throttled authentication:** auth endpoints are rate-limited and lock an account after 5 failed attempts — brute-force is designed out, not detected after the fact.
 
 ---
 
@@ -1594,14 +1639,15 @@ Refresh token rotation: when `/auth/refresh` is called, delete the old token has
 
 ---
 
-#### A08 — ReDoS
+#### A08 — Software & Data Integrity Failures
 
-When writing Zod schemas in [`packages/shared-types/src/validation/`](packages/shared-types/src/validation/), follow these rules for any `.regex()` call:
-- No nested quantifiers: `(a+)+` or `(\w+\s)+` are dangerous.
-- Always pair a `.regex()` with `.max(N)` — caps the worst-case input length and bounds backtracking time.
-- Prefer explicit character classes (`[a-z0-9]`) over shorthand (`\w`) inside repeated groups.
+Two integrity surfaces matter here: the QR token and the build supply chain.
 
-The barcode regex `z.string().regex(/^\d{8,14}$/).max(14)` is safe — anchored, no alternation, fixed character class.
+- **QR token integrity:** `JwtQrSigner.verify()` (§2.3) checks the HS256 signature before any domain logic runs, so a forged or edited token is rejected outright. The embedded item hash (`validateItems()`) additionally proves the cart was not altered after the QR was issued.
+- **Supply-chain integrity:** CI installs with `pnpm install --frozen-lockfile` (no unpinned versions), the `pnpm audit` gate blocks known-vulnerable packages, and deploys ship immutable Docker images tagged `main-{sha}` to GHCR — the image that passed CI is byte-for-byte the image that runs in production.
+- **Data integrity:** the `PointsTransaction` ledger is append-only (balance = `SUM(delta)`); there is no update/delete path, so credited points cannot be silently rewritten.
+
+(ReDoS guidance moved to the A03 input-validation detail above.)
 
 ---
 
@@ -1656,7 +1702,7 @@ The `AI_INFERENCE_URL` environment variable is validated in the worker's startup
 | **Monitoring**        | Prometheus metrics exposed at `/metrics` via `@willsoto/nestjs-prometheus`. Default metrics (CPU, memory, event loop lag, GC pauses) plus custom business metrics: checkout completions, points awarded, QR generations, active sessions, BullMQ queue depth, and AI classification latency. Business metrics service: [`backend/apps/api/src/common/metrics/business-metrics.service.ts`](backend/apps/api/src/common/metrics/business-metrics.service.ts). Queue depth reporter: [`backend/apps/api/src/common/queues/queue-metrics.service.ts`](backend/apps/api/src/common/queues/queue-metrics.service.ts). |
 | **Distributed Tracing** | OpenTelemetry SDK with automatic instrumentation for HTTP, Express, `ioredis`, BullMQ, and Prisma. Traces exported via OTLP gRPC to Jaeger. W3C Trace Context propagated across HTTP calls and injected into BullMQ job metadata. Manual spans for critical business operations (checkout validation). Tracing initialization: [`backend/apps/api/src/tracing.ts`](backend/apps/api/src/tracing.ts). |
 | **Alerting**          | Prometheus alerting rules evaluated by Alertmanager. P1 (critical) alerts routed to PagerDuty with 5-minute on-call escalation. P2/P3 warnings sent to Slack `#smartcart-alerts`. Alerts defined for: service down, high error rate (>1% 5xx over 5 min), queue backpressure (>1000 waiting jobs), high checkout latency (P95 > 2s), database connection pool exhaustion (>80% utilized), and AI service degradation (P95 > 10s). Alert rules: [`backend/infra/prometheus/rules/smartcart-alerts.yml`](backend/infra/prometheus/rules/smartcart-alerts.yml). |
-| **Health Checks**     | Three-tier health probes via `@nestjs/terminus`. `/api/v1/health/liveness` — lightweight process check for Kubernetes restart decisions. `/api/v1/health/readiness` — validates DB and Redis connectivity for traffic routing. `GET /health` — full dependency check for load balancers. Health controller: [`backend/apps/api/src/common/health/health.controller.ts`](backend/apps/api/src/common/health/health.controller.ts). |
+| **Health Checks**     | Three-tier health probes via `@nestjs/terminus`. `/api/v1/health/liveness` — lightweight process check the Railway/Render platform uses to restart an unhealthy container. `/api/v1/health/readiness` — validates DB and Redis connectivity for traffic routing. `GET /health` — full dependency check for load balancers. Health controller: [`backend/apps/api/src/common/health/health.controller.ts`](backend/apps/api/src/common/health/health.controller.ts). |
 | **Error Tracking**    | Sentry via `@ntegral/nestjs-sentry` and `@sentry/node`. Captures unhandled exceptions (500 errors), Prisma errors, and BullMQ job failures. Expected business errors (4xx: 404, 409, 422) are intentionally excluded. Every Sentry event enriched with `userId`, `correlationId`, `sessionId`, and release version. Sentry configuration: [`backend/apps/api/src/config/sentry.config.ts`](backend/apps/api/src/config/sentry.config.ts). Global exception filter with Sentry integration: [`backend/apps/api/src/common/filters/global-exception.filter.ts`](backend/apps/api/src/common/filters/global-exception.filter.ts). |
 
 ---
@@ -1727,6 +1773,15 @@ This section traces the four main workflows through every architectural layer. F
 
 **Prerequisites:** Shopper has created a session, scanned items, and requested a QR code. QR contains a signed JWT embedding a deterministic SHA-256 hash of session items.
 
+**Business Rules:**
+
+- Validation succeeds only from `PENDING_CHECKOUT`; a `COMPLETED`, `EXPIRED`, or `VALIDATION_FAILED` session is rejected — this is what makes the operation replay-safe (a re-submitted QR never double-credits).
+- The POS-scanned item hash must equal the session's frozen hash exactly. Any add/remove/swap → `QR_ITEM_MISMATCH` and the session moves to `VALIDATION_FAILED` (terminal).
+- A QR past its 10-minute `exp` is invalid regardless of session state.
+- Session completion, point credit, and the ledger insert commit in a single `$transaction` — all-or-nothing; a partial credit is impossible.
+- Only a POS API key may call this endpoint, and the key must be scoped to the session's `storeId`.
+- Post-commit side effects (analytics event, WebSocket push, metrics) are best-effort — their failure never rolls back the sale.
+
 **Steps:**
 
 1. **POS Terminal Request:** `POST /api/v1/sessions/{id}/validate` with `qrToken` and `scannedItems[]`. Requires valid POS API Key in `X-API-Key`.
@@ -1768,6 +1823,14 @@ This section traces the four main workflows through every architectural layer. F
 
 **Business Criticality:** B2B revenue path — must be **asynchronous**, **resilient**, and **anonymized**.
 
+**Business Rules:**
+
+- The pipeline is fire-and-forget: it runs only after the checkout transaction commits and must never block, delay, or fail the checkout that triggered it.
+- Classify only users with ≥ 5 `PURCHASE` transactions in the trailing 90 days; below that, skip — no segment is written.
+- Exactly one `ConsumerSegment` per user (upsert), holding aggregated features only — never raw transaction rows.
+- B2B output is aggregate-only; any segment with < 50 users collapses into `"other"` so no individual is re-identifiable (k-anonymity).
+- Jobs are idempotent and retried with backoff; a repeated delivery re-computes the same segment without side effects.
+
 **Steps:**
 
 1. **Event Trigger:** `CheckoutService` publishes `CheckoutCompletedEvent` to `analytics-profile-update` queue. Config: [`backend/apps/api/src/common/queues/queue.config.ts`](backend/apps/api/src/common/queues/queue.config.ts). *What to code:* Export the queue name as a constant (`ANALYTICS_QUEUE = 'analytics-profile-update'`) and register the BullMQ module in `CheckoutModule` using this constant.
@@ -1793,6 +1856,15 @@ This section traces the four main workflows through every architectural layer. F
 
 **Business Criticality:** All other workflows depend on this — no JWT means no session, no checkout.
 
+**Business Rules:**
+
+- `email` is unique; a duplicate registration → `409`.
+- Failed login is indistinguishable whether the email is unknown or the password is wrong — same error, no user enumeration.
+- Access token lives 15 min, refresh token 7 days; refresh tokens are single-use and rotated on every refresh.
+- The server persists only the refresh-token *hash* (Redis). Revocation = deleting that hash; a token whose hash is absent → `401`.
+- The mobile app only ever issues `USER`-scoped tokens (see §2.5); privileged roles are never minted here.
+- Five failed logins within 15 min lock the account for 30 min.
+
 **Steps:**
 
 1. **Register:** `POST /api/v1/auth/register` with `email`, `password`, `fullName`.
@@ -1816,6 +1888,15 @@ This section traces the four main workflows through every architectural layer. F
 ### Workflow 4: Session Creation & Item Scanning
 
 **Business Criticality:** The user-facing happy path — everything before QR generation.
+
+**Business Rules:**
+
+- At most one `ACTIVE` session per user; attempting a second → `409`.
+- Items may be added or removed only while the session is `ACTIVE`; the entity enforces the guard, not the controller.
+- Every session/item mutation requires `session.userId === caller` — otherwise `403` (ownership, not just authentication).
+- QR generation requires ≥ 1 item and transitions `ACTIVE → PENDING_CHECKOUT`, freezing the cart and computing its item hash.
+- Once `PENDING_CHECKOUT`, the cart is immutable — no further add/remove is permitted.
+- A session left `ACTIVE` for more than 2 hours is expired by the cleanup cron (§2.3).
 
 **Steps:**
 
@@ -1856,7 +1937,7 @@ flowchart TD
     merge(["Merge PR to main"])
 
     subgraph CI_Stage ["CI Pipeline (Feature Branch / PR)"]
-        s1["1. Install Deps<br/>• npm ci<br/>• Cache: node_modules"]
+        s1["1. Install Deps<br/>• pnpm install --frozen-lockfile<br/>• Cache: pnpm store"]
         s2["2. Static Analysis<br/>• ESLint<br/>• Prettier check<br/>• TypeScript check (tsc --noEmit)"]
         
         s3a["3a. Unit Tests<br/>(Jest)"]
