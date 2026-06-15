@@ -36,3 +36,33 @@ export interface CouponDTO {
   code: string;
   expiresAt?: string;
 }
+
+/**
+ * Role enum (README §1.3 Authorization / RBAC, data model `User.role`).
+ * `USER` is the only role this consumer app authenticates by default;
+ * the rest are back-office roles, included here so `EditUserScreen` can
+ * gate role editing for `SUPER_ADMIN`.
+ */
+export type Role = "USER" | "BACKOFFICE_OPERATOR" | "CATALOG_MANAGER" | "STORE_ADMIN" | "SUPER_ADMIN";
+
+export const ROLES: Role[] = ["USER", "BACKOFFICE_OPERATOR", "CATALOG_MANAGER", "STORE_ADMIN", "SUPER_ADMIN"];
+
+/**
+ * UserDTO — mirrors the `User` entity fields from the README data model
+ * (§"Database design"): id, email, fullName, passwordHash, phone?,
+ * pushToken?, role, createdAt. `passwordHash` is never exposed to the
+ * client; the frontend only ever sends/receives a plain `password` field
+ * on register/login/update, per `/auth/register`, `/auth/login`, and
+ * `PATCH /users/me`.
+ */
+export interface UserDTO {
+  id: string;
+  email: string;
+  fullName: string;
+  phone?: string;
+  role: Role;
+  createdAt: string;
+}
+
+export type AuthSessionStatus = "ANONYMOUS" | "AUTHENTICATED" | "REFRESHING" | "EXPIRED";
+

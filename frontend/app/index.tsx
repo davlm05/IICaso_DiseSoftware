@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../src/components/atoms/Button";
@@ -12,15 +12,20 @@ import { PendingItemsList } from "../src/components/organisms/PendingItemsList";
 import { SponsoredCarousel } from "../src/components/organisms/SponsoredCarousel";
 import { SPONSORED_PRODUCTS } from "../src/features/catalog/mockCatalog";
 import { RemoveProductCommand } from "../src/features/session/commands/sessionCommands";
+import { useAuthStore } from "../src/store/authStore";
 import { useSessionStore } from "../src/store/sessionStore";
 
 /**
  * LobbyScreen (README §1.2 Templates / Screens — `/app/index.tsx`).
  * Container: composes PointsCard + SponsoredCarousel + PendingItemsList + BottomNav.
  * Matches wireframes 1, 3, 4 (empty / 1 product / 3 products).
+ *
+ * Entry point of the app — redirects to `/login` if `AuthSessionStore.status`
+ * is not AUTHENTICATED (README §1.3 Session Management).
  */
 export default function LobbyScreen() {
   const router = useRouter();
+  const authStatus = useAuthStore((s) => s.status);
   const store = useSessionStore();
   const pending = useSessionStore((s) => s.pendingItems);
   const lastAddedId = useSessionStore((s) => s.lastAddedId);
@@ -31,6 +36,12 @@ export default function LobbyScreen() {
 
   const [toastVisible, setToastVisible] = useState(false);
 
+  useEffect(() => {
+    if (authStatus !== "AUTHENTICATED") {
+      router.replace("/login");
+    }
+  }, [authStatus]);
+
   const lastAdded = pending.find((p) => p.id === lastAddedId);
   const pendingPoints = store.pendingPoints();
   const hasItems = pending.length > 0;
@@ -40,6 +51,11 @@ export default function LobbyScreen() {
     if (!product) return;
     new RemoveProductCommand(store, product).execute();
   };
+
+  if (authStatus !== "AUTHENTICATED") {
+    // Render nothing while the redirect to /login resolves.
+    return <SafeAreaView className="flex-1 bg-background" />;
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
@@ -114,6 +130,7 @@ export default function LobbyScreen() {
         onNavigate={(tab) => {
           if (tab === "scan") router.push("/scan");
           if (tab === "rewards") router.push("/rewards");
+          if (tab === "profile") router.push("/profile");
         }}
       />
     </SafeAreaView>

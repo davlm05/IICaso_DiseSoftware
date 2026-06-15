@@ -89,6 +89,7 @@ export default function RewardsScreen() {
         onNavigate={(tab) => {
           if (tab === "home") router.replace("/");
           if (tab === "scan") router.push("/scan");
+          if (tab === "profile") router.push("/profile");
         }}
       />
     </SafeAreaView>
