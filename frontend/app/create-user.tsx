@@ -46,7 +46,7 @@ export default function CreateUserScreen() {
     );
   }
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!email.trim() || !password.trim() || !fullName.trim()) {
       setError("Correo, contraseña y nombre completo son obligatorios.");
       return;
@@ -56,15 +56,18 @@ export default function CreateUserScreen() {
       return;
     }
 
-    createUser({
-      email: email.trim(),
-      password,
-      fullName: fullName.trim(),
-      phone: phone.trim() || undefined,
-      role,
-    });
-
-    router.back();
+    try {
+      await createUser({
+        email: email.trim(),
+        password,
+        fullName: fullName.trim(),
+        phone: phone.trim() || undefined,
+        role,
+      });
+      router.back();
+    } catch {
+      setError("No se pudo crear el usuario. El correo podría ya estar registrado.");
+    }
   };
 
   return (

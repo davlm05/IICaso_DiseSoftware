@@ -29,8 +29,8 @@ export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const scan = useScan();
 
-  const handleConfirm = () => {
-    scan.confirm();
+  const handleConfirm = async () => {
+    await scan.confirm();
     router.back();
   };
 

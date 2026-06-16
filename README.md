@@ -692,9 +692,9 @@ The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.
 | Concern | Choice | Version | Justification |
 |---|---|---|---|
 | API Style | REST + OpenAPI | — | Frontend `apiClient` already REST; Swagger auto-gen in Nest |
-| Language | TypeScript / Node.js | 5.5 / 20 LTS | Shared DTOs + Zod schemas live in **`@smartcart/shared-types`**, imported 1:1 by both `frontend/` and `backend/apps/api` → zero contract drift |
+| Language | TypeScript / Node.js | 5.5 / 24.x LTS | Shared DTOs + Zod schemas live in **`@smartcart/shared-types`**, imported 1:1 by both `frontend/` and `backend/apps/api` → zero contract drift |
 | Framework | NestJS | 10.4 | DI + modules map to template's layered design + Repository/Service/DTO patterns out-of-box |
-| ORM/DB | Prisma 6.19 / PostgreSQL | 17 | Template schema is relational; Prisma migrations + type-safety. *(Design target was Prisma 5.20; bumped to 6.19 for Node 24 compatibility — see MVP note below.)* |
+| ORM/DB | Prisma 6.19 / PostgreSQL | 17 | Template schema is relational; Prisma migrations + type-safety. |
 | Async | BullMQ | 5.x | Analytics profiling + push notif queues (template 2.4) |
 | Cache | Redis | 7.2 | Session read-through cache (keeps the API stateless; PostgreSQL is authoritative), profile cache invalidation |
 | File storage | Cloudflare R2 | — | Product images |
@@ -703,20 +703,6 @@ The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.
 | Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
 | Observability | Pino / OpenTelemetry SDK / Prometheus / Sentry | — | Structured logs, traces, metrics, and error tracking (detailed in §2.6) |
 
-> **MVP implementation note (versiones reales instaladas).** El MVP funcional implementado en `backend/apps/api` cubre el núcleo transaccional (auth, catálogo, sesiones/checkout, rewards) y deja fuera de alcance worker de analytics, Redis, BullMQ, IA y el stack de observabilidad. Versiones efectivamente instaladas y desviaciones respecto a la tabla de diseño:
->
-> | Librería | Diseño | Instalado (MVP) | Motivo del cambio |
-> |---|---|---|---|
-> | Node.js | 20 LTS | 24.x | Entorno de desarrollo local |
-> | Prisma / `@prisma/client` | 5.20 | 6.19 | Compatibilidad con Node 24 |
-> | NestJS (`@nestjs/*`) | 10.4 | 10.4 | Sin cambio |
-> | Gestor de paquetes | pnpm | npm workspaces | pnpm no disponible en el entorno; npm viene con Node |
-> | `@nestjs/swagger` | (implícito) | 7.4 | OpenAPI/Swagger UI |
-> | Auth | (implícito) | `@nestjs/jwt` 10.2, `passport-jwt` 4, `bcryptjs` 2.4, `jsonwebtoken` 9 | JWT access/refresh + hashing + firma de QR |
-> | Cron | (implícito) | `@nestjs/schedule` 4.1 | Expiración de sesiones |
-> | Seguridad HTTP | Helmet (§2.5) | `helmet` 8 | Cabeceras/HSTS |
->
-> Guía de arranque y estado detallado del MVP: ver [`backend/README.md`](backend/README.md) y [`backend/PROGRESS.md`](backend/PROGRESS.md).
 
 ## 2.2. Architecture — Implementation Guide
 
@@ -2140,174 +2126,244 @@ Analytics worker uses [`backend/infra/docker/Dockerfile.worker`](backend/infra/d
 
 ---
 
-# MVP — Ejecución Local y Alcance
+# MVP — Local Execution & Scope
 
-Esta sección documenta el **MVP funcional implementado** (no el diseño completo de §1/§2,
-que es la visión objetivo). El MVP se enfoca en el *problem statement*: el flujo del
-comprador **Descubrir → Escanear → Validar → Acumular → Canjear**, con una solución
-**simplificada pero funcional**. Los módulos satelitales (analytics B2B/IA, colas,
-caché, tiempo real, observabilidad) se redujeron al mínimo indispensable.
+This section documents the **implemented functional MVP**. The MVP focuses on the *problem statement*: the shopper
+loop **Discover → Scan → Validate → Accumulate → Redeem**, delivered as a
+**simplified but functional** solution wired end-to-end across frontend, backend, and
+database. Satellite modules (B2B/AI analytics, queues, cache, real-time,
+observability) were reduced to the bare minimum.
 
-> **Importante: el MVP corre 100% en ambiente local.** No hay dependencias de nube:
-> la base de datos es PostgreSQL en Docker (`localhost:5432`), la API escucha en
-> `localhost:3000` y el frontend en el dev server de Expo. No se requieren cuentas,
-> secretos de producción ni servicios externos.
+> **Important: the MVP runs 100% locally.** No cloud dependencies: the database is
+> PostgreSQL in Docker (`localhost:5432`), the API listens on `localhost:3000`, and
+> the frontend runs on the Expo dev server pointed at that local API. No accounts,
+> production secrets, or external services are required.
 
-## Fidelidad con la arquitectura diseñada
+## Fidelity to the designed architecture
 
-El backend sigue fielmente la arquitectura del README §2:
+The backend faithfully follows the README §2 architecture:
 
-- **Monolito modular NestJS** con un módulo por *bounded context*
+- **Modular NestJS monolith** with one module per *bounded context*
   (`auth`, `users`, `catalog`, `checkout`, `rewards`) — §2.2.
-- **Diseño por capas estricto** en cada módulo: `presentation/` (controllers) →
-  `application/` (services + interfaces-puerto) → `domain/` (entidades, máquina de
-  estados, estrategias, errores; TypeScript puro) → `infrastructure/` (repositorios
-  Prisma, signer JWT, mappers) — §2.2 Layer Rules.
-- **Contratos compartidos** `@smartcart/shared-types` (Zod + DTOs) validados en el
-  borde HTTP con `ZodValidationPipe` — §2.2 Type-Safe Contract Sharing.
-- **Patrones de negocio** §2.3: Strategy (cálculo de puntos), State Machine (sesión),
-  Factory + hash SHA-256 (QR anti-tamper), Repository + Inversión de Dependencias,
-  `$transaction` ACID (validación POS + ledger de puntos).
-- **Modelo de datos y endpoints** §2.4 implementados sobre el `schema.prisma` de
-  diseño (enums + jsonb, sin modificar).
+- **Strict layered design** in each module: `presentation/` (controllers) →
+  `application/` (services + port interfaces) → `domain/` (entities, state machine,
+  strategies, errors; pure TypeScript) → `infrastructure/` (Prisma repositories, JWT
+  signer, mappers) — §2.2 Layer Rules.
+- **Shared contracts** `@smartcart/shared-types` (Zod + DTOs) validated at the HTTP
+  edge with `ZodValidationPipe` — §2.2 Type-Safe Contract Sharing.
+- **Business patterns** §2.3: Strategy (points calculation), State Machine (session),
+  Factory + SHA-256 hash (anti-tamper QR), Repository + Dependency Inversion,
+  ACID `$transaction` (POS validation + points ledger).
+- **Data model and endpoints** §2.4 implemented on the design `schema.prisma`
+  (enums + jsonb, unmodified).
 
-## Componentes y cómo ejecutar cada uno
+The frontend consumes this backend through a dedicated API layer
+(`frontend/src/api/`) while preserving the §1 design patterns (Atomic Design,
+Strategy / Chain of Responsibility / Command / Decorator). See
+"Frontend ↔ Backend integration" below.
 
-### 1. Base de datos / Data Layer (PostgreSQL en Docker)
+## Components and how to run each one
 
-La capa de datos es PostgreSQL 17 levantada con Docker Compose
-(`backend/infra/docker/docker-compose.yml`). Prisma es el ORM y la fuente de verdad
-del esquema es `backend/apps/api/prisma/schema.prisma`.
+### 1. Database / Data Layer (PostgreSQL in Docker)
+
+The data layer is PostgreSQL 17 brought up with Docker Compose
+(`backend/infra/docker/docker-compose.yml`). Prisma is the ORM, and the schema's
+source of truth is `backend/apps/api/prisma/schema.prisma`.
 
 ```bash
-# Desde la raíz del repo
-npm run db:up      # levanta el contenedor smartcart-postgres en localhost:5432
-# (para detener: npm run db:down)
+# From the repo root
+npm run db:up      # starts the smartcart-postgres container on localhost:5432
+# (to stop: npm run db:down)
 ```
 
-Credenciales locales del contenedor: usuario `smartcart`, password `smartcart`,
-base `smartcart`. Datos persistidos en el volumen Docker `smartcart-pgdata`.
+Local container credentials: user `smartcart`, password `smartcart`, database
+`smartcart`. Data persisted in the Docker volume `smartcart-pgdata`.
 
-### 2. Backend (BE) — API NestJS
+### 2. Backend (BE) — NestJS API
 
 ```bash
-# Desde la raíz del repo (npm workspaces)
-npm install              # instala dependencias de shared-types + api
-npm run build:types      # compila @smartcart/shared-types (requerido por la API)
-npm run prisma:migrate   # crea/aplica el esquema en la DB (genera Prisma Client)
-npm run db:seed          # inicializa datos demo (ver "Inicialización de datos")
-npm run api:dev          # arranca la API en http://localhost:3000/api/v1
+# From the repo root (npm workspaces)
+npm install              # installs shared-types + api dependencies
+npm run build:types      # builds @smartcart/shared-types (required by the API)
+npm run prisma:migrate   # creates/applies the schema in the DB (generates Prisma Client)
+npm run db:seed          # initializes demo data (see "Data initialization")
+npm run api:dev          # starts the API at http://localhost:3000/api/v1
 ```
 
 - API base: <http://localhost:3000/api/v1>
-- Swagger / OpenAPI (interactivo): <http://localhost:3000/api/docs>
+- Swagger / OpenAPI (interactive): <http://localhost:3000/api/docs>
 - Health check: <http://localhost:3000/api/v1/health>
-- Guía detallada del backend: [`backend/README.md`](backend/README.md)
-- Estado y decisiones del MVP: [`backend/PROGRESS.md`](backend/PROGRESS.md)
+- Detailed backend guide: [`backend/README.md`](backend/README.md)
+- MVP status and decisions: [`backend/PROGRESS.md`](backend/PROGRESS.md)
 
-### 3. Frontend (FE) — App React Native (Expo)
+### 3. Frontend (FE) — React Native App (Expo)
 
-> El FE del MVP funciona de forma **autónoma con datos mock** (no consume aún la API;
-> la integración FE↔BE quedó fuera del alcance de este MVP — ver más abajo). Se ejecuta
-> con el dev server local de Expo.
+> The FE **consumes the live backend API** (auth, catalog, sessions, rewards). Start
+> the backend first (steps 1–2, seeded); the app reaches it through the local Expo
+> dev server.
 
 ```bash
 cd frontend
-npm install              # dependencias del app (Expo SDK 52)
-npm start                # Metro/Expo dev server (Expo Go o dev client)
-# Atajos: npm run android | npm run ios
-# Calidad: npm run lint | npm run typecheck | npm test
+npm install              # app dependencies (Expo SDK 52)
+npm start                # Metro/Expo dev server (Expo Go or dev client)
+# Shortcuts: npm run android | npm run ios
+# Quality: npm run typecheck | npm test
 ```
 
-## Variables de entorno necesarias
+Log in with the seeded demo user `shopper@example.com` / `test-password`. Because POS
+validation is authenticated by a POS API key (not the shopper JWT — §2.5), the
+checkout screen **polls** the session until the cashier validates it; during a local
+demo, trigger that validation externally with the `curl` flow in
+[`backend/README.md`](backend/README.md).
 
-**Backend** — archivo `backend/apps/api/.env` (plantilla en
-[`backend/apps/api/.env.example`](backend/apps/api/.env.example)). Para desarrollo local
-basta copiar el example tal cual:
+## Frontend ↔ Backend integration
 
-| Variable | Ejemplo (local) | Descripción |
+The FE talks to the API through `frontend/src/api/`:
+
+- **`client.ts`** — a single Axios instance with a request interceptor that attaches
+  `Authorization: Bearer <access>`, and a response interceptor that, on `401`, runs a
+  single-flight token refresh (`POST /auth/refresh`), retries the request, and on
+  refresh failure clears the tokens and routes to `/login`.
+- **`tokenStore.ts`** — access/refresh tokens persisted in **expo-secure-store**
+  (device keychain/keystore, never AsyncStorage — §1.3).
+- **`config.ts`** — base URL from `EXPO_PUBLIC_API_URL` with a platform-aware default.
+- **`mappers.ts`** — adapts backend payloads to the shapes the screens read, handling
+  the documented contract gaps: a client-side `barcode → icon/price` table,
+  authoritative `pointsValue` for the cart, and a derived `highlighted` reward.
+
+The state stores are now async: `authStore` calls `/auth/*` + `/users/me`;
+`sessionStore` calls `/sessions/*` and derives the points balance from `/users/me`;
+`useScan` resolves barcodes via `GET /products/:barcode`. Since the MVP has no
+WebSocket, `checkout.tsx` polls `GET /sessions/:id` every 3 s until the session
+reaches `COMPLETED`. Known FE simplifications: `PATCH /users/me` only updates
+name/phone, and the SUPER_ADMIN "create user" action reuses public registration
+(there is no admin-create endpoint in the MVP).
+
+## Required environment variables
+
+**Backend** — file `backend/apps/api/.env` (template in
+[`backend/apps/api/.env.example`](backend/apps/api/.env.example)). For local
+development, copying the example as-is is enough:
+
+| Variable | Example (local) | Description |
 |---|---|---|
-| `NODE_ENV` | `development` | Entorno de ejecución |
-| `PORT` | `3000` | Puerto de la API |
-| `DATABASE_URL` | `postgresql://smartcart:smartcart@localhost:5432/smartcart?schema=public` | Conexión Postgres (coincide con docker-compose) |
-| `JWT_ACCESS_SECRET` | `dev-access-secret-change-me` | Secreto del access token |
-| `JWT_REFRESH_SECRET` | `dev-refresh-secret-change-me` | Secreto del refresh token |
-| `JWT_ACCESS_TTL` | `15m` | Vigencia del access token |
-| `JWT_REFRESH_TTL` | `30d` | Vigencia del refresh token |
-| `QR_SIGNING_SECRET` | `dev-qr-signing-secret-min-32-chars-long!!` | Firma del QR — **mínimo 32 caracteres** (§2.3) |
-| `POS_API_KEY` | `pos-demo-key-0001` | API key del POS (header `x-api-key`) para validar sesiones |
-| `B2B_API_KEY` | `b2b-demo-key-0001` | API key B2B (reservada; analytics fuera de alcance) |
-| `CORS_ORIGIN` | `*` | Orígenes permitidos (Expo dev) |
+| `NODE_ENV` | `development` | Runtime environment |
+| `PORT` | `3000` | API port |
+| `DATABASE_URL` | `postgresql://smartcart:smartcart@localhost:5432/smartcart?schema=public` | Postgres connection (matches docker-compose) |
+| `JWT_ACCESS_SECRET` | `dev-access-secret-change-me` | Access-token secret |
+| `JWT_REFRESH_SECRET` | `dev-refresh-secret-change-me` | Refresh-token secret |
+| `JWT_ACCESS_TTL` | `15m` | Access-token lifetime |
+| `JWT_REFRESH_TTL` | `30d` | Refresh-token lifetime |
+| `QR_SIGNING_SECRET` | `dev-qr-signing-secret-min-32-chars-long!!` | QR signing key — **minimum 32 characters** (§2.3) |
+| `POS_API_KEY` | `pos-demo-key-0001` | POS API key (header `x-api-key`) for validating sessions |
+| `B2B_API_KEY` | `b2b-demo-key-0001` | B2B API key (reserved; analytics out of scope) |
+| `CORS_ORIGIN` | `*` | Allowed origins (Expo dev) |
 
-La configuración se valida al arrancar con Zod (`src/config/env.validation.ts`); si
-falta o es inválida una variable, la API **no inicia**.
+The configuration is validated on startup with Zod (`src/config/env.validation.ts`);
+if a variable is missing or invalid, the API **will not start**.
 
-**Frontend** — no requiere variables de entorno para el MVP (usa mocks).
+**Frontend** — optional. By default the app targets the local API per platform (iOS
+simulator / web `http://localhost:3000/api/v1`; **Android emulator
+`http://10.0.2.2:3000/api/v1`**, since `localhost` is not the host on Android).
+Override with `EXPO_PUBLIC_API_URL` when running on a physical device (e.g.
+`http://<your-LAN-IP>:3000/api/v1`). Backend CORS is `*`, so no server change is needed.
 
-## Dependencias requeridas
+## Testing on a physical Android device (Expo Go)
 
-- **Node.js** 20+ (probado en 24) y **npm** (incluye workspaces).
-- **Docker** + Docker Compose (para PostgreSQL local).
+`localhost` (iOS sim / web) and `10.0.2.2` (Android emulator) only resolve on the host
+machine itself. To run on a **real Android phone via Expo Go**, point both Expo and the
+API at your computer's LAN IP. No code change is required —
+`frontend/src/api/config.ts` reads `EXPO_PUBLIC_API_URL` and only falls back to the
+platform default when it is unset.
+
+1. **Same network** — connect the phone and the computer to the **same Wi-Fi**.
+2. **Find your LAN IP** — on Windows run `ipconfig` and copy the `IPv4 Address` of your
+   active adapter (e.g. `192.168.0.12`); Expo also prints it in the dev-server banner.
+3. **Point the app at that IP** — create `frontend/.env` (Expo auto-loads it):
+
+   ```bash
+   # frontend/.env  — replace with your machine's LAN IP
+   EXPO_PUBLIC_API_URL=http://192.168.0.12:3000/api/v1
+   ```
+
+   `EXPO_PUBLIC_*` variables are inlined at bundle time, so **restart Metro clearing the
+   cache** after creating/editing the file: `npx expo start -c`.
+4. **Allow the ports through the firewall** — the backend already listens on all
+   interfaces (`0.0.0.0:3000`, NestJS default). On Windows, allow inbound TCP **3000**
+   (the API) and **8081** (Metro bundler) for Node on **private networks**.
+5. **Start both** — backend `npm run api:dev` (seeded) from the root, and the app with
+   `npx expo start -c` in `frontend/`; scan the QR with Expo Go (connection mode **LAN**).
+6. **Verify reachability** — from the phone's browser open
+   `http://<your-LAN-IP>:3000/api/v1/health`; a JSON `ok` response confirms the device
+   can reach the API. Then log in with `shopper@example.com` / `test-password`.
+
+> If the app loads but every request fails, the phone can reach Metro (8081) but not the
+> API (3000) — almost always the firewall on port 3000 or a wrong/stale
+> `EXPO_PUBLIC_API_URL` (remember `npx expo start -c` after changing it).
+
+## Required dependencies
+
+- **Node.js** 20+ (tested on 24) and **npm** (includes workspaces).
+- **Docker** + Docker Compose (for local PostgreSQL).
 - **Backend**: NestJS 10.4, Prisma 6.19 / `@prisma/client`, `@nestjs/jwt` + `passport-jwt`,
   `bcryptjs`, `jsonwebtoken`, `@nestjs/swagger`, `@nestjs/schedule`, `helmet`, `zod`
-  (instaladas vía `npm install`). Detalle y desviaciones vs. diseño en la *MVP
-  implementation note* de §2.1.
-- **Frontend**: Expo SDK 52 / React Native 0.76, instaladas con `npm install` en `frontend/`.
-  Para abrir el app: Expo Go o un emulador Android/iOS.
+  (installed via `npm install`). Details and deviations vs. design in the *MVP
+  implementation note* in §2.1.
+- **Frontend**: Expo SDK 52 / React Native 0.76, plus `axios`,
+  `@tanstack/react-query`, and `expo-secure-store` (already in `frontend/package.json`),
+  installed with `npm install` in `frontend/`. To open the app: Expo Go or an
+  Android/iOS emulator.
 
-## Procedimiento de inicialización de datos
+## Data initialization procedure
 
-El seed (`backend/apps/api/prisma/seed.ts`) es **idempotente** (re-ejecutable) y carga:
+The seed (`backend/apps/api/prisma/seed.ts`) is **idempotent** (re-runnable) and loads:
 
 ```bash
-npm run db:seed     # desde la raíz, tras prisma:migrate
+npm run db:seed     # from the root, after prisma:migrate
 ```
 
-Crea:
-- **1 tienda** demo — `storeId` `11111111-1111-4111-8111-111111111111`.
-- **6 productos** cuyos códigos de barras coinciden con el mock del frontend
-  (incluye ejemplos de las estrategias `FIXED_PER_UNIT`, `VOLUME_TIER`, `WEEKEND_BONUS`).
-- **4 recompensas** canjeables.
-- **API keys** POS y B2B (almacenadas como hash SHA-256).
-- **Usuario demo**: `shopper@example.com` / `test-password`, con **balance inicial de 120 puntos**.
+Creates:
+- **1 demo store** — `storeId` `11111111-1111-4111-8111-111111111111` (used as the
+  constant store id by the FE, since the MVP has no `GET /stores` endpoint).
+- **6 products** whose barcodes match the frontend catalog
+  (includes `FIXED_PER_UNIT`, `VOLUME_TIER`, and `WEEKEND_BONUS` strategy examples).
+- **4 redeemable rewards**.
+- **POS and B2B API keys** (stored as SHA-256 hashes).
+- **Demo user**: `shopper@example.com` / `test-password`, with an **initial balance of 120 points**.
 
-Flujo de demostración completo (login → sesión → escanear → QR → validación POS →
-canje) documentado con `curl` en [`backend/README.md`](backend/README.md).
+The full demo flow (login → session → scan → QR → POS validation → redeem) is
+documented with `curl` in [`backend/README.md`](backend/README.md), and is the same
+flow the app exercises end-to-end.
 
-## Alcance del MVP
+## MVP scope
 
-### ✅ Incluido (resuelve el problem statement)
+### Included (solves the problem statement)
 
-- **Auth** local: registro, login, refresh, logout (JWT access/refresh, bcrypt).
-- **Perfil + puntos**: `GET/PATCH /users/me`, historial y **balance derivado** del
-  ledger inmutable (`SUM(delta)`).
-- **Catálogo**: lookup por código de barras y búsqueda.
-- **Sesión de compra y checkout** (núcleo): crear sesión, escanear/eliminar ítems,
-  **máquina de estados**, **cálculo de puntos por estrategias**, **QR firmado con hash
-  anti-tamper**, **validación POS** (acredita puntos en `$transaction`), expiración por cron.
-- **Recompensas**: listar, detalle y **canje** (genera cupón + débito atómico).
-- **Health check**, **Swagger/OpenAPI**, validación de entrada con Zod, manejo global
-  de errores, Helmet/CORS.
-- **Persistencia real** en PostgreSQL + seed de datos demo.
+- **Local auth**: register, login, refresh, logout (JWT access/refresh, bcrypt).
+- **Profile + points**: `GET/PATCH /users/me`, history, and a **balance derived** from
+  the immutable ledger (`SUM(delta)`).
+- **Catalog**: barcode lookup and search.
+- **Shopping session & checkout** (core): create session, scan/remove items,
+  **state machine**, **strategy-based points calculation**, **signed QR with
+  anti-tamper hash**, **POS validation** (credits points in a `$transaction`),
+  cron-based expiry.
+- **Rewards**: list, detail, and **redemption** (issues a coupon + atomic debit).
+- **Health check**, **Swagger/OpenAPI**, Zod input validation, global error handling,
+  Helmet/CORS.
+- **Real persistence** in PostgreSQL + demo data seed.
+- **End-to-end FE ↔ BE integration**: the React Native app consumes the API (JWT in
+  SecureStore with auto-refresh, real session/scan/QR/redeem flows, checkout polling).
 
-### ❌ Fuera de alcance (reducido al mínimo o pospuesto)
+### Out of scope (minimized or deferred)
 
-| Área | Estado en el MVP | Razón |
+| Area | MVP status | Reason |
 |---|---|---|
-| Integración FE ↔ BE | FE usa mocks; BE se prueba vía Swagger/curl | Mantener estable el FE ya entregado |
-| Worker de analytics B2B / IA (§2.3 §1, §2.8 W2) | No implementado; evento `CheckoutCompletedEvent` se loguea (publisher no-op) | Módulo satelital; no parte del flujo del comprador |
-| Redis / caché Cache-Aside (§2.1) | No usado; lectura directa a Postgres | Innecesario para volumen de demo |
-| BullMQ / colas (§2.1) | No usado | Depende del worker de analytics |
-| WebSockets / `SessionGateway` (§2.3) | No implementado; el FE no hace polling en el MVP | Tiempo real es mejora, no núcleo |
-| Observabilidad: Pino/OpenTelemetry/Prometheus/Sentry (§2.6) | Solo logger por defecto de Nest | Operacional, no funcional |
-| Endpoints `/analytics/*` (§2.4) | No implementados | Producto B2B, fuera del flujo móvil |
-| Revocación de refresh tokens / denylist (§2.5) | Logout es stateless | Requiere Redis; aceptable para demo |
-| Almacenamiento de imágenes (Cloudflare R2) | No usado (`imageUrl` opcional) | Externo a nube |
-| Infra de producción: Nginx, K8s, Terraform, CI/CD, EAS (§2.9) | No aplicada | El MVP corre solo en local |
-
-> Cada deuda técnica está además registrada en [`backend/PROGRESS.md`](backend/PROGRESS.md).
-> Los archivos de los módulos fuera de alcance (p. ej. `apps/analytics-worker/`,
-> `checkout/.../gateways/`) permanecen como *stubs* del diseño para no perder la
-> trazabilidad con §2.
-
----
+| B2B / AI analytics worker (§2.3 §1, §2.8 W2) | Not implemented; the `CheckoutCompletedEvent` is logged (no-op publisher) | Satellite module; not part of the shopper loop |
+| Redis / Cache-Aside cache (§2.1) | Not used; direct reads from Postgres | Unnecessary for demo volume |
+| BullMQ / queues (§2.1) | Not used | Depends on the analytics worker |
+| WebSockets / `SessionGateway` (§2.3) | Not implemented; the FE polls `GET /sessions/:id` every 3 s instead | Real-time is an enhancement, not core |
+| Observability: Pino/OpenTelemetry/Prometheus/Sentry (§2.6) | Nest default logger only | Operational, not functional |
+| `/analytics/*` endpoints (§2.4) | Not implemented | B2B product, outside the mobile flow |
+| Refresh-token revocation / denylist (§2.5) | Logout is stateless | Requires Redis; acceptable for the demo |
+| Image storage (Cloudflare R2) | Not used (`imageUrl` optional) | Cloud-external |
+| Production infra: Nginx, K8s, Terraform, CI/CD, EAS (§2.9) | Not applied | The MVP runs locally only |

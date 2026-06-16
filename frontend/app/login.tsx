@@ -23,8 +23,9 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
       setError("Ingresa tu correo y contraseña.");
       return;
@@ -36,12 +37,15 @@ export default function LoginScreen() {
       return;
     }
 
-    const ok = login(email.trim(), password);
-    if (!ok) {
+    setSubmitting(true);
+    try {
+      await login(email.trim(), password);
+      router.replace("/");
+    } catch {
       setError("Correo o contraseña incorrectos.");
-      return;
+    } finally {
+      setSubmitting(false);
     }
-    router.replace("/");
   };
 
   return (
@@ -74,7 +78,11 @@ export default function LoginScreen() {
         />
 
         <View className="mt-2">
-          <Button label="Iniciar sesión" variant="primary" onPress={handleSubmit} />
+          <Button
+            label={submitting ? "Iniciando…" : "Iniciar sesión"}
+            variant="primary"
+            onPress={handleSubmit}
+          />
         </View>
       </View>
     </SafeAreaView>

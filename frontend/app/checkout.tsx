@@ -23,25 +23,46 @@ export default function CheckoutScreen() {
   const qrExpiresAt = useSessionStore((s) => s.qrExpiresAt);
   const pending = useSessionStore((s) => s.pendingItems);
 
-  const [waiting, setWaiting] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  // Request the exit QR once (POST /sessions/:id/qr → ACTIVE → PENDING_CHECKOUT).
   useEffect(() => {
     if (!qrToken) {
-      store.generateQr();
+      store.generateQr().catch(() => setError("No pudimos generar el código QR."));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stand-in for the socket/poll hook (README §1.5 operation 4):
-  // resolves automatically after a short delay to demonstrate the
-  // ValidatingState -> ConfirmationScreen transition.
+  // Polling (README §1.5 operation 4 — no WebSocket in the MVP, see CLAUDE.md).
+  // The POS validates externally (cashier / curl with the POS API key); we poll
+  // GET /sessions/:id every 3s until it flips to COMPLETED, then route on.
   useEffect(() => {
-    if (!waiting) return;
-    const timer = setTimeout(() => {
-      store.confirmValidation();
-      router.replace("/confirmation");
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [waiting]);
+    let active = true;
+    const interval = setInterval(async () => {
+      try {
+        const status = await store.pollStatus();
+        if (!active) return;
+        if (status === "COMPLETED") {
+          clearInterval(interval);
+          await store.confirmValidation();
+          router.replace("/confirmation");
+        } else if (status === "VALIDATION_FAILED") {
+          clearInterval(interval);
+          setError("La validación falló. Vuelve a generar el código.");
+        } else if (status === "EXPIRED") {
+          clearInterval(interval);
+          setError("El código expiró. Genera uno nuevo.");
+        }
+      } catch {
+        // Transient network error — keep polling.
+      }
+    }, 3000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const pendingPoints = pending.reduce((sum, p) => sum + p.points, 0);
 
@@ -72,10 +93,16 @@ export default function CheckoutScreen() {
           <PointsTag points={pendingPoints} state="pending" />
         </View>
 
-        <View className="mt-md flex-row items-center gap-2">
-          <View className="h-2 w-2 rounded-full bg-white" />
-          <Text className="font-heading text-sm text-white">Esperando validación de la cajera…</Text>
-        </View>
+        {error ? (
+          <View className="mt-md w-full rounded-2xl border border-white/40 bg-white/15 px-md py-3">
+            <Text className="text-center font-heading text-sm text-white">{error}</Text>
+          </View>
+        ) : (
+          <View className="mt-md flex-row items-center gap-2">
+            <View className="h-2 w-2 rounded-full bg-white" />
+            <Text className="font-heading text-sm text-white">Esperando validación de la cajera…</Text>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );

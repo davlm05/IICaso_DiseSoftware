@@ -39,6 +39,7 @@ export default function ProfileScreen() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState(user?.role ?? "USER");
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!user) {
     return (
@@ -53,23 +54,23 @@ export default function ProfileScreen() {
     );
   }
 
-  const handleSave = () => {
-    updateUser({
-      email: email.trim(),
-      fullName: fullName.trim(),
-      phone: phone.trim() || undefined,
-      // Only sent if the user typed a new password.
-      ...(password ? { password } : {}),
-      // role only changes if the user is SUPER_ADMIN; otherwise we keep
-      // the original value regardless of local state.
-      role: isSuperAdmin ? role : user.role,
-    });
-    setPassword("");
-    setSaved(true);
+  const handleSave = async () => {
+    // Backend PATCH /users/me only persists fullName + phone (README §2.4);
+    // email/password/role are not editable in the MVP.
+    try {
+      await updateUser({
+        fullName: fullName.trim(),
+        phone: phone.trim() || undefined,
+      });
+      setPassword("");
+      setSaved(true);
+    } catch {
+      setError("No se pudieron guardar los cambios.");
+    }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     router.replace("/login");
   };
 
@@ -90,6 +91,10 @@ export default function ProfileScreen() {
       <ScrollView contentContainerClassName="gap-3 p-md">
         {saved ? (
           <Toast message="Perfil actualizado." tone="success" visible onDismiss={() => setSaved(false)} />
+        ) : null}
+
+        {error ? (
+          <Toast message={error} tone="error" visible onDismiss={() => setError(null)} />
         ) : null}
 
         <Input label="Correo electrónico" value={email} onChangeText={setEmail} autoCapitalize="none" />

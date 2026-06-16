@@ -94,7 +94,7 @@ export default function ConfirmationScreen() {
         <Button
           label="Volver al inicio"
           variant="primary"
-          icon={<Icon name="Home" size={16} color="#FFFFFF" />}
+          icon={<Icon name="House" size={16} color="#FFFFFF" />}
           onPress={handleHome}
         />
         <Button
