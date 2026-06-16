@@ -14,7 +14,7 @@ Seguimiento del desarrollo del backend de SmartCart para el MVP. Última actuali
 - **Alcance:** MVP funcional. API NestJS con capas DDD + Prisma + auth JWT + lógica core (sesiones/estado, estrategias de puntos, QR firmado, rewards/canje, ledger de puntos, products, health, Swagger, seed).
 - **Fuera de alcance (del diseño §2 completo):** worker de analytics, Redis, BullMQ, IA, WebSockets, observabilidad (Pino/OTel/Prometheus/Sentry), Docker prod/K8s/Terraform/Nginx.
 - **Base de datos:** PostgreSQL vía Docker (`backend/infra/docker/docker-compose.yml`). Schema de Prisma se mantiene tal cual (enums + Json).
-- **Frontend:** sin tocar (sigue con mocks). El backend se demuestra vía Swagger/Postman.
+- **Frontend:** integrado con la API viva (`frontend/src/api/`, JWT en SecureStore, polling en checkout). La carpeta `frontend/` está en `.gitignore` pero existe localmente. Demo alternativa: Swagger/curl en `backend/README.md`.
 - **Gestor de paquetes:** `npm workspaces` (pnpm no está instalado; npm sí). Node v24.
 - **Contratos:** `@smartcart/shared-types` (Zod + DTOs) consumido por el backend (README §2.2).
 
@@ -78,4 +78,4 @@ npm run api:dev
 - Logout es stateless (sin denylist de refresh tokens; el diseño §2.5 usa Redis).
 - Sin caché Redis en products/sessions (el diseño usa Cache-Aside).
 - Eventos `CheckoutCompletedEvent` se publican a un logger no-op en vez de BullMQ.
-- Prisma 6.x / NestJS 10.x (el README cita Prisma 5.20 / Nest 10.4; se subió Prisma por compatibilidad con Node 24).
+- Prisma **6.19.3** / NestJS **10.4.22** (lockfile en raíz; `package.json` usa rangos `^6.19.0` / `^10.4.4`).

@@ -173,9 +173,9 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 | Concern | Choice | Version | Justification |
 |---------|--------|---------|---------------|
 | **Application Type** | Native Mobile App (managed via Expo) | — | The Discover → Scan → Validate → Accumulate → Redeem loop depends on camera, BLE/GPS, QR rendering, and push — all native capabilities. A native app delivers the in-store performance and hardware access a PWA cannot reliably provide. |
-| **Framework** | React Native (Expo SDK 52) | RN **0.76.6** / Expo SDK **52** | A single codebase targets both iOS and Android, halving cost for a consumer app aimed at supermarket shoppers. Expo SDK 52 bundles native modules (camera, secure storage, notifications) with guaranteed inter-compatibility and provides EAS Build/OTA updates. New Architecture (Fabric/TurboModules) is enabled by default for smooth camera/scan UI. |
-| **UI Runtime** | React | **18.3.1** | The exact React version shipped and validated by Expo SDK 52 / RN 0.76.6. |
-| **Language** | TypeScript | **5.3.3** | Static typing makes the session state machine, command objects, and DTOs (`ProductDTO`) safe to refactor. Version 5.3.3 is the version pinned by `jest-expo` 52 and RN 0.76.6 templates. |
+| **Framework** | React Native (Expo SDK 52) | RN **0.76.9** / Expo SDK **52** | A single codebase targets both iOS and Android, halving cost for a consumer app aimed at supermarket shoppers. Expo SDK 52 bundles native modules (camera, secure storage, notifications) with guaranteed inter-compatibility and provides EAS Build/OTA updates. New Architecture (Fabric/TurboModules) is enabled by default for smooth camera/scan UI. |
+| **UI Runtime** | React | **18.3.1** | The exact React version shipped and validated by Expo SDK 52 / RN 0.76.9. |
+| **Language** | TypeScript | **5.3.3** | Static typing makes the session state machine, command objects, and DTOs (`ProductDTO`) safe to refactor. Version 5.3.3 is the version pinned by `jest-expo` 52 and RN 0.76.9 templates. |
 | **State Management** | Zustand | **4.5.5** | Lightweight global store with no boilerplate — ideal for the single active shopping session (points total, pending items, session status). Its subscription model is the natural substrate for the **Observer** and **Singleton** patterns. Compatible with React 18.3.1. |
 | **Server State / Data Fetching** | TanStack Query (React Query) | **5.59.16** | Implements the client side of the **Cache-Aside** product lookup (cached barcode → product), automatic retries, and request de-duplication. Decouples server cache from UI state. Works with React 18.3.1 and Axios. |
 | **HTTP Client** | Axios | **1.7.7** | Request/response interceptors automate JWT attachment and silent token refresh, and centralize error mapping (the **Facade** over the backend API). |
@@ -193,8 +193,8 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 | **Secure Storage** | expo-secure-store | **14.0.x** | Stores JWT access/refresh tokens in the iOS Keychain / Android Keystore (never `AsyncStorage`). Shipped with Expo SDK 52. |
 | **Linting** | ESLint | **9.12.0** | Enforces code quality via flat config with the Expo/React Native preset. |
 | **Formatting** | Prettier | **3.3.3** | Deterministic formatting; integrated with ESLint to avoid rule conflicts. |
-| **Unit Testing** | Jest (jest-expo) | Jest **29.7.0** / jest-expo **52.0.x** | jest-expo 52 is the preset matched to Expo SDK 52 / RN 0.76.6. Covers utils, stores, commands, and validation handlers. |
-| **Integration / UI Testing** | React Native Testing Library | **12.8.0** | Tests component interactions (scan confirmation modal, delete-with-undo, QR generation) on RN 0.76.6. |
+| **Unit Testing** | Jest (jest-expo) | Jest **29.7.0** / jest-expo **52.0.x** | jest-expo 52 is the preset matched to Expo SDK 52 / RN 0.76.9. Covers utils, stores, commands, and validation handlers. |
+| **Integration / UI Testing** | React Native Testing Library | **12.8.0** | Tests component interactions (scan confirmation modal, delete-with-undo, QR generation) on RN 0.76.9. |
 | **E2E Testing** | Maestro | **1.39.x** | Flow-based E2E across real devices/simulators for the critical scan → checkout → redeem journey. Simpler than Detox for Expo-managed apps. |
 | **Monitoring** | Sentry (sentry-expo) | **9.x** | Captures uncaught exceptions, performance traces, and crash reports in production. |
 | **CI/CD** | GitHub Actions + EAS Build | — | GitHub Actions runs lint/test/build; EAS Build produces signed iOS/Android binaries and EAS Submit ships to the stores. |
@@ -703,6 +703,23 @@ The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.
 | Architecture | **Modular monolith + separate analytics worker** | — | Matches DesignAssistantPrompt's container diagram exactly |
 | Observability | Pino / OpenTelemetry SDK / Prometheus / Sentry | — | Structured logs, traces, metrics, and error tracking (detailed in §2.6) |
 
+### MVP implementation note (as-built)
+
+The functional MVP at the end of this README is a **local, npm-workspaces** slice of the full §2
+design. Intentional deviations from the tables above:
+
+| Design (§2) | MVP (as-built) |
+|---|---|
+| pnpm monorepo under `backend/` | **npm workspaces** at repo root (`packages/shared-types` + `backend/apps/api`) |
+| Redis, BullMQ, analytics worker | **Not used** — Postgres only; `CheckoutCompletedEvent` logs to Nest logger |
+| WebSockets (`SessionGateway`) | **Not used** — frontend polls `GET /sessions/:id` every 3 s |
+| Observability (Pino / OTel / Sentry) | Nest **default logger** only |
+| CI/CD (pnpm, SonarQube, Railway deploy) | **Not applied** — local Docker Compose + manual `npm run api:dev` |
+| Resolved backend versions | NestJS **10.4.22**, Prisma **6.19.3** (see root `package-lock.json`) |
+
+The React Native app in `frontend/` **does consume the live API** (`frontend/src/api/`). That folder
+is listed in `.gitignore` (not pushed to GitHub) but must be present locally to run the mobile
+demo. Full runbook: [MVP — Local Execution & Scope](#mvp--local-execution--scope).
 
 ## 2.2. Architecture — Implementation Guide
 
@@ -2139,6 +2156,26 @@ observability) were reduced to the bare minimum.
 > the frontend runs on the Expo dev server pointed at that local API. No accounts,
 > production secrets, or external services are required.
 
+### Quick start (all three layers)
+
+From the **repo root** (backend + DB):
+
+```bash
+npm run setup          # install → build:types → db:up → prisma:migrate → db:seed
+npm run api:dev        # http://localhost:3000/api/v1
+```
+
+In a second terminal (mobile app — requires the local `frontend/` folder):
+
+```bash
+cd frontend
+npm install
+npm start              # Expo Go / emulator; login shopper@example.com / test-password
+```
+
+`npm run setup` is equivalent to running `npm install`, `npm run build:types`, `npm run db:up`,
+`npm run prisma:migrate`, and `npm run db:seed` in sequence.
+
 ## Fidelity to the designed architecture
 
 The backend faithfully follows the README §2 architecture:
@@ -2200,11 +2237,12 @@ npm run api:dev          # starts the API at http://localhost:3000/api/v1
 
 > The FE **consumes the live backend API** (auth, catalog, sessions, rewards). Start
 > the backend first (steps 1–2, seeded); the app reaches it through the local Expo
-> dev server.
+> dev server. The `frontend/` directory is in `.gitignore` (not in the remote repo)
+> but must exist on your machine to run the app.
 
 ```bash
 cd frontend
-npm install              # app dependencies (Expo SDK 52)
+npm install              # app dependencies (see versions below)
 npm start                # Metro/Expo dev server (Expo Go or dev client)
 # Shortcuts: npm run android | npm run ios
 # Quality: npm run typecheck | npm test
@@ -2303,16 +2341,38 @@ platform default when it is unset.
 
 ## Required dependencies
 
-- **Node.js** 20+ (tested on 24) and **npm** (includes workspaces).
+- **Node.js** 20+ (tested on 24) and **npm** (workspaces at repo root).
 - **Docker** + Docker Compose (for local PostgreSQL).
-- **Backend**: NestJS 10.4, Prisma 6.19 / `@prisma/client`, `@nestjs/jwt` + `passport-jwt`,
-  `bcryptjs`, `jsonwebtoken`, `@nestjs/swagger`, `@nestjs/schedule`, `helmet`, `zod`
-  (installed via `npm install`). Details and deviations vs. design in the *MVP
-  implementation note* in §2.1.
-- **Frontend**: Expo SDK 52 / React Native 0.76, plus `axios`,
-  `@tanstack/react-query`, and `expo-secure-store` (already in `frontend/package.json`),
-  installed with `npm install` in `frontend/`. To open the app: Expo Go or an
-  Android/iOS emulator.
+- **Backend** — versions in [`backend/apps/api/package.json`](backend/apps/api/package.json), resolved in root [`package-lock.json`](package-lock.json):
+
+  | Package | Version (resolved) |
+  |---|---|
+  | `@nestjs/common` / `@nestjs/core` | 10.4.22 |
+  | `@nestjs/jwt` | 10.2.0 |
+  | `@nestjs/swagger` | 7.4.2 |
+  | `@nestjs/schedule` | 4.1.2 |
+  | `@prisma/client` / `prisma` | 6.19.3 |
+  | `bcryptjs` | 2.4.3 |
+  | `jsonwebtoken` | 9.0.3 |
+  | `helmet` | 8.2.0 |
+  | `passport-jwt` | 4.0.1 |
+  | `zod` | 3.23.8 (pinned) |
+
+  Install with `npm install` from the repo root. Deviations vs. the full §2 design are summarized in the [§2.1 MVP implementation note](#mvp-implementation-note-as-built).
+
+- **Frontend** — versions in [`frontend/package.json`](frontend/package.json) (install separately under `frontend/`):
+
+  | Package | Version |
+  |---|---|
+  | `expo` | ~52.0.0 |
+  | `react-native` | 0.76.9 |
+  | `react` | 18.3.1 |
+  | `axios` | 1.7.7 |
+  | `@tanstack/react-query` | 5.59.16 |
+  | `expo-secure-store` | ~14.0.0 |
+  | `zod` | 3.23.8 (pinned) |
+
+  To open the app: Expo Go or an Android/iOS emulator.
 
 ## Data initialization procedure
 
