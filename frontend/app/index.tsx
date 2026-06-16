@@ -132,6 +132,7 @@ export default function LobbyScreen() {
         onNavigate={(tab) => {
           if (tab === "scan") router.push("/scan");
           if (tab === "rewards") router.push("/rewards");
+          if (tab === "profile") router.push("/profile");
         }}
       />
     </SafeAreaView>
