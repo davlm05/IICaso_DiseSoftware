@@ -388,8 +388,6 @@ This **consumer mobile app only ever authenticates `USER`-scoped accounts** — 
 
 ### OWASP Compliance
 
-> **"What you code"** names the concrete artifact a developer builds for each control — file paths refer to the [§1.9 scaffold](#19-project-scaffold). Rows marked *config / no app code* are satisfied by configuration or by the backend, not by client logic.
-
 | MASVS control group | Risk it addresses | What you code (file / artifact) | Validation criterion |
 |---------------------|-------------------|---------------------------------|----------------------|
 | **MASVS-STORAGE** (data storage) | A lost/stolen phone could leak session tokens and personal data. | `SecureTokenStore` wrapper over `expo-secure-store` (`src/lib/secureTokenStore.ts`) with `get/set/clear`; a PII-stripping helper used by the logger; an ESLint `no-restricted-imports` rule banning `AsyncStorage` for tokens. | Device-dump test recovers no token/PII; unit test asserts writes go only to secure-store. |
