@@ -1,0 +1,21 @@
+{
+  "name": "smartcart-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SmartCart backend monorepo — shared-types + NestJS API (README §2).",
+  "workspaces": [
+    "packages/shared-types",
+    "backend/apps/api"
+  ],
+  "scripts": {
+    "build:types": "npm run build -w @smartcart/shared-types",
+    "db:up": "docker compose -f backend/infra/docker/docker-compose.yml up -d",
+    "db:down": "docker compose -f backend/infra/docker/docker-compose.yml down",
+    "prisma:migrate": "npm run prisma:migrate -w @smartcart/api",
+    "prisma:generate": "npm run prisma:generate -w @smartcart/api",
+    "db:seed": "npm run db:seed -w @smartcart/api",
+    "api:dev": "npm run start:dev -w @smartcart/api",
+    "api:build": "npm run build -w @smartcart/api",
+    "setup": "npm install && npm run build:types && npm run db:up && npm run prisma:migrate && npm run db:seed"
+  }
+}

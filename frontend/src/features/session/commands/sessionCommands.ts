@@ -8,20 +8,20 @@ import type { SessionState } from "../../../store/sessionStore";
  */
 
 export interface Command {
-  execute(): void;
-  undo?(): void;
+  execute(): void | Promise<void>;
+  undo?(): void | Promise<void>;
 }
 
 /** Adds a scanned product to the pending list. Reversible via RemoveProductCommand. */
 export class AddItemCommand implements Command {
   constructor(private store: SessionState, private product: ProductDTO) {}
 
-  execute(): void {
-    this.store.addItem(this.product);
+  execute(): Promise<void> {
+    return this.store.addItem(this.product);
   }
 
-  undo(): void {
-    this.store.removeItem(this.product.id);
+  undo(): Promise<void> {
+    return this.store.removeItem(this.product.id);
   }
 }
 
@@ -29,12 +29,12 @@ export class AddItemCommand implements Command {
 export class RemoveProductCommand implements Command {
   constructor(private store: SessionState, private product: ProductDTO) {}
 
-  execute(): void {
-    this.store.removeItem(this.product.id);
+  execute(): Promise<void> {
+    return this.store.removeItem(this.product.id);
   }
 
-  undo(): void {
-    this.store.addItem(this.product);
+  undo(): Promise<void> {
+    return this.store.addItem(this.product);
   }
 }
 
@@ -42,16 +42,16 @@ export class RemoveProductCommand implements Command {
 export class GenerateQRCommand implements Command {
   constructor(private store: SessionState) {}
 
-  execute(): void {
-    this.store.generateQr();
+  execute(): Promise<void> {
+    return this.store.generateQr();
   }
 }
 
 /** Redeems points for a reward. Non-idempotent — no auto-retry (README §1.5 op. 6). */
 export class RedeemCouponCommand implements Command {
-  constructor(private store: SessionState, private cost: number) {}
+  constructor(private store: SessionState, private rewardId: string) {}
 
-  execute(): void {
-    this.store.redeemReward(this.cost);
+  execute(): Promise<void> {
+    return this.store.redeemReward(this.rewardId);
   }
 }

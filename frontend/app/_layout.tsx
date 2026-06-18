@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
-import { Component, type ReactNode } from "react";
+import { Stack, type ErrorBoundaryProps } from "expo-router";
+import { useEffect } from "react";
 import { Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useAuthStore } from "../src/store/authStore";
 import "../src/styles/global.css";
 
 const queryClient = new QueryClient({
@@ -14,47 +15,46 @@ const queryClient = new QueryClient({
   },
 });
 
-/** Per-feature Error Boundary (README §1.5 Error Handling & Observability). */
-class RootErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  state = { hasError: false };
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: unknown, info: unknown) {
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  useEffect(() => {
     // Forwarded to Sentry in production (README §1.5 Monitoring).
-    console.error("RootErrorBoundary", error, info);
-  }
+    console.error("RootErrorBoundary", error);
+  }, [error]);
 
-  render() {
-    if (this.state.hasError) {
-      return (
-        <View className="flex-1 items-center justify-center bg-background p-lg">
-          <Text className="text-center font-heading text-base text-text-primary">
-            Algo salió mal. Vuelve a intentarlo.
-          </Text>
-        </View>
-      );
-    }
-    return this.props.children;
-  }
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <Text style={{ textAlign: 'center', fontSize: 16 }}>
+        Algo salió mal. Vuelve a intentarlo.
+      </Text>
+      <Text style={{ textAlign: 'center', fontSize: 12, marginTop: 16, color: 'red' }}>
+        {error.message}
+      </Text>
+    </View>
+  );
 }
 
 export default function RootLayout() {
+  const initialize = useAuthStore((s) => s.initialize);
+
+  // Restore a persisted session (SecureStore token → GET /users/me) on launch.
+  // Screens gate on `authStore.hydrated`/`status` (see app/index.tsx).
+  useEffect(() => {
+    void initialize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <RootErrorBoundary>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="scan" options={{ presentation: "fullScreenModal" }} />
-            <Stack.Screen name="checkout" />
-            <Stack.Screen name="confirmation" />
-            <Stack.Screen name="rewards" />
-          </Stack>
-        </RootErrorBoundary>
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    <QueryClientProvider client={queryClient}>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="create-user" />
+        <Stack.Screen name="profile" />
+        <Stack.Screen name="scan" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="checkout" />
+        <Stack.Screen name="confirmation" />
+        <Stack.Screen name="rewards" />
+      </Stack>
+    </QueryClientProvider>
   );
 }

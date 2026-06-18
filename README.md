@@ -173,9 +173,9 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 | Concern | Choice | Version | Justification |
 |---------|--------|---------|---------------|
 | **Application Type** | Native Mobile App (managed via Expo) | — | The Discover → Scan → Validate → Accumulate → Redeem loop depends on camera, BLE/GPS, QR rendering, and push — all native capabilities. A native app delivers the in-store performance and hardware access a PWA cannot reliably provide. |
-| **Framework** | React Native (Expo SDK 52) | RN **0.76.6** / Expo SDK **52** | A single codebase targets both iOS and Android, halving cost for a consumer app aimed at supermarket shoppers. Expo SDK 52 bundles native modules (camera, secure storage, notifications) with guaranteed inter-compatibility and provides EAS Build/OTA updates. New Architecture (Fabric/TurboModules) is enabled by default for smooth camera/scan UI. |
-| **UI Runtime** | React | **18.3.1** | The exact React version shipped and validated by Expo SDK 52 / RN 0.76.6. |
-| **Language** | TypeScript | **5.3.3** | Static typing makes the session state machine, command objects, and DTOs (`ProductDTO`) safe to refactor. Version 5.3.3 is the version pinned by `jest-expo` 52 and RN 0.76.6 templates. |
+| **Framework** | React Native (Expo SDK 52) | RN **0.76.9** / Expo SDK **52** | A single codebase targets both iOS and Android, halving cost for a consumer app aimed at supermarket shoppers. Expo SDK 52 bundles native modules (camera, secure storage, notifications) with guaranteed inter-compatibility and provides EAS Build/OTA updates. New Architecture (Fabric/TurboModules) is enabled by default for smooth camera/scan UI. |
+| **UI Runtime** | React | **18.3.1** | The exact React version shipped and validated by Expo SDK 52 / RN 0.76.9. |
+| **Language** | TypeScript | **5.3.3** | Static typing makes the session state machine, command objects, and DTOs (`ProductDTO`) safe to refactor. Version 5.3.3 is the version pinned by `jest-expo` 52 and RN 0.76.9 templates. |
 | **State Management** | Zustand | **4.5.5** | Lightweight global store with no boilerplate — ideal for the single active shopping session (points total, pending items, session status). Its subscription model is the natural substrate for the **Observer** and **Singleton** patterns. Compatible with React 18.3.1. |
 | **Server State / Data Fetching** | TanStack Query (React Query) | **5.59.16** | Implements the client side of the **Cache-Aside** product lookup (cached barcode → product), automatic retries, and request de-duplication. Decouples server cache from UI state. Works with React 18.3.1 and Axios. |
 | **HTTP Client** | Axios | **1.7.7** | Request/response interceptors automate JWT attachment and silent token refresh, and centralize error mapping (the **Facade** over the backend API). |
@@ -193,8 +193,8 @@ SmartCart is a **consumer-facing mobile app** whose core features — barcode sc
 | **Secure Storage** | expo-secure-store | **14.0.x** | Stores JWT access/refresh tokens in the iOS Keychain / Android Keystore (never `AsyncStorage`). Shipped with Expo SDK 52. |
 | **Linting** | ESLint | **9.12.0** | Enforces code quality via flat config with the Expo/React Native preset. |
 | **Formatting** | Prettier | **3.3.3** | Deterministic formatting; integrated with ESLint to avoid rule conflicts. |
-| **Unit Testing** | Jest (jest-expo) | Jest **29.7.0** / jest-expo **52.0.x** | jest-expo 52 is the preset matched to Expo SDK 52 / RN 0.76.6. Covers utils, stores, commands, and validation handlers. |
-| **Integration / UI Testing** | React Native Testing Library | **12.8.0** | Tests component interactions (scan confirmation modal, delete-with-undo, QR generation) on RN 0.76.6. |
+| **Unit Testing** | Jest (jest-expo) | Jest **29.7.0** / jest-expo **52.0.x** | jest-expo 52 is the preset matched to Expo SDK 52 / RN 0.76.9. Covers utils, stores, commands, and validation handlers. |
+| **Integration / UI Testing** | React Native Testing Library | **12.8.0** | Tests component interactions (scan confirmation modal, delete-with-undo, QR generation) on RN 0.76.9. |
 | **E2E Testing** | Maestro | **1.39.x** | Flow-based E2E across real devices/simulators for the critical scan → checkout → redeem journey. Simpler than Detox for Expo-managed apps. |
 | **Monitoring** | Sentry (sentry-expo) | **9.x** | Captures uncaught exceptions, performance traces, and crash reports in production. |
 | **CI/CD** | GitHub Actions + EAS Build | — | GitHub Actions runs lint/test/build; EAS Build produces signed iOS/Android binaries and EAS Submit ships to the stores. |
@@ -690,9 +690,9 @@ The pipeline is defined in **[`.github/workflows/ci.yml`](/.github/workflows/ci.
 | Concern | Choice | Version | Justification |
 |---|---|---|---|
 | API Style | REST + OpenAPI | — | Frontend `apiClient` already REST; Swagger auto-gen in Nest |
-| Language | TypeScript / Node.js | 5.5 / 20 LTS | Shared DTOs + Zod schemas live in **`@smartcart/shared-types`**, imported 1:1 by both `frontend/` and `backend/apps/api` → zero contract drift |
+| Language | TypeScript / Node.js | 5.5 / 24.x LTS | Shared DTOs + Zod schemas live in **`@smartcart/shared-types`**, imported 1:1 by both `frontend/` and `backend/apps/api` → zero contract drift |
 | Framework | NestJS | 10.4 | DI + modules map to template's layered design + Repository/Service/DTO patterns out-of-box |
-| ORM/DB | Prisma 5.20 / PostgreSQL | 17 | Template schema is relational; Prisma migrations + type-safety |
+| ORM/DB | Prisma 6.19 / PostgreSQL | 17 | Template schema is relational; Prisma migrations + type-safety. |
 | Async | BullMQ | 5.x | Analytics profiling + push notif queues (template 2.4) |
 | Cache | Redis | 7.2 | Session read-through cache (keeps the API stateless; PostgreSQL is authoritative), profile cache invalidation |
 | File storage | Cloudflare R2 | — | Product images |

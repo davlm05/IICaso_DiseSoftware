@@ -1,0 +1,24 @@
+# SmartCart — local demo infrastructure (README §2.9 Local Development).
+# MVP scope: only PostgreSQL is required. Redis / BullMQ / analytics-worker
+# from the full §2 design are intentionally out of scope for the MVP.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: smartcart-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: smartcart
+      POSTGRES_PASSWORD: smartcart
+      POSTGRES_DB: smartcart
+    ports:
+      - "5432:5432"
+    volumes:
+      - smartcart-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartcart -d smartcart"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  smartcart-pgdata:

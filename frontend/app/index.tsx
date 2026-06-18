@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../src/components/atoms/Button";
@@ -12,6 +12,7 @@ import { PendingItemsList } from "../src/components/organisms/PendingItemsList";
 import { SponsoredCarousel } from "../src/components/organisms/SponsoredCarousel";
 import { SPONSORED_PRODUCTS } from "../src/features/catalog/mockCatalog";
 import { RemoveProductCommand } from "../src/features/session/commands/sessionCommands";
+import { useAuthStore } from "../src/store/authStore";
 import { useSessionStore } from "../src/store/sessionStore";
 
 /**
@@ -29,7 +30,24 @@ export default function LobbyScreen() {
   const storeName = useSessionStore((s) => s.storeName);
   const locationVerified = useSessionStore((s) => s.locationVerified);
 
+  const authStatus = useAuthStore((s) => s.status);
+  const hydrated = useAuthStore((s) => s.hydrated);
+
   const [toastVisible, setToastVisible] = useState(false);
+
+  // Auth gate + session/balance bootstrap. Once the initial token check has
+  // run, redirect anonymous users to /login; otherwise ensure an active
+  // session (GET /sessions/active → POST /sessions) and load the balance.
+  useEffect(() => {
+    if (!hydrated) return;
+    if (authStatus !== "AUTHENTICATED") {
+      router.replace("/login");
+      return;
+    }
+    void store.ensureSession();
+    void store.refreshBalance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, authStatus]);
 
   const lastAdded = pending.find((p) => p.id === lastAddedId);
   const pendingPoints = store.pendingPoints();
@@ -114,6 +132,7 @@ export default function LobbyScreen() {
         onNavigate={(tab) => {
           if (tab === "scan") router.push("/scan");
           if (tab === "rewards") router.push("/rewards");
+          if (tab === "profile") router.push("/profile");
         }}
       />
     </SafeAreaView>
