@@ -40,6 +40,13 @@ async function main(): Promise<void> {
       pointsConfig: { type: 'FIXED_PER_UNIT', value: 10 },
     },
     {
+      barcode: '7441005611878',
+      name: 'Gelatina Sabor Fresa',
+      brand: 'Diet X',
+      sponsored: true,
+      pointsConfig: { type: 'FIXED_PER_UNIT', value: 9 },
+    },
+    {
       barcode: '7441003045222',
       name: 'Galletas Pozuelo',
       brand: 'Pozuelo',

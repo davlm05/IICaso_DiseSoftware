@@ -3,13 +3,7 @@
 This section documents the **implemented functional MVP**. The MVP focuses on the *problem statement*: the shopper
 loop **Discover → Scan → Validate → Accumulate → Redeem**, delivered as a
 **simplified but functional** solution wired end-to-end across frontend, backend, and
-database. Satellite modules (B2B/AI analytics, queues, cache, real-time,
-observability) were reduced to the bare minimum.
-
-> **Important: the MVP runs 100% locally.** No cloud dependencies: the database is
-> PostgreSQL in Docker (`localhost:5432`), the API listens on `localhost:3000`, and
-> the frontend runs on the Expo dev server pointed at that local API. No accounts,
-> production secrets, or external services are required.
+database. 
 
 ### Quick start (all three layers)
 
@@ -51,8 +45,7 @@ The backend faithfully follows the README architecture:
 
 The frontend consumes this backend through a dedicated API layer
 (`frontend/src/api/`) while preserving the design patterns (Atomic Design,
-Strategy / Chain of Responsibility / Command / Decorator). See
-"Frontend ↔ Backend integration" below.
+Strategy / Chain of Responsibility / Command / Decorator).
 
 ## Components and how to run each one
 
@@ -85,29 +78,16 @@ npm run api:dev          # starts the API at http://localhost:3000/api/v1
 - API base: <http://localhost:3000/api/v1>
 - Swagger / OpenAPI (interactive): <http://localhost:3000/api/docs>
 - Health check: <http://localhost:3000/api/v1/health>
-- Detailed backend guide: [`backend/README.md`](backend/README.md)
-- MVP status and decisions: [`backend/PROGRESS.md`](backend/PROGRESS.md)
 
 ### 3. Frontend (FE) — React Native App (Expo)
-
-> The FE **consumes the live backend API** (auth, catalog, sessions, rewards). Start
-> the backend first (steps 1–2, seeded); the app reaches it through the local Expo
-> dev server. The `frontend/` directory is in `.gitignore` (not in the remote repo)
-> but must exist on your machine to run the app.
 
 ```bash
 cd frontend
 npm install              # app dependencies (see versions below)
 npm start                # Metro/Expo dev server (Expo Go or dev client)
-# Shortcuts: npm run android | npm run ios
-# Quality: npm run typecheck | npm test
 ```
 
-Log in with the seeded demo user `shopper@example.com` / `test-password`. Because POS
-validation is authenticated by a POS API key (not the shopper JWT), the
-checkout screen **polls** the session until the cashier validates it; during a local
-demo, trigger that validation externally with the `curl` flow in
-[`backend/README.md`](backend/README.md).
+Log in with the seeded demo user `shopper@example.com` / `test-password`. 
 
 ## Frontend ↔ Backend integration
 
@@ -155,28 +135,18 @@ development, copying the example as-is is enough:
 The configuration is validated on startup with Zod (`src/config/env.validation.ts`);
 if a variable is missing or invalid, the API **will not start**.
 
-**Frontend** — optional. By default the app targets the local API per platform (iOS
-simulator / web `http://localhost:3000/api/v1`; **Android emulator
-`http://10.0.2.2:3000/api/v1`**, since `localhost` is not the host on Android).
-Override with `EXPO_PUBLIC_API_URL` when running on a physical device (e.g.
-`http://<your-LAN-IP>:3000/api/v1`). Backend CORS is `*`, so no server change is needed.
 
 ## Testing on a physical Android device (Expo Go)
 
-`localhost` (iOS sim / web) and `10.0.2.2` (Android emulator) only resolve on the host
-machine itself. To run on a **real Android phone via Expo Go**, point both Expo and the
-API at your computer's LAN IP. No code change is required —
-`frontend/src/api/config.ts` reads `EXPO_PUBLIC_API_URL` and only falls back to the
-platform default when it is unset.
 
 1. **Same network** — connect the phone and the computer to the **same Wi-Fi**.
 2. **Find your LAN IP** — on Windows run `ipconfig` and copy the `IPv4 Address` of your
    active adapter (e.g. `192.168.0.12`); Expo also prints it in the dev-server banner.
-3. **Point the app at that IP** — create `frontend/.env` (Expo auto-loads it):
+3. **Point the app at that IP** — create `frontend/.env` :
 
    ```bash
    # frontend/.env  — replace with your machine's LAN IP
-   EXPO_PUBLIC_API_URL=http://192.168.0.12:3000/api/v1
+   EXPO_PUBLIC_API_URL=http://192.168.X.XX:3000/api/v1
    ```
 
    `EXPO_PUBLIC_*` variables are inlined at bundle time, so **restart Metro clearing the
@@ -190,9 +160,6 @@ platform default when it is unset.
    `http://<your-LAN-IP>:3000/api/v1/health`; a JSON `ok` response confirms the device
    can reach the API. Then log in with `shopper@example.com` / `test-password`.
 
-> If the app loads but every request fails, the phone can reach Metro (8081) but not the
-> API (3000) — almost always the firewall on port 3000 or a wrong/stale
-> `EXPO_PUBLIC_API_URL` (remember `npx expo start -c` after changing it).
 
 ## Required dependencies
 
@@ -240,7 +207,7 @@ npm run db:seed     # from the root, after prisma:migrate
 Creates:
 - **1 demo store** — `storeId` `11111111-1111-4111-8111-111111111111` (used as the
   constant store id by the FE, since the MVP has no `GET /stores` endpoint).
-- **6 products** whose barcodes match the frontend catalog
+- **7 products** whose barcodes match the frontend catalog
   (includes `FIXED_PER_UNIT`, `VOLUME_TIER`, and `WEEKEND_BONUS` strategy examples).
 - **4 redeemable rewards**.
 - **POS and B2B API keys** (stored as SHA-256 hashes).
