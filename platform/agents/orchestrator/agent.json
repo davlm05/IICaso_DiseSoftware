@@ -1,0 +1,20 @@
+{
+  "name": "orchestrator",
+  "model": "default",
+  "maxTokens": 6000,
+  "readmeSection": "none",
+  "resultSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "summary": { "type": "string", "description": "Concise summary of the plan or decision" },
+      "concerns": {
+        "type": "object",
+        "description": "Per-domain concerns identified for this feature",
+        "additionalProperties": true
+      },
+      "risks": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["summary"]
+  }
+}

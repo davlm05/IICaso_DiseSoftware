@@ -1,0 +1,20 @@
+# SmartCart AI dev platform — orchestrator container.
+# A long-lived "devtools" service: it installs the platform deps on startup,
+# builds the aidev CLI, then idles so the developer can drive the workflow with
+#   docker compose exec orchestrator aidev feature "..."
+FROM node:20-alpine
+
+# git + GitHub CLI (PR creation) + bash (entrypoint/scripts).
+RUN apk add --no-cache git github-cli bash \
+  && corepack enable && corepack prepare pnpm@9.12.0 --activate
+
+WORKDIR /workspace/platform
+
+# The repo is bind-mounted at runtime (see docker-compose.yml), so we only need
+# the entrypoint baked in. Dependencies are installed at startup against the
+# mounted source (Caso #2 §3 — automatic dependency installation).
+COPY docker/entrypoint-orchestrator.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENV REPO_ROOT=/workspace
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

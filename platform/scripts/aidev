@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Thin launcher for the aidev CLI so you can call it as `platform/scripts/aidev ...`
+# both on the host and inside the orchestrator container.
+#
+# Prefers the compiled build (dist/cli.js); falls back to ts-node for dev.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ -f "$HERE/dist/cli.js" ]; then
+  exec node "$HERE/dist/cli.js" "$@"
+else
+  exec npx --prefix "$HERE" ts-node "$HERE/src/cli.ts" "$@"
+fi

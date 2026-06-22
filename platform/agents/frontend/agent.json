@@ -1,0 +1,17 @@
+{
+  "name": "frontend",
+  "model": "default",
+  "maxTokens": 8000,
+  "readmeSection": "frontend",
+  "resultSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "summary": { "type": "string" },
+      "files": { "type": "array", "items": { "type": "string" }, "description": "Paths written" },
+      "specPath": { "type": "string" },
+      "notes": { "type": "string" }
+    },
+    "required": ["summary"]
+  }
+}

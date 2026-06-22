@@ -1,0 +1,59 @@
+# SmartCart — full local development ecosystem (Caso #2).
+#
+#   docker compose up -d
+#
+# Brings up the entire topology with a single command:
+#   - backend stack (postgres, redis, pgbouncer, api, analytics-worker) — pulled
+#     in unchanged from backend/infra/docker via `include`, so there is one
+#     source of truth for those services.
+#   - frontend (Expo web / Metro) dev container.
+#   - orchestrator (the AI dev platform "devtools" container) that runs the
+#     /feature, /build-feature, /validate-feature, /release-feature workflow.
+#
+# Each service installs its own dependencies on startup (Caso #2 §3) — no manual
+# install step is required.
+#
+# Setup once:  cp .env.example .env  &&  cp backend/.env.example backend/.env
+# then set ANTHROPIC_API_KEY (and optionally GH_TOKEN) in .env.
+
+include:
+  - backend/infra/docker/docker-compose.yml
+
+services:
+  frontend:
+    build:
+      context: ./platform
+      dockerfile: docker/Dockerfile.frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - '8081:8081' # Metro / Expo web
+      - '19006:19006' # Expo web (legacy)
+    environment:
+      EXPO_PUBLIC_API_URL: http://localhost:3000/api/v1
+    depends_on:
+      - api
+
+  orchestrator:
+    build:
+      context: ./platform
+      dockerfile: docker/Dockerfile.orchestrator
+    working_dir: /workspace/platform
+    volumes:
+      - .:/workspace # the whole repo: agents read/write code, run git
+      - platform_node_modules:/workspace/platform/node_modules
+    environment:
+      REPO_ROOT: /workspace
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+      AIDEV_MODEL: ${AIDEV_MODEL:-claude-opus-4-8}
+      AIDEV_MODEL_LIGHT: ${AIDEV_MODEL_LIGHT:-claude-haiku-4-5-20251001}
+    # Idles after install+build; drive it with `docker compose exec`.
+    stdin_open: true
+    tty: true
+
+volumes:
+  frontend_node_modules:
+  platform_node_modules:

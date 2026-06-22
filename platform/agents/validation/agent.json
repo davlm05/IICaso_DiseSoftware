@@ -1,0 +1,48 @@
+{
+  "name": "validation",
+  "model": "default",
+  "maxTokens": 6000,
+  "readmeSection": "backend",
+  "resultSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "pass": { "type": "boolean" },
+      "summary": { "type": "string" },
+      "checks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "dimension": {
+              "type": "string",
+              "enum": ["functional", "architectural", "specification", "security", "standards"]
+            },
+            "pass": { "type": "boolean" },
+            "severity": { "type": "string", "enum": ["info", "warning", "error"] },
+            "detail": { "type": "string" }
+          },
+          "required": ["name", "dimension", "pass", "severity", "detail"]
+        }
+      },
+      "feedback": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "agent": {
+              "type": "string",
+              "enum": ["orchestrator", "frontend", "backend", "data", "infra", "validation", "qa"]
+            },
+            "issues": { "type": "array", "items": { "type": "string" } }
+          },
+          "required": ["agent", "issues"]
+        }
+      }
+    },
+    "required": ["pass", "summary", "checks", "feedback"]
+  }
+}

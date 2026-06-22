@@ -1,0 +1,17 @@
+{
+  "name": "infra",
+  "model": "light",
+  "maxTokens": 6000,
+  "readmeSection": "backend",
+  "resultSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "summary": { "type": "string" },
+      "files": { "type": "array", "items": { "type": "string" } },
+      "specPath": { "type": "string" },
+      "notes": { "type": "string" }
+    },
+    "required": ["summary"]
+  }
+}

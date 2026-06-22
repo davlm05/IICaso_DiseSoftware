@@ -1,0 +1,40 @@
+# SmartCart — AI dev platform (orchestrator) CI.
+#
+# Type-checks and unit-tests the orchestrator. Tests run in offline mode
+# (deterministic scaffold strategy), so no API key is needed in CI.
+name: Platform CI
+
+on:
+  push:
+    branches: [main]
+    paths: ['platform/**', '.github/workflows/platform-ci.yml']
+  pull_request:
+    branches: [main]
+    paths: ['platform/**']
+
+concurrency:
+  group: platform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: platform
+
+jobs:
+  test:
+    name: Type-check & test
+    runs-on: ubuntu-latest
+    env:
+      AIDEV_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Type check
+        run: npm run type-check
+      - name: Build
+        run: npm run build
+      - name: Unit tests (offline)
+        run: npm test

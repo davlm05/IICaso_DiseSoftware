@@ -1,0 +1,16 @@
+{
+  "name": "qa",
+  "model": "light",
+  "maxTokens": 8000,
+  "readmeSection": "backend",
+  "resultSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "summary": { "type": "string" },
+      "paths": { "type": "array", "items": { "type": "string" }, "description": "Test files written" },
+      "specPath": { "type": "string" }
+    },
+    "required": ["summary"]
+  }
+}

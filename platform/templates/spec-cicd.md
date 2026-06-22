@@ -1,0 +1,25 @@
+# CI/CD Specification — {{TITLE}}
+
+- **Feature ID:** `{{ID}}`
+- **Domain:** CI/CD (GitHub Actions)
+- **Date:** {{DATE}}
+- **Binding:** README.md §2.9 Infrastructure & DevOps / CI-CD Pipeline
+
+## 1. Summary
+{{DESCRIPTION}}
+
+## 2. Pipeline stages
+_Which workflow jobs run for this feature: lint, type-check, unit/integration/contract tests, build,
+security scan, openapi validate, deploy._
+
+## 3. Quality gates
+_Conditions that must pass before merge (zero lint warnings, coverage thresholds, type-check clean)._
+
+## 4. New/changed workflow steps
+_Any jobs/steps to add to `.github/workflows` or `backend/.github/workflows`._
+
+## 5. Secrets & environments
+_Required secrets (names only) and target environments._
+
+## 6. Acceptance criteria
+- [ ] …

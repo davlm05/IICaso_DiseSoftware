@@ -1,3 +1,29 @@
+<!-- AIDEV-PLATFORM: keep this section ABOVE "# Frontend Design" and "# 2. Backend Design"; the agents slice those sections by header. -->
+
+# Local Development Ecosystem (Caso #2)
+
+This repo ships a self-contained, AI-powered, **spec-driven** development platform under
+[`platform/`](platform/README.md). After cloning, one command brings up the full stack and a fleet of
+specialized Claude agents turns a feature request into a production-ready PR.
+
+```bash
+cp .env.example .env                 # set ANTHROPIC_API_KEY (and optional GH_TOKEN)
+cp backend/.env.example backend/.env
+docker compose up -d                 # postgres, redis, pgbouncer, api, worker, frontend, orchestrator
+
+docker compose exec orchestrator aidev feature "Implement customer self-service password reset"
+docker compose exec orchestrator aidev build-feature <feature-id>
+docker compose exec orchestrator aidev validate-feature <feature-id>
+docker compose exec orchestrator aidev release-feature <feature-id>
+```
+
+The agents are bound to this README's design sections: the **frontend** agent follows **§1 Frontend
+Design**, and the **backend / data / infra / validation / qa** agents follow **§2 Backend Design**. No
+API key? Run any command with `--offline` for a deterministic dry run. Full docs:
+[`platform/README.md`](platform/README.md).
+
+---
+
 # UX Analysis
 
 ## Test Setup

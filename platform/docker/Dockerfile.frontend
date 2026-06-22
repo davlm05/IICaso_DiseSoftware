@@ -1,0 +1,18 @@
+# SmartCart frontend dev container — Expo Metro / web.
+# Mobile builds still use host Expo Go / EAS; this container serves the web
+# target and Metro bundler for the local development ecosystem.
+FROM node:20-alpine
+
+RUN apk add --no-cache bash git
+
+WORKDIR /app
+
+# Source is bind-mounted at runtime; deps are installed on startup so the image
+# stays generic and `docker compose up` performs the install (Caso #2 §3).
+COPY docker/entrypoint-frontend.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Metro (8081) + Expo web (19006).
+EXPOSE 8081 19006
+ENV EXPO_NO_TELEMETRY=1 CI=1
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

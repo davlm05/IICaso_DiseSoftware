@@ -1,0 +1,32 @@
+{
+  "name": "@smartcart/platform",
+  "version": "1.0.0",
+  "description": "SmartCart AI-powered, spec-driven development platform — a standalone orchestrator that turns a feature request into a production-ready PR via specialized Claude agents. Caso #2 extension.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20 <21"
+  },
+  "bin": {
+    "aidev": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "aidev": "ts-node src/cli.ts",
+    "repl": "ts-node src/cli.ts repl",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "test": "jest --config jest.config.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.32.1"
+  },
+  "devDependencies": {
+    "@types/jest": "29.5.13",
+    "@types/node": "20.16.11",
+    "jest": "29.7.0",
+    "ts-jest": "29.2.5",
+    "ts-node": "10.9.2",
+    "typescript": "5.5.4"
+  }
+}
