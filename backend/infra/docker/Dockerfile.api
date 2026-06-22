@@ -1,0 +1,44 @@
+# Multi-stage build for the API (README §2.9 Docker / Bundle Size).
+# Stage 1 installs deps, generates the Prisma client, and compiles TS → JS.
+# Stage 2 is a slim Alpine runtime running as a non-root user.
+
+# ── Stage 1: builder ──────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+
+# Install with the frozen lockfile (README §2.5 A08 supply-chain integrity).
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/analytics-worker/package.json apps/analytics-worker/package.json
+COPY ../packages/shared-types/package.json packages/shared-types/package.json
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+RUN pnpm --filter "@smartcart/shared-types" build \
+  && pnpm prisma generate --schema apps/api/prisma/schema.prisma \
+  && pnpm exec nest build api \
+  && pnpm prune --prod
+
+# ── Stage 2: runner ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Non-root user (README §2.9).
+RUN addgroup -S nodejs && adduser -S nestjs -G nodejs
+
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nestjs:nodejs /app/apps/api/dist ./dist
+COPY --from=builder --chown=nestjs:nodejs /app/apps/api/prisma ./prisma
+
+USER nestjs
+EXPOSE 3000
+
+# Liveness probe (README §2.6 / §2.7).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/api/v1/health/liveness || exit 1
+
+# Load OpenTelemetry before the app (README §2.6 tracing).
+CMD ["node", "--require", "./dist/tracing.js", "dist/main.js"]

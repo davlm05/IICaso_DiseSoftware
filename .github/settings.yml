@@ -1,0 +1,27 @@
+# Repository settings as code (README §2.9 Source Control — Trunk-Based Dev).
+# Consumed by the Probot "Settings" app. Enforces the branch-protection rules:
+# 1 approving review, all status checks passing, and up-to-date branches.
+repository:
+  default_branch: main
+  allow_squash_merge: true
+  allow_merge_commit: false
+  allow_rebase_merge: false
+  delete_branch_on_merge: true
+
+branches:
+  - name: main
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+      required_status_checks:
+        strict: true # branches must be up to date before merging
+        contexts:
+          - lint
+          - type-check
+          - test-unit
+          - test-integration
+          - quality-gate
+      enforce_admins: true
+      required_linear_history: true
+      restrictions: null

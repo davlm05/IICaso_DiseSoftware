@@ -1,0 +1,6 @@
+# SmartCart backend workspace (README §2.2 Type Sharing).
+# `apps/*` are the deployable Nest apps; `../packages/*` exposes the repo-root
+# `@smartcart/shared-types` package consumed 1:1 by both backend and frontend.
+packages:
+  - 'apps/*'
+  - '../packages/*'

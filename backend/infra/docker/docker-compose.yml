@@ -1,0 +1,86 @@
+# Local development stack (README §2.7 / §2.9 — `pnpm docker:up`).
+# Brings up the data stores the API + worker depend on. The app containers are
+# optional locally (run `pnpm dev` on the host); they are defined here so the
+# full topology can be exercised end-to-end.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: smartcart
+      POSTGRES_PASSWORD: smartcart
+      POSTGRES_DB: smartcart
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U smartcart']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.2-alpine
+    # AOF persistence so queued BullMQ jobs survive a restart (README §2.7).
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_USER: smartcart
+      DB_PASSWORD: smartcart
+      DB_NAME: smartcart
+      POOL_MODE: transaction
+      DEFAULT_POOL_SIZE: '25'
+    ports:
+      - '6432:6432'
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ../../.env
+    environment:
+      # Route the API through PgBouncer (transaction pooling, README §2.7).
+      DATABASE_URL: postgresql://smartcart:smartcart@pgbouncer:6432/smartcart?schema=public
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '3000:3000'
+
+  analytics-worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ../../.env
+    environment:
+      DATABASE_URL: postgresql://smartcart:smartcart@postgres:5432/smartcart?schema=public
+      REDIS_URL: redis://redis:6379
+
+volumes:
+  pgdata:
+  redisdata:

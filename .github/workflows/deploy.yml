@@ -1,0 +1,99 @@
+# SmartCart backend — CD pipeline (README §2.9 Deployment Strategy & Execution).
+# Triggered on push to `main`: build & push image → deploy staging → manual gate
+# → deploy production. Migrations run via `prisma migrate deploy` before traffic.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9'
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (tag main-{sha})
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/api
+          tags: |
+            type=raw,value=main-${{ github.sha }}
+
+      - name: Build & push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          file: backend/infra/docker/Dockerfile.api
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+
+      - name: Build & push worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          file: backend/infra/docker/Dockerfile.worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/analytics-worker:main-${{ github.sha }}
+
+  deploy-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run migrations (staging)
+        run: pnpm dlx prisma migrate deploy --schema backend/apps/api/prisma/schema.prisma
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      - name: Deploy to Railway (staging)
+        uses: railwayapp/railway-deploy@v1
+        with:
+          railway_token: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf https://staging.api.smartcart.app/api/v1/health && exit 0
+            sleep 5
+          done
+          echo "staging health check failed" && exit 1
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    # GitHub Environment `production` requires a manual approving reviewer (README §2.9).
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run migrations (production)
+        run: pnpm dlx prisma migrate deploy --schema backend/apps/api/prisma/schema.prisma
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      - name: Deploy to Railway (production, rolling)
+        uses: railwayapp/railway-deploy@v1
+        with:
+          railway_token: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
+      - name: Post-deploy stabilization
+        run: sleep 30 && curl -sf https://api.smartcart.app/api/v1/health

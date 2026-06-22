@@ -1,0 +1,62 @@
+# Prometheus alerting rules (README §2.6 Alerting). Evaluated by Alertmanager;
+# P1 → PagerDuty, P2/P3 → Slack #smartcart-alerts.
+groups:
+  - name: smartcart-api
+    rules:
+      - alert: ServiceDown
+        expr: up{job="smartcart-api"} == 0
+        for: 1m
+        labels: { severity: P1 }
+        annotations:
+          summary: 'SmartCart API instance is down'
+          description: '{{ $labels.instance }} has been unreachable for 1m.'
+
+      - alert: HighErrorRate
+        # > 1% 5xx over 5 minutes (README §2.6).
+        expr: |
+          sum(rate(http_requests_total{job="smartcart-api",status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{job="smartcart-api"}[5m])) > 0.01
+        for: 5m
+        labels: { severity: P1 }
+        annotations:
+          summary: 'API 5xx error rate above 1%'
+
+      - alert: HighCheckoutLatency
+        # P95 checkout latency > 2s (README §2.6).
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{route="/api/v1/sessions/:id/validate"}[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels: { severity: P2 }
+        annotations:
+          summary: 'Checkout validation P95 latency above 2s'
+
+      - alert: DatabasePoolExhaustion
+        # > 80% of the connection pool in use (README §2.6).
+        expr: pg_pool_in_use / pg_pool_size > 0.8
+        for: 5m
+        labels: { severity: P2 }
+        annotations:
+          summary: 'PostgreSQL connection pool > 80% utilized'
+
+  - name: smartcart-analytics
+    rules:
+      - alert: QueueBackpressure
+        # > 1000 waiting jobs (README §2.6).
+        expr: smartcart_bullmq_queue_depth{queue="analytics-profile-update"} > 1000
+        for: 5m
+        labels: { severity: P2 }
+        annotations:
+          summary: 'Analytics queue backpressure (>1000 waiting jobs)'
+
+      - alert: AiServiceDegradation
+        # P95 AI classification latency > 10s (README §2.6).
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(smartcart_ai_classification_seconds_bucket[5m])) by (le)
+          ) > 10
+        for: 5m
+        labels: { severity: P3 }
+        annotations:
+          summary: 'AI inference P95 latency above 10s'

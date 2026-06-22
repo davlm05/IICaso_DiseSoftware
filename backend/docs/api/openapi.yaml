@@ -1,0 +1,504 @@
+openapi: 3.1.0
+info:
+  title: SmartCart API
+  version: v1
+  description: >-
+    SmartCart backend REST API (README §2.4). Loyalty-points platform for
+    supermarket shoppers. JWT (USER) for the mobile app; API keys for POS and B2B.
+  license:
+    name: UNLICENSED
+servers:
+  - url: https://api.smartcart.app/api/v1
+    description: Production
+  - url: https://api-staging.smartcart.app/api/v1
+    description: Staging
+  - url: http://localhost:3000/api/v1
+    description: Local
+
+tags:
+  - name: auth
+  - name: users
+  - name: products
+  - name: sessions
+  - name: checkout
+  - name: rewards
+  - name: analytics
+  - name: health
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Error:
+      type: object
+      properties:
+        errorCode: { type: string, example: VALIDATION_FAILED }
+        message: { type: string }
+        correlationId: { type: string }
+    AuthTokens:
+      type: object
+      required: [accessToken, refreshToken, user]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        user: { $ref: '#/components/schemas/AuthUser' }
+    AuthUser:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role:
+          type: string
+          enum: [USER, BACKOFFICE_OPERATOR, CATALOG_MANAGER, STORE_ADMIN, SUPER_ADMIN]
+    RegisterRequest:
+      type: object
+      required: [email, password, fullName]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        fullName: { type: string }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    PointsConfig:
+      oneOf:
+        - type: object
+          properties:
+            type: { const: FIXED_PER_UNIT }
+            value: { type: number }
+        - type: object
+          properties:
+            type: { const: SPEND_MULTIPLIER }
+            value: { type: number }
+        - type: object
+          properties:
+            type: { const: VOLUME_TIER }
+            tiers:
+              type: array
+              items:
+                type: object
+                properties:
+                  minQty: { type: integer }
+                  maxQty: { type: integer }
+                  pointsPerUnit: { type: integer }
+        - type: object
+          properties:
+            type: { const: WEEKEND_BONUS }
+            basePoints: { type: integer }
+            weekendMultiplier: { type: number }
+      discriminator: { propertyName: type }
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        barcode: { type: string, pattern: '^\d{8,14}$' }
+        name: { type: string }
+        brand: { type: string }
+        imageUrl: { type: string, format: uri }
+        pointsConfig: { $ref: '#/components/schemas/PointsConfig' }
+        sponsored: { type: boolean }
+    SessionItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        barcode: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        pointsValue: { type: integer }
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        storeId: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [ACTIVE, PENDING_CHECKOUT, COMPLETED, VALIDATION_FAILED, EXPIRED]
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SessionItem' }
+        itemHash: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateSessionRequest:
+      type: object
+      required: [storeId]
+      properties:
+        storeId: { type: string, format: uuid }
+    AddItemRequest:
+      type: object
+      required: [barcode, quantity]
+      properties:
+        barcode: { type: string, pattern: '^\d{8,14}$' }
+        quantity: { type: integer, minimum: 1 }
+    QrTicketResponse:
+      type: object
+      properties:
+        token: { type: string }
+        expiresAt: { type: string, format: date-time }
+    ValidateSessionRequest:
+      type: object
+      required: [qrToken, scannedItems]
+      properties:
+        qrToken: { type: string }
+        scannedItems:
+          type: array
+          items: { type: string }
+    ValidateSessionResponse:
+      type: object
+      properties:
+        sessionId: { type: string, format: uuid }
+        status: { type: string }
+        pointsAwarded: { type: integer }
+        newBalance: { type: integer }
+    SegmentDistribution:
+      type: object
+      properties:
+        segments:
+          type: array
+          items:
+            type: object
+            properties:
+              segmentName: { type: string }
+              count: { type: integer }
+              percentage: { type: number }
+
+  responses:
+    BadRequest:
+      description: Validation failed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing/invalid credentials
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Insufficient role / not owner / wrong API key type
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new shopper (USER role only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Authenticate with email/password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429':
+          description: Too many failed attempts (account lockout)
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate the refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: New token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the current refresh token
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '204': { description: Logged out }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /products/{barcode}:
+    get:
+      tags: [products]
+      summary: Look up a product by barcode (Cache-Aside, TTL 1h)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: barcode
+          required: true
+          schema: { type: string, pattern: '^\d{8,14}$' }
+      responses:
+        '200':
+          description: Product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /products/search:
+    get:
+      tags: [products]
+      summary: Search products by name or brand (Redis TTL 5 min)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: q, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: Matching products
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Product' }
+
+  /sessions:
+    post:
+      tags: [sessions]
+      summary: Create a new shopping session
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSessionRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '409': { description: User already has an active session }
+  /sessions/active:
+    get:
+      tags: [sessions]
+      summary: Get the user's currently active session
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Active session or null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/Session' }
+                  - { type: 'null' }
+  /sessions/{id}:
+    get:
+      tags: [sessions]
+      summary: Get session details
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /sessions/{id}/items:
+    post:
+      tags: [sessions]
+      summary: Add a scanned item to the session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddItemRequest' }
+      responses:
+        '201':
+          description: Updated session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /sessions/{id}/items/{itemId}:
+    delete:
+      tags: [sessions]
+      summary: Remove an item from the session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: itemId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Updated session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /sessions/{id}/qr:
+    post:
+      tags: [sessions]
+      summary: Finalize the session and generate a checkout QR (10-min expiry)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201':
+          description: Signed QR ticket
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QrTicketResponse' }
+  /sessions/{id}/validate:
+    post:
+      tags: [checkout]
+      summary: POS — validate QR and credit points (atomic, replay-safe)
+      security: [{ apiKey: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ValidateSessionRequest' }
+      responses:
+        '200':
+          description: Validated and credited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ValidateSessionResponse' }
+        '401':
+          description: Invalid API key / QR signature (INVALID_QR_TOKEN)
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: QR expired (QR_TOKEN_EXPIRED) or items mismatch (QR_ITEM_MISMATCH)
+
+  /rewards:
+    get:
+      tags: [rewards]
+      summary: List active rewards
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Rewards catalog }
+  /rewards/{id}:
+    get:
+      tags: [rewards]
+      summary: Get reward details
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Reward }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /rewards/{id}/redeem:
+    post:
+      tags: [rewards]
+      summary: Redeem points for a reward; returns a coupon code
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Coupon issued }
+        '422': { description: Insufficient balance (VALIDATION_REJECTED) }
+
+  /analytics/segments:
+    get:
+      tags: [analytics]
+      summary: B2B — consumer segment distribution (k-anonymized)
+      security: [{ apiKey: [] }]
+      parameters:
+        - { in: query, name: storeId, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Aggregated, anonymized segment distribution
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SegmentDistribution' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /analytics/products/{id}/insights:
+    get:
+      tags: [analytics]
+      summary: B2B — product demand predictions & performance metrics
+      security: [{ apiKey: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Product insights (fields TBD per README §2.4) }
+  /analytics/stores/{id}/overview:
+    get:
+      tags: [analytics]
+      summary: B2B — store-level metrics
+      security: [{ apiKey: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Store overview (fields TBD per README §2.4) }
+
+  /health:
+    get:
+      tags: [health]
+      summary: Full dependency health check (DB, Redis)
+      responses:
+        '200': { description: Healthy }
+        '503': { description: One or more dependencies unhealthy }
+  /health/liveness:
+    get:
+      tags: [health]
+      summary: Liveness probe (process up)
+      responses:
+        '200': { description: Alive }
+  /health/readiness:
+    get:
+      tags: [health]
+      summary: Readiness probe (DB + Redis reachable)
+      responses:
+        '200': { description: Ready }
+        '503': { description: Not ready }

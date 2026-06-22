@@ -1,0 +1,175 @@
+// SmartCart — Prisma schema
+// Source of truth: README §2.4 "Data Model". Generated to match that table 1:1.
+// Content-only scaffold: no migrations run, no client generated until backend wiring exists.
+
+generator client {
+  provider      = "prisma-client-js"
+  // Alpine runtime target per README §2.9 bundle-size note.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  BACKOFFICE_OPERATOR
+  CATALOG_MANAGER
+  STORE_ADMIN
+  SUPER_ADMIN
+}
+
+enum SessionStatus {
+  ACTIVE
+  PENDING_CHECKOUT
+  COMPLETED
+  VALIDATION_FAILED
+  EXPIRED
+}
+
+enum PointsReason {
+  PURCHASE
+  REDEMPTION
+  ADJUSTMENT
+}
+
+enum RedemptionStatus {
+  ISSUED
+  USED
+  EXPIRED
+}
+
+enum ApiKeyType {
+  POS
+  B2B
+}
+
+// ─────────────────────────────────────────────────────────────
+// Models
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  fullName     String
+  passwordHash String
+  phone        String?
+  pushToken    String?
+  role         Role     @default(USER)
+  createdAt    DateTime @default(now())
+
+  sessions           ShoppingSession[]
+  pointsTransactions PointsTransaction[]
+  redemptions        Redemption[]
+  segment            ConsumerSegment?
+}
+
+model Store {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  sessions ShoppingSession[]
+  apiKeys  ApiKey[]
+}
+
+model Product {
+  id           String  @id @default(uuid())
+  barcode      String  @unique // EAN-8/13
+  name         String
+  brand        String
+  imageUrl     String?
+  pointsConfig Json // discriminated by `type`: FIXED_PER_UNIT | SPEND_MULTIPLIER | VOLUME_TIER | WEEKEND_BONUS
+  sponsored    Boolean @default(false)
+
+  sessionItems SessionItem[]
+}
+
+model ShoppingSession {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  storeId   String
+  store     Store         @relation(fields: [storeId], references: [id])
+  status    SessionStatus @default(ACTIVE)
+  itemHash  String? // set at QR generation
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  items              SessionItem[]
+  pointsTransactions PointsTransaction[]
+
+  @@index([userId, status])
+}
+
+model SessionItem {
+  id          String          @id @default(uuid())
+  sessionId   String
+  session     ShoppingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product         @relation(fields: [productId], references: [id])
+  barcode     String
+  quantity    Int
+  pointsValue Int
+}
+
+// Append-only ledger. Rows are immutable and never cascade. Balance = SUM(delta).
+model PointsTransaction {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+  delta     Int // signed
+  reason    PointsReason
+  sessionId String?
+  session   ShoppingSession? @relation(fields: [sessionId], references: [id])
+  createdAt DateTime         @default(now())
+
+  @@index([userId, createdAt]) // 90-day analytics window
+}
+
+model Reward {
+  id          String  @id @default(uuid())
+  name        String
+  description String
+  cost        Int // points
+  imageUrl    String?
+  active      Boolean @default(true)
+
+  redemptions Redemption[]
+}
+
+model Redemption {
+  id         String           @id @default(uuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id])
+  rewardId   String
+  reward     Reward           @relation(fields: [rewardId], references: [id])
+  couponCode String           @unique
+  status     RedemptionStatus @default(ISSUED)
+  redeemedAt DateTime         @default(now())
+}
+
+// One row per user (upsert target of the analytics worker). Aggregated features only.
+model ConsumerSegment {
+  userId      String   @id
+  user        User     @relation(fields: [userId], references: [id])
+  segmentName String
+  features    Json
+  updatedAt   DateTime @updatedAt
+}
+
+model ApiKey {
+  id        String     @id @default(uuid())
+  hashedKey String     @unique // SHA-256
+  type      ApiKeyType
+  storeId   String?
+  store     Store?     @relation(fields: [storeId], references: [id])
+  label     String
+  createdAt DateTime   @default(now())
+}

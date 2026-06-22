@@ -1,0 +1,10 @@
+{
+  "name": "@smartcart/analytics-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone BullMQ consumer for the consumer-profiling pipeline (README §2.2, §2.3).",
+  "main": "dist/main.js",
+  "dependencies": {
+    "@smartcart/shared-types": "workspace:*"
+  }
+}
