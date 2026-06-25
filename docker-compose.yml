@@ -104,6 +104,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Reuse the logged-in Claude session instead of an API key (see README).
       ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       AIDEV_AUTH_MODE: ${AIDEV_AUTH_MODE:-auto}
       GH_TOKEN: ${GH_TOKEN:-}
       AIDEV_MODEL: ${AIDEV_MODEL:-claude-opus-4-8}
