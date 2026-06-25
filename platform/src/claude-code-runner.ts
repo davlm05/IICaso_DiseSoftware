@@ -95,6 +95,9 @@ export class ClaudeCodeRunner implements Runner {
       if (env[k]) env[k] = env[k]!.replace(/\s+/g, '');
       if (!env[k]) delete env[k];
     }
+    // The orchestrator container runs as root; Claude Code refuses
+    // bypassPermissions as root unless this sandbox flag is set.
+    env.IS_SANDBOX = '1';
 
     const claude = process.platform === 'win32' ? 'claude.cmd' : 'claude';
     this.logger.info(`${def.name}: invoking Claude Code (model ${model})`);
