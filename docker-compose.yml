@@ -25,27 +25,50 @@ services:
   # then exits. The runtime API image is pruned to prod deps and has no Prisma
   # CLI, so we fetch it on the fly here against the mounted backend source.
   db-migrate:
-    image: node:20-alpine
+    # bookworm-slim ships libssl3, which Prisma needs (alpine does not).
+    image: node:20-bookworm-slim
     working_dir: /app
     volumes:
       - ./backend:/app
     environment:
       DATABASE_URL: postgresql://smartcart:smartcart@postgres:5432/smartcart?schema=public
-    command: >-
-      sh -c "corepack enable &&
-             npx --yes prisma@5.20.0 db push
-               --schema apps/api/prisma/schema.prisma --skip-generate"
+    # List form avoids YAML/shell quoting pitfalls that previously split --schema.
+    # slim lacks libssl, so install openssl before Prisma runs its engine.
+    command:
+      - sh
+      - -c
+      - >-
+        apt-get update -y >/dev/null 2>&1
+        && apt-get install -y --no-install-recommends openssl >/dev/null 2>&1
+        && npx --yes prisma@5.20.0 db push --schema apps/api/prisma/schema.prisma --skip-generate
     depends_on:
       postgres:
         condition: service_healthy
     restart: 'no'
 
-  # Wait for the schema push before the API starts (merges with the api service
-  # defined in backend/infra/docker/docker-compose.yml).
+  # Override the api/worker build to use the repo-root context (so the
+  # pnpm-workspace package `packages/shared-types` is reachable) + the fixed
+  # Dockerfiles. Merges with the services from backend/infra/docker.
   api:
+    build:
+      context: .
+      dockerfile: platform/docker/Dockerfile.api
+    environment:
+      # Containerized service: JSON logs (no pino-pretty dev transport).
+      NODE_ENV: production
+      # Connect directly to Postgres for local dev (skip the pgbouncer pooling
+      # layer, which the worker also bypasses).
+      DATABASE_URL: postgresql://smartcart:smartcart@postgres:5432/smartcart?schema=public
     depends_on:
       db-migrate:
         condition: service_completed_successfully
+
+  analytics-worker:
+    build:
+      context: .
+      dockerfile: platform/docker/Dockerfile.worker
+    environment:
+      NODE_ENV: production
 
   frontend:
     build:

@@ -24,7 +24,8 @@ export class ResourceOwnershipGuard implements CanActivate {
     const userId = request.user?.sub;
     if (!userId) throw new ForbiddenException('Not authenticated.');
 
-    const sessionId = request.params?.id;
+    const rawId: unknown = request.params?.id;
+    const sessionId = typeof rawId === 'string' ? rawId : undefined;
     if (!sessionId) return true; // nothing to scope
 
     const session = await this.prisma.shoppingSession.findUnique({

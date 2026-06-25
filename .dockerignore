@@ -1,0 +1,13 @@
+# Keep the (repo-root) build context small and, crucially, keep host
+# node_modules out of the image so the in-image `pnpm install` is preserved.
+**/node_modules
+**/dist
+**/.expo
+.git
+.pnpm-store
+platform/workspace
+**/*.log
+.env
+**/.env
+!backend/.env.example
+**/*.tsbuildinfo

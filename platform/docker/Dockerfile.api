@@ -1,0 +1,53 @@
+# SmartCart API — local-dev image (Caso #2).
+#
+# Built from the REPO ROOT context so the pnpm-workspace dependency
+# `packages/shared-types` (a sibling of backend/, referenced as ../packages/* in
+# backend/pnpm-workspace.yaml) is reachable — the original backend Dockerfile
+# COPYed it from outside its build context and could never build.
+#
+# Single-stage on Debian slim (clean OpenSSL for Prisma). For a local dev
+# ecosystem we run from the built dist with the full workspace node_modules
+# (no prune), which keeps Prisma + the shared-types workspace link resolvable.
+FROM node:20-bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates wget \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable && corepack prepare pnpm@9.12.0 --activate
+
+# 1) Manifests first (install layer caches until a package.json changes).
+WORKDIR /repo
+COPY backend/pnpm-lock.yaml backend/pnpm-workspace.yaml backend/package.json backend/
+COPY backend/apps/api/package.json backend/apps/api/
+COPY backend/apps/analytics-worker/package.json backend/apps/analytics-worker/
+COPY packages/shared-types/package.json packages/shared-types/
+
+WORKDIR /repo/backend
+# pnpm's default isolated node_modules hides transitive deps — the backend
+# imports `express` directly, but it's only a transitive dep of
+# @nestjs/platform-express. `shamefully-hoist` also flattens everything into the
+# backend root node_modules (so apps/api resolves express) WHILE keeping each
+# package's isolated node_modules — important for packages/shared-types, which
+# lives outside the workspace root and needs its own `zod`.
+RUN printf 'shamefully-hoist=true\n' > .npmrc \
+  && pnpm install --frozen-lockfile \
+  && pnpm add -w -D @types/express  # backend imports express types but omits this dep
+
+# 2) Full sources (.dockerignore keeps host node_modules/dist out, so the
+#    install above is preserved). Then build shared-types, generate the Prisma
+#    client, and compile the API.
+WORKDIR /repo
+COPY packages packages
+COPY backend backend
+WORKDIR /repo/backend
+RUN pnpm --filter "@smartcart/shared-types" build \
+  && pnpm prisma generate --schema apps/api/prisma/schema.prisma \
+  && pnpm exec nest build api
+
+ENV NODE_ENV=production
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=5 \
+  CMD wget -qO- http://127.0.0.1:3000/api/v1/health/liveness || exit 1
+
+# Load OpenTelemetry before the app (README §2.6).
+CMD ["node", "--require", "./apps/api/dist/tracing.js", "apps/api/dist/main.js"]
