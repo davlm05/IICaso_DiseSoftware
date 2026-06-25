@@ -108,12 +108,16 @@ export class AnthropicClient implements LlmClient {
       const Ctor = Anthropic.default ?? Anthropic;
       if (this.auth.kind === 'oauth') {
         this.client = new Ctor({
+          // apiKey:null so the SDK ignores an empty ANTHROPIC_API_KEY env var
+          // (otherwise it sees both credentials and refuses).
+          apiKey: null,
           authToken: this.auth.authToken,
           // OAuth bearer tokens require this beta header on /v1/messages.
           defaultHeaders: { 'anthropic-beta': OAUTH_BETA_HEADER },
         });
       } else if (this.auth.kind === 'api-key') {
-        this.client = new Ctor({ apiKey: this.auth.apiKey });
+        // authToken:null so an empty ANTHROPIC_AUTH_TOKEN env var doesn't clash.
+        this.client = new Ctor({ apiKey: this.auth.apiKey, authToken: null });
       } else {
         // sdk-default: SDK resolves ANTHROPIC_AUTH_TOKEN / `ant` profile itself.
         // Send the OAuth beta header defensively since the resolved credential

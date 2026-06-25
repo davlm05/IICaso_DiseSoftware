@@ -78,11 +78,13 @@ export function loadConfig(overrides: Partial<PlatformConfig> = {}): PlatformCon
     readmePath: overrides.readmePath ?? path.join(repoRoot, 'README.md'),
     apiKey: overrides.apiKey ?? process.env.ANTHROPIC_API_KEY ?? '',
     // Claude Code / `ant auth login` OAuth token reuses the subscription.
+    // Use `||` (not `??`) so an env var set to an EMPTY string (e.g. Compose's
+    // `${ANTHROPIC_AUTH_TOKEN:-}`) falls through to the next source.
     authToken:
       overrides.authToken ??
-      process.env.ANTHROPIC_AUTH_TOKEN ??
-      process.env.CLAUDE_CODE_OAUTH_TOKEN ??
-      '',
+      (process.env.ANTHROPIC_AUTH_TOKEN ||
+        process.env.CLAUDE_CODE_OAUTH_TOKEN ||
+        ''),
     authMode: overrides.authMode ?? ((process.env.AIDEV_AUTH_MODE as AuthMode) || 'auto'),
     models: overrides.models ?? {
       default: process.env.AIDEV_MODEL ?? 'claude-opus-4-8',
