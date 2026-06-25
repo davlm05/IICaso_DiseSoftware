@@ -166,7 +166,19 @@ export class Engine {
     };
 
     this.git.createBranch(branch);
-    this.git.add(['.']);
+    // Commit ONLY this feature's artifacts — never `git add .`. A blanket add
+    // would sweep in unrelated working-tree noise (and, in repos that wrongly
+    // track node_modules, produce a massive bogus diff).
+    const featureDir = path
+      .relative(this.cfg.repoRoot, path.join(this.cfg.specsDir, id))
+      .replace(/\\/g, '/');
+    const addPaths = [
+      ...Object.values(manifest.specs), // platform/specs/<domain>/<id>.md
+      featureDir, // platform/specs/<id>/ (feature.json + RELEASE_NOTES.md)
+      ...(manifest.build?.touchedPaths ?? []),
+      ...(manifest.tests?.paths ?? []),
+    ].filter((p): p is string => !!p && !p.includes('platform/workspace'));
+    this.git.add(addPaths);
     const committed = this.git.commit([
       `feat: ${manifest.title}`,
       `Feature ${id}. See ${notesRel}.`,

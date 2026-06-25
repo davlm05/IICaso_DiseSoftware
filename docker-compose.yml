@@ -71,6 +71,11 @@ services:
     volumes:
       - .:/workspace # the whole repo: agents read/write code, run git
       - platform_node_modules:/workspace/platform/node_modules
+      # Container-local, Linux-native node_modules so the release quality gates
+      # resolve their tooling. These shadow the host's (Windows pnpm) installs,
+      # which don't work cross-platform over a bind mount.
+      - orch_backend_node_modules:/workspace/backend/node_modules
+      - orch_frontend_node_modules:/workspace/frontend/node_modules
     environment:
       REPO_ROOT: /workspace
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -85,6 +90,10 @@ services:
       # Install backend+frontend deps on startup so /release-feature gates run
       # in-container. Set to 0 for a faster boot (run gates on the host instead).
       AIDEV_INSTALL_APP_DEPS: ${AIDEV_INSTALL_APP_DEPS:-1}
+      # Local-only release (branch + commit, no push/PR) so a containerized
+      # /release-feature doesn't touch the remote and `git push` can't hang.
+      AIDEV_SKIP_PR: ${AIDEV_SKIP_PR:-1}
+      GIT_TERMINAL_PROMPT: '0'
       GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-aidev@smartcart.local}
       GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-SmartCart AI Platform}
     # Idles after install+build; drive it with `docker compose exec`.
@@ -94,3 +103,5 @@ services:
 volumes:
   frontend_node_modules:
   platform_node_modules:
+  orch_backend_node_modules:
+  orch_frontend_node_modules:
