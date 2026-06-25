@@ -41,6 +41,9 @@ export interface PlatformConfig {
   maxIterations: number;
   /** When true the engine never calls the LLM (used by tests and `--offline`). */
   offline: boolean;
+  /** When true, /release-feature creates the branch + commit but does NOT push
+   *  or open a PR (local-only release; avoids touching the remote). */
+  skipPr: boolean;
 }
 
 /** Resolve which credential the LLM client should use, given the config. */
@@ -87,5 +90,6 @@ export function loadConfig(overrides: Partial<PlatformConfig> = {}): PlatformCon
     },
     maxIterations: overrides.maxIterations ?? Number(process.env.AIDEV_MAX_ITERATIONS ?? 24),
     offline: overrides.offline ?? process.env.AIDEV_OFFLINE === '1',
+    skipPr: overrides.skipPr ?? process.env.AIDEV_SKIP_PR === '1',
   };
 }

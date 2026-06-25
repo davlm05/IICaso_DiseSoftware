@@ -1,4 +1,4 @@
-import type { ProductDTO } from "../../types";
+import type { ProductDTO } from "../../../types";
 
 /**
  * Scan-validation Chain of Responsibility (README §1.4 Application layer,

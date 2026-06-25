@@ -21,12 +21,18 @@ export interface RunOptions {
 
 export function run(command: string, args: string[], opts: RunOptions): CommandResult {
   const display = `${command} ${args.join(' ')}`.trim();
+  // On Windows, .cmd/.bat shims (pnpm.cmd/npm.cmd) must run through cmd.exe, but
+  // enabling the shell concatenates args WITHOUT quoting — which corrupts any
+  // arg containing spaces/newlines (e.g. a git commit message). So only use the
+  // shell for shim commands; real executables (git, node) run shell-free with
+  // properly-quoted argv.
+  const needsShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command);
   const res = spawnSync(command, args, {
     cwd: opts.cwd,
     timeout: opts.timeoutMs ?? 15 * 60_000,
     env: { ...process.env, ...opts.env },
     encoding: 'utf8',
-    shell: process.platform === 'win32', // resolve .cmd shims (pnpm/npm) on Windows
+    shell: needsShell,
   });
   const output = `${res.stdout ?? ''}${res.stderr ?? ''}`.trim();
   return {

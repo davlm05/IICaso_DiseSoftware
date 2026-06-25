@@ -167,9 +167,27 @@ export class Engine {
 
     this.git.createBranch(branch);
     this.git.add(['.']);
-    this.git.commit(`feat: ${manifest.title}\n\nFeature ${id}. See ${notesRel}.`);
+    const committed = this.git.commit([
+      `feat: ${manifest.title}`,
+      `Feature ${id}. See ${notesRel}.`,
+    ]);
+    if (!committed.ok) {
+      this.appendLog(manifest, 'git:commit', committed.output);
+      manifest.release = {
+        branch,
+        testsPassed: true,
+        qualityGatesPassed: true,
+        notes: `git commit failed: ${committed.output.split('\n').slice(-3).join(' ').slice(0, 300)}`,
+      };
+      this.store.setStatus(manifest, 'RELEASE_FAILED', 'git commit failed');
+      this.flush(manifest);
+      return manifest;
+    }
 
-    if (this.git.hasRemote()) {
+    if (this.cfg.skipPr) {
+      release.notes = `Local release: branch ${branch} + commit created; push/PR skipped (AIDEV_SKIP_PR=1).`;
+      this.logger.info(release.notes);
+    } else if (this.git.hasRemote()) {
       this.git.push(branch);
       const pr = openPullRequest({
         repoRoot: this.cfg.repoRoot,

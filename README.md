@@ -35,8 +35,9 @@ cp backend/.env.example backend/.env  # backend stack config
 Then put **one** Claude credential in `.env`:
 
 - **Option A — API key:** set `ANTHROPIC_API_KEY=sk-ant-...`
-- **Option B — your Claude subscription (no key):** `ant auth login` once, then
-  `source platform/scripts/use-claude-auth.sh` (or set `AIDEV_AUTH_MODE=oauth` + `ANTHROPIC_AUTH_TOKEN`).
+- **Option B — your Claude subscription (no key):** run `claude setup-token` (Claude Code), then set
+  `AIDEV_AUTH_MODE=oauth` + `CLAUDE_CODE_OAUTH_TOKEN=<token>` — or just
+  `source platform/scripts/use-claude-auth.sh`.
 - **No credential?** Append `--offline` to any command below for a deterministic dry run.
 
 ### 3. Start the full stack

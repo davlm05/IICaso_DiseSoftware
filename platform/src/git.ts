@@ -27,8 +27,11 @@ export class Git {
     return this.git('add', ...paths);
   }
 
-  commit(message: string): CommandResult {
-    return this.git('commit', '-m', message);
+  /** Each entry becomes a `-m` paragraph (avoids embedding newlines in one arg). */
+  commit(messages: string[]): CommandResult {
+    const args = ['commit'];
+    for (const m of messages) args.push('-m', m);
+    return this.git(...args);
   }
 
   push(branch: string): CommandResult {

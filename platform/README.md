@@ -88,26 +88,26 @@ modes, resolved by `resolveAuth()` in [src/config.ts](src/config.ts):
 | `oauth` | your logged-in Claude session / subscription via `ANTHROPIC_AUTH_TOKEN` |
 | `auto` (default) | API key if set, else the OAuth token, else an `ant auth login` profile |
 
-To run the agents on **this Claude account's subscription** instead of a metered key:
+To run the agents on **this Claude account's subscription** instead of a metered key, mint a
+long-lived token with **Claude Code** (no Anthropic CLI required):
 
 ```bash
-# one-time: log in with the SAME account (opens a browser)
-ant auth login
-
-# reuse that session for the platform (exports the OAuth token + sets oauth mode)
-source platform/scripts/use-claude-auth.sh
-
-# now the agents authenticate with the subscription:
+claude setup-token                 # opens a browser, prints a token (sk-ant-oat...)
+export CLAUDE_CODE_OAUTH_TOKEN=<paste-token>
+export AIDEV_AUTH_MODE=oauth
 node platform/dist/cli.js feature "Implement customer self-service password reset"
 ```
 
-Under the hood, OAuth tokens are sent as `Authorization: Bearer` with the required
-`anthropic-beta: oauth-2025-04-20` header. In Docker, set `AIDEV_AUTH_MODE=oauth` and
-`ANTHROPIC_AUTH_TOKEN` in `.env` (the compose file passes both to the orchestrator).
+Or let the helper do it: `source platform/scripts/use-claude-auth.sh` (runs `setup-token`, captures
+the token, sets the env). For Docker, put `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_AUTH_TOKEN`) +
+`AIDEV_AUTH_MODE=oauth` + `AIDEV_OFFLINE=0` in `.env` — the compose file passes them to the orchestrator.
 
-> Caveats: subscription rate limits apply, and Claude Code's own `/login` may conflict with an
-> `ant` profile — keep one (`ant auth status` shows which credential is active). Fully headless/cron
-> use may still require an API key per Anthropic's terms.
+Under the hood, OAuth tokens are sent as `Authorization: Bearer` with the required
+`anthropic-beta: oauth-2025-04-20` header. (`ant auth login` is an alternative if you have the
+Anthropic CLI installed.)
+
+> Caveats: subscription rate limits apply; fully headless/cron use may still require an API key per
+> Anthropic's terms.
 
 ## Offline mode (no API key)
 

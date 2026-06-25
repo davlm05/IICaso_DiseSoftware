@@ -1,4 +1,4 @@
-import type { CouponDTO, ProductDTO, RewardDTO } from "../types";
+import type { CouponDTO, ProductDTO, RewardDTO } from "../../types";
 
 /**
  * Sponsored catalog mock — Domain layer (README §1.4). In production this is

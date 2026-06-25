@@ -1,29 +1,42 @@
 #!/usr/bin/env bash
-# Reuse the logged-in Claude Code session / `ant auth login` subscription for the
-# AI dev platform — no metered API key required.
+# Reuse your Claude subscription for the AI dev platform — no metered API key.
 #
 # Usage:   source platform/scripts/use-claude-auth.sh
 # (must be SOURCED, not executed, so the exports land in your shell)
 #
-# It exports ANTHROPIC_AUTH_TOKEN (+ ANTHROPIC_BASE_URL if the profile sets one)
-# from the active `ant` profile and forces AIDEV_AUTH_MODE=oauth so the
-# orchestrator authenticates with the subscription OAuth token.
-set -euo pipefail
+# Resolves a subscription OAuth token in this order:
+#   1. CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_AUTH_TOKEN already in your env
+#   2. `claude setup-token`  (Claude Code's own long-lived token — no `ant` needed)
+#   3. `ant auth print-credentials` (only if the Anthropic CLI is installed)
+# then forces AIDEV_AUTH_MODE=oauth and clears AIDEV_OFFLINE so real agents run.
+set -uo pipefail
 
-if ! command -v ant >/dev/null 2>&1; then
-  echo "The Anthropic CLI (\`ant\`) is not installed." >&2
-  echo "Install it (see platform/README.md), run \`ant auth login\`, then re-source this." >&2
+_token="${CLAUDE_CODE_OAUTH_TOKEN:-${ANTHROPIC_AUTH_TOKEN:-}}"
+
+if [ -z "$_token" ] && command -v claude >/dev/null 2>&1; then
+  echo "[auth] No token in env. Launching \`claude setup-token\` (opens a browser)..." >&2
+  echo "[auth] When it prints a token, it will be captured automatically." >&2
+  # setup-token prints the long-lived token (sk-ant-oat...) on the last line.
+  _token="$(claude setup-token 2>/dev/null | grep -oE 'sk-ant-[A-Za-z0-9_-]+' | tail -1)"
+fi
+
+if [ -z "$_token" ] && command -v ant >/dev/null 2>&1; then
+  set -a; eval "$(ant auth print-credentials --env)"; set +a
+  _token="${ANTHROPIC_AUTH_TOKEN:-}"
+fi
+
+if [ -z "$_token" ]; then
+  echo "[auth] Could not obtain a subscription token." >&2
+  echo "       Run:  claude setup-token   then:  export CLAUDE_CODE_OAUTH_TOKEN=<token>" >&2
+  echo "       and re-source this script. (Or just set ANTHROPIC_API_KEY for a metered key.)" >&2
   return 1 2>/dev/null || exit 1
 fi
 
-# print-credentials refreshes the token if needed and emits KEY=value lines.
-set -a
-eval "$(ant auth print-credentials --env)"
-set +a
+export CLAUDE_CODE_OAUTH_TOKEN="$_token"
+export ANTHROPIC_AUTH_TOKEN="$_token"
 export AIDEV_AUTH_MODE=oauth
-# Don't let a stale API key shadow the OAuth token (SDK precedence).
-unset ANTHROPIC_API_KEY || true
+export AIDEV_OFFLINE=0
+unset ANTHROPIC_API_KEY || true   # don't let a stale key shadow the OAuth token
 
-echo "[auth] Using the logged-in Claude session (AIDEV_AUTH_MODE=oauth)."
-echo "[auth] ant auth status:"
-ant auth status || true
+echo "[auth] Using your Claude subscription (AIDEV_AUTH_MODE=oauth, AIDEV_OFFLINE=0)."
+echo "[auth] Token length: ${#_token} chars. The agents will now use this account."

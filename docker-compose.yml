@@ -80,6 +80,8 @@ services:
       GH_TOKEN: ${GH_TOKEN:-}
       AIDEV_MODEL: ${AIDEV_MODEL:-claude-opus-4-8}
       AIDEV_MODEL_LIGHT: ${AIDEV_MODEL_LIGHT:-claude-haiku-4-5-20251001}
+      # Set AIDEV_OFFLINE=1 to run the deterministic scaffold strategy (no key).
+      AIDEV_OFFLINE: ${AIDEV_OFFLINE:-0}
       # Install backend+frontend deps on startup so /release-feature gates run
       # in-container. Set to 0 for a faster boot (run gates on the host instead).
       AIDEV_INSTALL_APP_DEPS: ${AIDEV_INSTALL_APP_DEPS:-1}
