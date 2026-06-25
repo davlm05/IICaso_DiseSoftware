@@ -106,6 +106,9 @@ services:
       ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       AIDEV_AUTH_MODE: ${AIDEV_AUTH_MODE:-auto}
+      # 'claude-code' runs agents on your subscription via the Claude CLI;
+      # 'anthropic' uses the raw API key. Empty = auto-detect.
+      AIDEV_PROVIDER: ${AIDEV_PROVIDER:-}
       GH_TOKEN: ${GH_TOKEN:-}
       AIDEV_MODEL: ${AIDEV_MODEL:-claude-opus-4-8}
       AIDEV_MODEL_LIGHT: ${AIDEV_MODEL_LIGHT:-claude-haiku-4-5-20251001}

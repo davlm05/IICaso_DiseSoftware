@@ -15,6 +15,8 @@ import { Git, openPullRequest } from './git';
 import { Logger } from './logger';
 import { AnthropicClient } from './llm';
 import { run } from './runner';
+import { AgentRunner } from './agent-runner';
+import { ClaudeCodeRunner } from './claude-code-runner';
 import { AgentStrategy } from './agent-strategy';
 import { FeatureStrategy, ScaffoldStrategy, renderReleaseNotes } from './strategy';
 import { FeatureManifest, SPEC_DOMAINS } from './types';
@@ -47,9 +49,16 @@ export class Engine {
    */
   private get strategy(): FeatureStrategy {
     if (!this._strategy) {
-      this._strategy = this.cfg.offline
-        ? new ScaffoldStrategy(this.cfg)
-        : new AgentStrategy(this.cfg, new AnthropicClient(resolveAuth(this.cfg)), this.logger);
+      if (this.cfg.offline) {
+        this._strategy = new ScaffoldStrategy(this.cfg);
+      } else {
+        const runner =
+          this.cfg.provider === 'claude-code'
+            ? new ClaudeCodeRunner(this.cfg, this.logger)
+            : new AgentRunner(this.cfg, new AnthropicClient(resolveAuth(this.cfg)), this.logger);
+        this.logger.info(`provider: ${this.cfg.provider}`);
+        this._strategy = new AgentStrategy(this.cfg, runner, this.logger);
+      }
     }
     return this._strategy;
   }

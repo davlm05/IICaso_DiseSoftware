@@ -8,6 +8,10 @@ FROM node:20-alpine
 RUN apk add --no-cache git github-cli bash \
   && corepack enable && corepack prepare pnpm@9.12.0 --activate
 
+# Claude Code CLI — lets the agents run on a Claude Pro/Max subscription via
+# CLAUDE_CODE_OAUTH_TOKEN (AIDEV_PROVIDER=claude-code).
+RUN npm install -g @anthropic-ai/claude-code
+
 WORKDIR /workspace/platform
 
 # The repo is bind-mounted at runtime (see docker-compose.yml), so we only need

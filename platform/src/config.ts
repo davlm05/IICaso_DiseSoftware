@@ -24,6 +24,23 @@ export interface ModelConfig {
  */
 export type AuthMode = 'auto' | 'api-key' | 'oauth';
 
+/**
+ * Which backend runs the agents:
+ * - 'anthropic'   → raw Anthropic Messages API (needs an ANTHROPIC_API_KEY).
+ * - 'claude-code' → the Claude Code CLI (`claude -p`), running on your Claude
+ *                   Pro/Max subscription via CLAUDE_CODE_OAUTH_TOKEN.
+ */
+export type Provider = 'anthropic' | 'claude-code';
+
+function resolveProvider(): Provider {
+  const p = process.env.AIDEV_PROVIDER;
+  if (p === 'claude-code' || p === 'anthropic') return p;
+  // Auto: a subscription token + no API key means the raw API would 401, so use
+  // Claude Code (which the token is actually valid for).
+  const hasSubToken = !!(process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.ANTHROPIC_AUTH_TOKEN);
+  return hasSubToken && !process.env.ANTHROPIC_API_KEY ? 'claude-code' : 'anthropic';
+}
+
 export interface PlatformConfig {
   repoRoot: string;
   platformRoot: string;
@@ -37,6 +54,7 @@ export interface PlatformConfig {
   /** OAuth bearer token (Claude Code subscription / `ant auth login`). */
   authToken: string;
   authMode: AuthMode;
+  provider: Provider;
   models: ModelConfig;
   maxIterations: number;
   /** When true the engine never calls the LLM (used by tests and `--offline`). */
@@ -86,6 +104,7 @@ export function loadConfig(overrides: Partial<PlatformConfig> = {}): PlatformCon
         process.env.CLAUDE_CODE_OAUTH_TOKEN ||
         ''),
     authMode: overrides.authMode ?? ((process.env.AIDEV_AUTH_MODE as AuthMode) || 'auto'),
+    provider: overrides.provider ?? resolveProvider(),
     models: overrides.models ?? {
       default: process.env.AIDEV_MODEL ?? 'claude-opus-4-8',
       light: process.env.AIDEV_MODEL_LIGHT ?? 'claude-haiku-4-5-20251001',

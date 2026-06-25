@@ -5,10 +5,9 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { AgentDefinition, AgentRunner, loadAgentDefinition } from './agent-runner';
+import { AgentDefinition, Runner, loadAgentDefinition } from './agent-runner';
 import { PlatformConfig } from './config';
 import { Logger } from './logger';
-import { LlmClient } from './llm';
 import {
   FeatureStrategy,
   SpecResult,
@@ -38,16 +37,13 @@ const DOMAIN_AGENT: Record<SpecDomain, AgentName> = {
 const BUILD_AGENTS: AgentName[] = ['backend', 'data', 'frontend', 'infra'];
 
 export class AgentStrategy implements FeatureStrategy {
-  private runner: AgentRunner;
   private defs = new Map<AgentName, AgentDefinition>();
 
   constructor(
     private readonly cfg: PlatformConfig,
-    llm: LlmClient,
+    private readonly runner: Runner,
     private readonly logger: Logger,
-  ) {
-    this.runner = new AgentRunner(cfg, llm, logger);
-  }
+  ) {}
 
   private def(name: AgentName): AgentDefinition {
     let d = this.defs.get(name);

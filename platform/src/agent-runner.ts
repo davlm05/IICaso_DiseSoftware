@@ -102,7 +102,18 @@ function submitResultTool(def: AgentDefinition): RegisteredTool {
   };
 }
 
-export class AgentRunner {
+/** A backend that executes one agent task. Implemented by AgentRunner (raw
+ *  Anthropic API) and ClaudeCodeRunner (Claude Code CLI / subscription). */
+export interface Runner {
+  run(def: AgentDefinition, input: AgentRunInput): Promise<AgentRunResult>;
+}
+
+/** Exposed so alternate runners reuse the exact same system prompt assembly. */
+export function buildAgentSystemPrompt(cfg: PlatformConfig, def: AgentDefinition): string {
+  return buildSystemPrompt(cfg, def);
+}
+
+export class AgentRunner implements Runner {
   constructor(
     private readonly cfg: PlatformConfig,
     private readonly llm: LlmClient,
