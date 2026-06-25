@@ -9,7 +9,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { PlatformConfig } from './config';
+import { PlatformConfig, resolveAuth } from './config';
 import { FeatureStore } from './feature-store';
 import { Git, openPullRequest } from './git';
 import { Logger } from './logger';
@@ -49,7 +49,7 @@ export class Engine {
     if (!this._strategy) {
       this._strategy = this.cfg.offline
         ? new ScaffoldStrategy(this.cfg)
-        : new AgentStrategy(this.cfg, new AnthropicClient(this.cfg.apiKey), this.logger);
+        : new AgentStrategy(this.cfg, new AnthropicClient(resolveAuth(this.cfg)), this.logger);
     }
     return this._strategy;
   }
@@ -201,13 +201,27 @@ export class Engine {
       gates.push(
         { name: 'backend:lint', cwd: backend, command: pm, args: ['lint'] },
         { name: 'backend:type-check', cwd: backend, command: pm, args: ['type-check'] },
-        { name: 'backend:test:unit', cwd: backend, command: pm, args: ['test:unit'] },
+        // --passWithNoTests: a frontend-only feature must not fail just because
+        // the backend has no spec for it. Real backend specs still run + gate.
+        // NB: pnpm forwards trailing flags WITHOUT a `--` separator (npm needs
+        // one); passing `--` here makes jest treat the flag as a path pattern.
+        {
+          name: 'backend:test:unit',
+          cwd: backend,
+          command: pm,
+          args: ['test:unit', '--passWithNoTests'],
+        },
       );
     }
     if (fs.existsSync(frontend)) {
       gates.push(
         { name: 'frontend:typecheck', cwd: frontend, command: npm, args: ['run', 'typecheck'] },
-        { name: 'frontend:test', cwd: frontend, command: npm, args: ['test'] },
+        {
+          name: 'frontend:test',
+          cwd: frontend,
+          command: npm,
+          args: ['test', '--', '--passWithNoTests'],
+        },
       );
     }
     return gates;

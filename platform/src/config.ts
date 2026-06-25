@@ -14,6 +14,16 @@ export interface ModelConfig {
   light: string;
 }
 
+/**
+ * How the orchestrator authenticates to Claude:
+ * - 'api-key': use a metered ANTHROPIC_API_KEY.
+ * - 'oauth':   use the logged-in Claude Code session / `ant auth login` OAuth
+ *              token (the subscription), via ANTHROPIC_AUTH_TOKEN.
+ * - 'auto':    prefer an explicit API key if present, else fall back to the
+ *              OAuth token / an `ant` profile resolved by the SDK.
+ */
+export type AuthMode = 'auto' | 'api-key' | 'oauth';
+
 export interface PlatformConfig {
   repoRoot: string;
   platformRoot: string;
@@ -24,10 +34,28 @@ export interface PlatformConfig {
   workspaceDir: string;
   readmePath: string;
   apiKey: string;
+  /** OAuth bearer token (Claude Code subscription / `ant auth login`). */
+  authToken: string;
+  authMode: AuthMode;
   models: ModelConfig;
   maxIterations: number;
   /** When true the engine never calls the LLM (used by tests and `--offline`). */
   offline: boolean;
+}
+
+/** Resolve which credential the LLM client should use, given the config. */
+export function resolveAuth(cfg: PlatformConfig): {
+  kind: 'api-key' | 'oauth' | 'sdk-default';
+  apiKey?: string;
+  authToken?: string;
+} {
+  if (cfg.authMode === 'api-key') return { kind: 'api-key', apiKey: cfg.apiKey };
+  if (cfg.authMode === 'oauth') return { kind: 'oauth', authToken: cfg.authToken };
+  // auto: explicit API key wins (matches SDK precedence), else OAuth token,
+  // else let the SDK resolve an `ant auth login` profile from disk.
+  if (cfg.apiKey) return { kind: 'api-key', apiKey: cfg.apiKey };
+  if (cfg.authToken) return { kind: 'oauth', authToken: cfg.authToken };
+  return { kind: 'sdk-default' };
 }
 
 export function loadConfig(overrides: Partial<PlatformConfig> = {}): PlatformConfig {
@@ -46,6 +74,13 @@ export function loadConfig(overrides: Partial<PlatformConfig> = {}): PlatformCon
     workspaceDir: overrides.workspaceDir ?? path.join(platformRoot, 'workspace'),
     readmePath: overrides.readmePath ?? path.join(repoRoot, 'README.md'),
     apiKey: overrides.apiKey ?? process.env.ANTHROPIC_API_KEY ?? '',
+    // Claude Code / `ant auth login` OAuth token reuses the subscription.
+    authToken:
+      overrides.authToken ??
+      process.env.ANTHROPIC_AUTH_TOKEN ??
+      process.env.CLAUDE_CODE_OAUTH_TOKEN ??
+      '',
+    authMode: overrides.authMode ?? ((process.env.AIDEV_AUTH_MODE as AuthMode) || 'auto'),
     models: overrides.models ?? {
       default: process.env.AIDEV_MODEL ?? 'claude-opus-4-8',
       light: process.env.AIDEV_MODEL_LIGHT ?? 'claude-haiku-4-5-20251001',

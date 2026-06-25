@@ -21,6 +21,7 @@
     "test:integration": "jest --config apps/api/jest.integration.config.ts",
     "test:contract": "jest --config apps/api/jest.unit.config.ts --selectProjects contract",
     "prisma:migrate": "prisma migrate dev --schema apps/api/prisma/schema.prisma",
+    "prisma:push": "prisma db push --schema apps/api/prisma/schema.prisma",
     "prisma:generate": "prisma generate --schema apps/api/prisma/schema.prisma",
     "openapi:generate": "ts-node apps/api/src/openapi/generate.ts",
     "openapi:validate": "vacuum lint docs/api/openapi.yaml",

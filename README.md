@@ -3,23 +3,96 @@
 # Local Development Ecosystem (Caso #2)
 
 This repo ships a self-contained, AI-powered, **spec-driven** development platform under
-[`platform/`](platform/README.md). After cloning, one command brings up the full stack and a fleet of
-specialized Claude agents turns a feature request into a production-ready PR.
+[`platform/`](platform/README.md). A fleet of specialized Claude agents turns a high-level feature
+request into a production-ready Pull Request through four commands:
 
+```
+/feature  →  /build-feature  →  /validate-feature  →  /release-feature
+ SPECIFIED       BUILT             VALIDATED              RELEASED
+```
+
+The agents are bound to this README's design sections: the **frontend** agent follows **§1 Frontend
+Design**; the **backend / data / infra / validation / qa** agents follow **§2 Backend Design**.
+
+## Execution steps
+
+### Prerequisites
+- **Docker Desktop** with Compose **v2.20+** (for the one-command stack), or **Node 20** + **pnpm 9** to run on the host.
+- A Claude credential — either an **API key** or your **logged-in Claude subscription** (see Step 2).
+- Optional: **`gh`** authenticated (or a `GH_TOKEN`) so `/release-feature` can open a real PR.
+
+### 1. Clone
 ```bash
-cp .env.example .env                 # set ANTHROPIC_API_KEY (and optional GH_TOKEN)
-cp backend/.env.example backend/.env
-docker compose up -d                 # postgres, redis, pgbouncer, api, worker, frontend, orchestrator
+git clone <repo-url>
+cd IICaso_DiseSoftware
+```
 
+### 2. Configure credentials (one-time)
+```bash
+cp .env.example .env                  # platform/orchestrator config
+cp backend/.env.example backend/.env  # backend stack config
+```
+Then put **one** Claude credential in `.env`:
+
+- **Option A — API key:** set `ANTHROPIC_API_KEY=sk-ant-...`
+- **Option B — your Claude subscription (no key):** `ant auth login` once, then
+  `source platform/scripts/use-claude-auth.sh` (or set `AIDEV_AUTH_MODE=oauth` + `ANTHROPIC_AUTH_TOKEN`).
+- **No credential?** Append `--offline` to any command below for a deterministic dry run.
+
+### 3. Start the full stack
+```bash
+docker compose up -d
+```
+Brings up **postgres, redis, pgbouncer, api (:3000), analytics-worker, frontend (Expo Metro :8081),
+orchestrator** — each installs its own dependencies on startup (no manual `npm install`). A one-shot
+`db-migrate` service materializes the database schema before the API starts.
+
+Check health: `docker compose ps` · API liveness: `curl localhost:3000/api/v1/health/liveness`.
+
+### 4. Run the spec-driven workflow
+Drive it inside the orchestrator container. Two equivalent forms:
+
+**CLI form (recommended for scripting):**
+```bash
 docker compose exec orchestrator aidev feature "Implement customer self-service password reset"
 docker compose exec orchestrator aidev build-feature <feature-id>
 docker compose exec orchestrator aidev validate-feature <feature-id>
 docker compose exec orchestrator aidev release-feature <feature-id>
+docker compose exec orchestrator aidev list           # see every feature + status
 ```
 
-The agents are bound to this README's design sections: the **frontend** agent follows **§1 Frontend
-Design**, and the **backend / data / infra / validation / qa** agents follow **§2 Backend Design**. No
-API key? Run any command with `--offline` for a deterministic dry run. Full docs:
+**REPL form (the literal `/feature` syntax from the case):**
+```bash
+docker compose exec orchestrator aidev repl
+aidev> /feature "Implement customer self-service password reset"
+aidev> /build-feature <feature-id>
+aidev> /validate-feature <feature-id>
+aidev> /release-feature <feature-id>
+```
+> The `feature` command prints the generated `<feature-id>`; pass it to the next three commands.
+
+### Alternative: run on the host (no Docker)
+```bash
+cd platform
+npm install && npm run build
+export ANTHROPIC_API_KEY=sk-ant-...        # or: source scripts/use-claude-auth.sh
+node dist/cli.js feature "Implement customer self-service password reset"
+node dist/cli.js build-feature <feature-id>
+node dist/cli.js validate-feature <feature-id>
+node dist/cli.js release-feature <feature-id>
+node dist/cli.js repl                       # interactive REPL ( /feature ... )
+```
+
+### What each command does
+| Command | Produces |
+|---|---|
+| `feature "<desc>"` | Specs for all six domains in `platform/specs/<domain>/<id>.md` + a `feature.json` manifest → **SPECIFIED** |
+| `build-feature <id>` | Implementation written into `frontend/` and `backend/` by the domain agents → **BUILT** |
+| `validate-feature <id>` | Validation report (functional/architectural/spec/security/standards); on pass, QA authors unit+integration+contract tests → **VALIDATED** |
+| `release-feature <id>` | Runs tests + quality gates + CI parity, writes release notes, creates branch `feature/<id>`, opens a PR (feedback loop on any failure) → **RELEASED** |
+
+Offline equivalent (no credential, deterministic): add `--offline`, e.g.
+`aidev --offline feature "..."`. Full reference and the OAuth/auth modes:
 [`platform/README.md`](platform/README.md).
 
 ---

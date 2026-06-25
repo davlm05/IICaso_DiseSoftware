@@ -5,10 +5,18 @@ spec** during specification.
 
 ## Binding grounding
 Follow **README.md §2 Backend Design** for backend testing expectations and **§1.7 Testing Strategy** for
-the frontend. Match the existing test setups exactly:
-- Backend: Jest configs `backend/apps/api/jest.unit.config.ts` and `jest.integration.config.ts`
-  (contract tests run via the `contract` project). Use `@nestjs/testing` and `supertest`.
-- Frontend: `jest-expo` + `@testing-library/react-native`; co-locate tests in `__tests__/` folders.
+the frontend. Match the existing test setups exactly — file naming matters or the runner finds nothing:
+- Backend unit/contract: Jest config `backend/apps/api/jest.unit.config.ts`, which matches
+  **`**/*.spec.ts`** under `apps/api/src`. Co-locate a `<name>.spec.ts` next to the file under test. Use
+  `@nestjs/testing` (`Test.createTestingModule`) and mock Prisma/Redis. The `contract` project lives in
+  the same config.
+- Backend integration: `jest.integration.config.ts` (matches `test/integration/**`); needs Postgres +
+  Redis and uses `supertest` against the Nest app.
+- Frontend: `jest-expo` + `@testing-library/react-native`; co-locate tests in `__tests__/` folders as
+  **`<Name>.test.tsx`** (the existing convention).
+
+Note: the backend currently ships source without `*.spec.ts` files, so you are typically creating the
+first unit specs for a module — model them on the NestJS testing docs and the module's structure.
 
 ## Modes
 - **Testing spec** (`/feature`): fill the testing spec template and write it to `specs/testing/<id>.md` —

@@ -20,6 +20,33 @@ include:
   - backend/infra/docker/docker-compose.yml
 
 services:
+  # One-shot: materialize the Prisma schema into the fresh database so the API
+  # has its tables on first boot. Runs `prisma db push` (no migration files yet),
+  # then exits. The runtime API image is pruned to prod deps and has no Prisma
+  # CLI, so we fetch it on the fly here against the mounted backend source.
+  db-migrate:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    environment:
+      DATABASE_URL: postgresql://smartcart:smartcart@postgres:5432/smartcart?schema=public
+    command: >-
+      sh -c "corepack enable &&
+             npx --yes prisma@5.20.0 db push
+               --schema apps/api/prisma/schema.prisma --skip-generate"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  # Wait for the schema push before the API starts (merges with the api service
+  # defined in backend/infra/docker/docker-compose.yml).
+  api:
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+
   frontend:
     build:
       context: ./platform
@@ -47,9 +74,17 @@ services:
     environment:
       REPO_ROOT: /workspace
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Reuse the logged-in Claude session instead of an API key (see README).
+      ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
+      AIDEV_AUTH_MODE: ${AIDEV_AUTH_MODE:-auto}
       GH_TOKEN: ${GH_TOKEN:-}
       AIDEV_MODEL: ${AIDEV_MODEL:-claude-opus-4-8}
       AIDEV_MODEL_LIGHT: ${AIDEV_MODEL_LIGHT:-claude-haiku-4-5-20251001}
+      # Install backend+frontend deps on startup so /release-feature gates run
+      # in-container. Set to 0 for a faster boot (run gates on the host instead).
+      AIDEV_INSTALL_APP_DEPS: ${AIDEV_INSTALL_APP_DEPS:-1}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-aidev@smartcart.local}
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-SmartCart AI Platform}
     # Idles after install+build; drive it with `docker compose exec`.
     stdin_open: true
     tty: true

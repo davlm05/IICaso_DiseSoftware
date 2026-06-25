@@ -55,7 +55,17 @@ docker compose exec orchestrator aidev validate-feature <feature-id>
 docker compose exec orchestrator aidev release-feature <feature-id>
 ```
 
+On `up`, the stack also:
+- runs a one-shot **`db-migrate`** service (`prisma db push`) so the API has its tables on first boot;
+- has the **orchestrator** install the backend (pnpm) + frontend (npm) deps so `/release-feature`'s
+  quality gates run inside the container (set `AIDEV_INSTALL_APP_DEPS=0` to skip for a faster boot).
+
 Each container installs its own dependencies on startup — no manual `npm install` / `pnpm install`.
+
+> **Note on test gates:** the backend currently ships source **without `*.spec.ts` files**, so the unit
+> gate runs with `--passWithNoTests` (a frontend-only feature isn't blocked by absent backend specs). The
+> QA agent writes real `*.spec.ts` / `*.test.tsx` files, which then run and must pass. Remove the flag in
+> [src/engine.ts](src/engine.ts) once the backend has its own baseline tests.
 
 ## Quick start (host)
 
@@ -66,6 +76,38 @@ export ANTHROPIC_API_KEY=sk-ant-...
 node dist/cli.js feature "Implement customer self-service password reset"
 # ...build-feature / validate-feature / release-feature, or: node dist/cli.js repl
 ```
+
+## Use this Claude account (no API key)
+
+The agents authenticate through a small `LlmClient` ([src/llm.ts](src/llm.ts)) that supports three
+modes, resolved by `resolveAuth()` in [src/config.ts](src/config.ts):
+
+| `AIDEV_AUTH_MODE` | Credential |
+|---|---|
+| `api-key` | metered `ANTHROPIC_API_KEY` (console.anthropic.com) |
+| `oauth` | your logged-in Claude session / subscription via `ANTHROPIC_AUTH_TOKEN` |
+| `auto` (default) | API key if set, else the OAuth token, else an `ant auth login` profile |
+
+To run the agents on **this Claude account's subscription** instead of a metered key:
+
+```bash
+# one-time: log in with the SAME account (opens a browser)
+ant auth login
+
+# reuse that session for the platform (exports the OAuth token + sets oauth mode)
+source platform/scripts/use-claude-auth.sh
+
+# now the agents authenticate with the subscription:
+node platform/dist/cli.js feature "Implement customer self-service password reset"
+```
+
+Under the hood, OAuth tokens are sent as `Authorization: Bearer` with the required
+`anthropic-beta: oauth-2025-04-20` header. In Docker, set `AIDEV_AUTH_MODE=oauth` and
+`ANTHROPIC_AUTH_TOKEN` in `.env` (the compose file passes both to the orchestrator).
+
+> Caveats: subscription rate limits apply, and Claude Code's own `/login` may conflict with an
+> `ant` profile — keep one (`ant auth status` shows which credential is active). Fully headless/cron
+> use may still require an API key per Anthropic's terms.
 
 ## Offline mode (no API key)
 

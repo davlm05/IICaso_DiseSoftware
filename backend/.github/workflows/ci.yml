@@ -41,10 +41,13 @@ jobs:
         run: pnpm lint
       - name: Type check
         run: pnpm type-check
+      # --passWithNoTests: the backend currently ships source without *.spec.ts
+      # files; remove the flag once specs land so missing tests fail the build.
+      # (pnpm forwards trailing flags without a `--` separator.)
       - name: Unit tests
-        run: pnpm test:unit
+        run: pnpm test:unit --passWithNoTests
       - name: Contract tests
-        run: pnpm test:contract
+        run: pnpm test:contract --passWithNoTests
 
   integration:
     name: Integration (Postgres + Redis)
@@ -89,7 +92,7 @@ jobs:
       - name: Sync schema to test database
         run: pnpm exec prisma db push --schema apps/api/prisma/schema.prisma --skip-generate
       - name: Integration tests
-        run: pnpm test:integration
+        run: pnpm test:integration --passWithNoTests
 
   build:
     name: Build & OpenAPI
