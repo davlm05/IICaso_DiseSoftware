@@ -87,13 +87,22 @@ export class ClaudeCodeRunner implements Runner {
       ...tools,
     ];
 
+    // Sanitize auth env: strip any stray whitespace a pasted token may carry
+    // (OAuth tokens never contain spaces), and drop empty ANTHROPIC_* vars so
+    // the CLI doesn't try them before CLAUDE_CODE_OAUTH_TOKEN.
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const k of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY']) {
+      if (env[k]) env[k] = env[k]!.replace(/\s+/g, '');
+      if (!env[k]) delete env[k];
+    }
+
     const claude = process.platform === 'win32' ? 'claude.cmd' : 'claude';
     this.logger.info(`${def.name}: invoking Claude Code (model ${model})`);
     const res = spawnSync(claude, args, {
       cwd: this.cfg.repoRoot,
       input: prompt,
       encoding: 'utf8',
-      env: process.env,
+      env,
       maxBuffer: 64 * 1024 * 1024,
       timeout: 12 * 60_000,
       shell: process.platform === 'win32',
