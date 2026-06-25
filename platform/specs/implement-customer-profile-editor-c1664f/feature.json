@@ -2,9 +2,9 @@
   "id": "implement-customer-profile-editor-c1664f",
   "title": "Implement customer profile editor",
   "description": "Implement customer profile editor",
-  "status": "VALIDATED",
+  "status": "RELEASED",
   "createdAt": "2026-06-25T06:13:38.857Z",
-  "updatedAt": "2026-06-25T09:47:51.449Z",
+  "updatedAt": "2026-06-25T09:53:58.644Z",
   "specs": {
     "frontend": "platform/specs/frontend/implement-customer-profile-editor-c1664f.md",
     "backend": "platform/specs/backend/implement-customer-profile-editor-c1664f.md",
@@ -40,6 +40,11 @@
     },
     {
       "at": "2026-06-25T09:47:51.449Z",
+      "event": "RELEASED",
+      "detail": "Local release: branch feature/implement-customer-profile-editor-c1664f + commit created; push/PR skipped (AIDEV_SKIP_PR=1)."
+    },
+    {
+      "at": "2026-06-25T09:53:58.644Z",
       "event": "RELEASED",
       "detail": "Local release: branch feature/implement-customer-profile-editor-c1664f + commit created; push/PR skipped (AIDEV_SKIP_PR=1)."
     }
