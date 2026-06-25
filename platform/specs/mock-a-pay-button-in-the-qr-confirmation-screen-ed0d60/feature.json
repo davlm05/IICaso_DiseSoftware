@@ -1,0 +1,77 @@
+{
+  "id": "mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60",
+  "title": "Mock a pay button in the QR confirmation screen",
+  "description": "Mock a pay button in the QR confirmation screen",
+  "status": "VALIDATED",
+  "createdAt": "2026-06-25T18:36:57.072Z",
+  "updatedAt": "2026-06-25T18:38:11.825Z",
+  "specs": {
+    "frontend": "platform/specs/frontend/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60.md",
+    "backend": "platform/specs/backend/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60.md",
+    "data": "platform/specs/data/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60.md",
+    "observability": "platform/specs/observability/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60.md",
+    "testing": "platform/specs/testing/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60.md",
+    "cicd": "platform/specs/cicd/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60.md"
+  },
+  "history": [
+    {
+      "at": "2026-06-25T18:36:57.072Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-06-25T18:36:57.228Z",
+      "event": "SPECIFIED",
+      "detail": "6 specs authored"
+    },
+    {
+      "at": "2026-06-25T18:37:41.659Z",
+      "event": "BUILT",
+      "detail": "Offline scaffold build (placeholders)."
+    },
+    {
+      "at": "2026-06-25T18:38:11.825Z",
+      "event": "VALIDATED",
+      "detail": "validated + 1 test(s)"
+    }
+  ],
+  "build": {
+    "agents": [
+      "frontend",
+      "backend",
+      "data",
+      "infra"
+    ],
+    "touchedPaths": [
+      "platform/workspace/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60/build/frontend.placeholder.ts",
+      "platform/workspace/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60/build/backend.placeholder.ts"
+    ],
+    "summary": "Offline scaffold build (placeholders)."
+  },
+  "validation": {
+    "pass": true,
+    "summary": "Offline validation passed.",
+    "checks": [
+      {
+        "name": "All six spec domains present",
+        "dimension": "specification",
+        "pass": true,
+        "severity": "info",
+        "detail": "6/6 specs found"
+      },
+      {
+        "name": "Build produced artifacts",
+        "dimension": "functional",
+        "pass": true,
+        "severity": "info",
+        "detail": "2 file(s)"
+      }
+    ],
+    "feedback": []
+  },
+  "tests": {
+    "paths": [
+      "platform/workspace/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60/tests/mock-a-pay-button-in-the-qr-confirmation-screen-ed0d60.scaffold.test.ts"
+    ],
+    "summary": "Offline scaffold tests."
+  }
+}
