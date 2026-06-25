@@ -14,12 +14,35 @@ request into a production-ready Pull Request through four commands:
 The agents are bound to this README's design sections: the **frontend** agent follows **§1 Frontend
 Design**; the **backend / data / infra / validation / qa** agents follow **§2 Backend Design**.
 
-## Execution steps
+## Requirements & specs
 
-### Prerequisites
-- **Docker Desktop** with Compose **v2.20+** (for the one-command stack), or **Node 20** + **pnpm 9** to run on the host.
-- A Claude credential — either an **API key** or your **logged-in Claude subscription** (see Step 2).
-- Optional: **`gh`** authenticated (or a `GH_TOKEN`) so `/release-feature` can open a real PR.
+**Software**
+| Tool | Version | Needed for |
+|---|---|---|
+| **Docker Engine** | 24+ | the containers |
+| **Docker Compose** | **v2.20+** | the root compose uses `include:` (Compose v2.20 feature) |
+| Node.js | **20.x** | only if running the platform/agents on the host instead of Docker |
+| pnpm | **9.12** | host backend/platform installs (Docker installs it itself) |
+| npm | 10+ | host frontend installs |
+| Git | any recent | `/release-feature` creates the branch/commit |
+| `gh` CLI *(optional)* | any | only to open a real PR (or set `GH_TOKEN`) |
+
+**Claude credential** (for *real* agent runs; skip with `--offline`): an **`ANTHROPIC_API_KEY`**, **or**
+your Claude subscription via `claude setup-token` (Claude Code) — see Step 2.
+
+**System resources**
+- ~**6 GB free RAM** and ~**8 GB disk** for the full stack (8 containers + built images).
+- **Internet access** on first run — it pulls base images and installs npm/pnpm deps at build/startup.
+- **Host ports that must be free:** `3000` (API), `8081` (Expo Metro), `5432` (Postgres), `6379` (Redis),
+  `6432` (PgBouncer), `19006` (Expo web). Stop anything already using them, or edit the port mappings.
+
+**First-run time:** the first `docker compose up -d` **builds the api/worker/frontend/orchestrator images
+and installs all dependencies**, so it can take **5–15 min** depending on network/machine. Subsequent
+runs are fast (images + named-volume `node_modules` are cached).
+
+**Platform / OS:** developed and verified on **Windows 11 + Docker Desktop**; works on macOS/Linux too.
+The frontend container runs the **Expo Metro bundler** (connect a device via Expo Go); the browser/web
+target additionally needs `react-dom` + `react-native-web` in `frontend/`.
 
 ### 1. Clone
 ```bash
