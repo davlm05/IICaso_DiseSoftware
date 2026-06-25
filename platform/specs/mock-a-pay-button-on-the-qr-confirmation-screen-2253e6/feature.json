@@ -1,0 +1,15 @@
+{
+  "id": "mock-a-pay-button-on-the-qr-confirmation-screen-2253e6",
+  "title": "Mock a pay button on the QR confirmation screen",
+  "description": "Mock a pay button on the QR confirmation screen",
+  "status": "SPECIFIED",
+  "createdAt": "2026-06-25T22:06:14.291Z",
+  "updatedAt": "2026-06-25T22:06:14.316Z",
+  "specs": {},
+  "history": [
+    {
+      "at": "2026-06-25T22:06:14.291Z",
+      "event": "created"
+    }
+  ]
+}
