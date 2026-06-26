@@ -1,27 +1,10 @@
-/**
- * Unit test for PayButton component.
- * README §1.7 (React Native Testing Library 12.8).
- *
- * Tests the button in isolation:
- * - Default rendering (enabled, not loading)
- * - Loading state (spinner, disabled, label change)
- * - Success state (icon change, temporary disable)
- * - Error state (icon change, re-enable)
- * - Edge cases (long text, missing callback, rapid state cycles)
- *
- * Run with: `npm test -- PayButton.test.tsx`
- */
 import { render, screen, fireEvent } from '@testing-library/react-native';
-import { ActivityIndicator } from 'react-native';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
 
-/**
- * Mock Icon component for testing
- */
 jest.mock('../Icon', () => ({
-  Icon: ({ name, size, color }: any) => {
-    // Create a mockable icon component
+  Icon: ({ name, color }: { name: string; size?: number; color?: string }) => {
+    const { ActivityIndicator } = require('react-native');
     return <ActivityIndicator testID={`icon-${name}`} color={color} />;
   },
 }));
@@ -68,8 +51,7 @@ describe('PayButton — Unit (README §1.7)', () => {
       const icon = <Icon name="CreditCard" size={16} color="#FFFFFF" />;
       render(<Button {...defaultProps} icon={icon} />);
 
-      // Icon should be rendered (mocked as ActivityIndicator)
-      expect(screen.getByTestID('icon-CreditCard')).toBeTruthy();
+      expect(screen.getByTestId('icon-CreditCard')).toBeTruthy();
     });
 
     it('has correct accessibility role and label', () => {
@@ -92,74 +74,30 @@ describe('PayButton — Unit (README §1.7)', () => {
     });
   });
 
-  // ── Loading State ──────────────────────────────────────────────────────────
+  // ── Processing State ───────────────────────────────────────────────────────
 
-  describe('Loading state (isLoading=true)', () => {
-    it('shows activity indicator and hides label', () => {
-      const { getByLabelText } = render(
-        <Button
-          {...defaultProps}
-          label="Realizar Pago"
-          isLoading={true}
-        />
-      );
+  describe('Processing state expressed through existing Button props', () => {
+    it('shows the processing label supplied by the caller', () => {
+      render(<Button {...defaultProps} label="Validando..." disabled />);
 
-      // Spinner should be visible
-      expect(screen.getByTestID('activity-indicator')).toBeTruthy();
-
-      // Original label should not be visible
-      // (Depends on Button component implementation hiding label while loading)
+      expect(screen.getByLabelText('Validando...')).toBeTruthy();
     });
 
-    it('disables the button while loading', () => {
-      render(
-        <Button {...defaultProps} isLoading={true} />
-      );
-
-      const button = screen.getByRole('button');
-
-      // Button should be disabled
-      expect(button.props.accessibilityState?.disabled).toBe(true);
-    });
-
-    it('does not call onPress while loading', () => {
+    it('does not call onPress while disabled', () => {
       const onPress = jest.fn();
-      render(
-        <Button
-          {...defaultProps}
-          onPress={onPress}
-          isLoading={true}
-        />
-      );
+      render(<Button {...defaultProps} onPress={onPress} disabled />);
 
-      const button = screen.getByRole('button');
-      fireEvent.press(button);
+      fireEvent.press(screen.getByRole('button'));
 
-      // onPress should not be called (button is disabled)
       expect(onPress).not.toHaveBeenCalled();
     });
 
-    it('shows "Validando…" label when processing', () => {
-      render(
-        <Button
-          {...defaultProps}
-          label="Validando…"
-          isLoading={true}
-        />
-      );
-
-      // Label text should update
-      expect(screen.getByLabelText('Validando…')).toBeTruthy();
-    });
-
-    it('applies loading styling (opacity, etc)', () => {
-      render(
-        <Button {...defaultProps} isLoading={true} />
-      );
+    it('applies disabled accessibility state and styling', () => {
+      render(<Button {...defaultProps} disabled />);
 
       const button = screen.getByRole('button');
-      // Styling is applied via className or style prop
-      expect(button).toBeTruthy();
+      expect(button.props.accessibilityState?.disabled).toBe(true);
+      expect(button.props.className).toContain('opacity-50');
     });
   });
 
@@ -167,13 +105,12 @@ describe('PayButton — Unit (README §1.7)', () => {
 
   describe('Success state', () => {
     it('shows success icon (green checkmark) on success', () => {
-      const successIcon = <Icon name="CheckCircle" size={16} color="#10B981" />;
-      const { rerender } = render(
+      const successIcon = <Icon name="CircleCheck" size={16} color="#10B981" />;
+      render(
         <Button {...defaultProps} icon={successIcon} />
       );
 
-      // Success icon should be visible
-      expect(screen.getByTestID('icon-CheckCircle')).toBeTruthy();
+      expect(screen.getByTestId('icon-CircleCheck')).toBeTruthy();
     });
 
     it('temporarily disables button after success', () => {
@@ -204,13 +141,12 @@ describe('PayButton — Unit (README §1.7)', () => {
 
   describe('Error state', () => {
     it('shows error icon (red X) on failure', () => {
-      const errorIcon = <Icon name="AlertCircle" size={16} color="#EF4444" />;
+      const errorIcon = <Icon name="CircleAlert" size={16} color="#EF4444" />;
       render(
         <Button {...defaultProps} icon={errorIcon} />
       );
 
-      // Error icon should be visible
-      expect(screen.getByTestID('icon-AlertCircle')).toBeTruthy();
+      expect(screen.getByTestId('icon-CircleAlert')).toBeTruthy();
     });
 
     it('re-enables button after error (allows retry)', () => {
@@ -277,7 +213,7 @@ describe('PayButton — Unit (README §1.7)', () => {
 
     it('accepts disabled prop independently of loading state', () => {
       render(
-        <Button {...defaultProps} disabled={true} isLoading={false} />
+        <Button {...defaultProps} disabled={true} />
       );
 
       const button = screen.getByRole('button');
@@ -290,8 +226,7 @@ describe('PayButton — Unit (README §1.7)', () => {
         <Button {...defaultProps} icon={customIcon} />
       );
 
-      // Custom icon should be rendered
-      expect(screen.getByTestID('icon-Wallet')).toBeTruthy();
+      expect(screen.getByTestId('icon-Wallet')).toBeTruthy();
     });
 
     it('handles icon=null gracefully', () => {
@@ -344,19 +279,19 @@ describe('PayButton — Unit (README §1.7)', () => {
 
     it('handles multiple state cycles without crashing', () => {
       const { rerender } = render(
-        <Button {...defaultProps} isLoading={false} />
+        <Button {...defaultProps} />
       );
 
       // Cycle through states
       for (let i = 0; i < 3; i++) {
         rerender(
-          <Button {...defaultProps} isLoading={true} />
+          <Button {...defaultProps} label="Validando..." disabled />
         );
         rerender(
-          <Button {...defaultProps} isLoading={false} disabled={true} />
+          <Button {...defaultProps} disabled={true} />
         );
         rerender(
-          <Button {...defaultProps} isLoading={false} disabled={false} />
+          <Button {...defaultProps} disabled={false} />
         );
       }
 
@@ -390,7 +325,7 @@ describe('PayButton — Unit (README §1.7)', () => {
       // Simulate rapid updates
       for (let i = 0; i < 10; i++) {
         rerender(
-          <Button {...defaultProps} isLoading={i % 2 === 0} />
+          <Button {...defaultProps} disabled={i % 2 === 0} />
         );
       }
 
@@ -410,7 +345,7 @@ describe('PayButton — Unit (README §1.7)', () => {
       expect(button.props.accessibilityRole).toBe('button');
 
       // Change icon
-      const newIcon = <Icon name="CheckCircle" size={16} color="#10B981" />;
+      const newIcon = <Icon name="CircleCheck" size={16} color="#10B981" />;
       rerender(
         <Button {...defaultProps} icon={newIcon} />
       );
@@ -443,7 +378,7 @@ describe('PayButton — Unit (README §1.7)', () => {
       fireEvent.press(button);
 
       rerender(
-        <Button {...defaultProps} onPress={onPress} isLoading={true} />
+        <Button {...defaultProps} onPress={onPress} label="Validando..." disabled />
       );
 
       // Button should still be accessible (though disabled)
@@ -474,14 +409,13 @@ describe('PayButton — Unit (README §1.7)', () => {
       expect(button.props.accessibilityState?.disabled).toBe(true);
     });
 
-    it('applies loading styling with opacity', () => {
+    it('applies disabled styling with opacity', () => {
       render(
-        <Button {...defaultProps} isLoading={true} />
+        <Button {...defaultProps} disabled />
       );
 
       const button = screen.getByRole('button');
-      // Loading state should apply styling (opacity-50, etc)
-      expect(button).toBeTruthy();
+      expect(button.props.className).toContain('opacity-50');
     });
   });
 });

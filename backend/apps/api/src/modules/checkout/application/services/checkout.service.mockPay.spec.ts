@@ -1,3 +1,5 @@
+/// <reference path="../../../../../../../node_modules/@types/jest/index.d.ts" />
+
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { MockPayResponse } from '@smartcart/shared-types';
@@ -35,7 +37,11 @@ describe('CheckoutService.mockPay (README §2.9)', () => {
 
   beforeEach(() => {
     // Mock all dependencies
-    sessionRepo = { findById: jest.fn() } as any;
+    sessionRepo = {
+      findById: jest.fn(),
+      findActiveOlderThan: jest.fn(),
+      save: jest.fn(),
+    } as any;
     pointsRepo = { creditPoints: jest.fn(), getBalance: jest.fn() } as any;
     pointsService = { calculatePoints: jest.fn() } as any;
     eventPublisher = { publish: jest.fn() } as any;
@@ -174,11 +180,7 @@ describe('CheckoutService.mockPay (README §2.9)', () => {
       // completeValidation() will throw because status is not PENDING_CHECKOUT
       jest
         .spyOn(uow, 'runInTransaction')
-        .mockImplementation(async (cb) => {
-          await expect(async () => {
-            await cb({} as any);
-          }).rejects.toThrow(InvalidTransitionError);
-        });
+        .mockImplementation(async (cb) => cb({} as any));
 
       await expect(service.mockPay(sessionId, userId)).rejects.toThrow();
     });
@@ -206,13 +208,11 @@ describe('CheckoutService.mockPay (README §2.9)', () => {
       expect(transactionCount).toBe(1);
 
       // Second call fails (session now COMPLETED)
-      mockSession.status = 'COMPLETED';
+      (mockSession as unknown as { status: string }).status = 'COMPLETED';
       jest
         .spyOn(uow, 'runInTransaction')
         .mockImplementation(async (cb) => {
-          throw new InvalidTransitionError(
-            'Cannot complete an already-completed session',
-          );
+          throw new InvalidTransitionError('COMPLETED', 'completeValidation');
         });
 
       await expect(service.mockPay(sessionId, userId)).rejects.toThrow(
@@ -306,16 +306,15 @@ describe('CheckoutService.mockPay (README §2.9)', () => {
       jest.spyOn(pointsService, 'calculatePoints').mockReturnValue(100);
 
       const transactionOperations: string[] = [];
+      jest.spyOn(sessionRepo, 'save').mockImplementation(async () => {
+        transactionOperations.push('session.save');
+      });
 
       jest
         .spyOn(uow, 'runInTransaction')
         .mockImplementation(async (cb) => {
           transactionOperations.push('enter');
-          await cb({
-            save: jest.fn(() => {
-              transactionOperations.push('session.save');
-            }),
-          } as any);
+          await cb({} as any);
           transactionOperations.push('commit');
         });
 
@@ -481,9 +480,7 @@ function createMockSession(overrides: Partial<ShoppingSession> = {}) {
     updatedAt: new Date(),
     completeValidation: jest.fn(function (this: any) {
       if (this.status !== 'PENDING_CHECKOUT') {
-        throw new InvalidTransitionError(
-          `Cannot complete session in status ${this.status}`,
-        );
+        throw new InvalidTransitionError(this.status, 'completeValidation');
       }
       this.status = 'COMPLETED';
     }),

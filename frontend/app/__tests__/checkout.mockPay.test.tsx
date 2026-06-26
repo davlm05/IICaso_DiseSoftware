@@ -34,6 +34,12 @@ jest.mock('expo-router', () => ({
   }),
 }));
 
+const storeActions = {
+  generateQr: useSessionStore.getState().generateQr,
+  confirmValidation: useSessionStore.getState().confirmValidation,
+  reset: useSessionStore.getState().reset,
+};
+
 // Mock the real product for state seeding
 const testProduct: ProductDTO = {
   id: 'product-1',
@@ -71,6 +77,7 @@ describe('CheckoutScreen — mock pay button (README §1.7)', () => {
     mockReplace.mockClear();
     mockPush.mockClear();
     useSessionStore.getState().reset?.();
+    useSessionStore.setState(storeActions);
   });
 
   // ── Rendering ──────────────────────────────────────────────────────────────
@@ -91,6 +98,7 @@ describe('CheckoutScreen — mock pay button (README §1.7)', () => {
         qrToken: null, // No QR yet
         qrFallbackCode: null,
         qrExpiresAt: null,
+        generateQr: jest.fn(),
       });
 
       render(<CheckoutScreen />);
@@ -165,6 +173,9 @@ describe('CheckoutScreen — mock pay button (README §1.7)', () => {
         status: 'PENDING_CHECKOUT',
         pendingItems: [testProduct],
         qrToken: null, // No QR
+        qrFallbackCode: null,
+        qrExpiresAt: null,
+        generateQr: jest.fn(),
       });
 
       render(<CheckoutScreen />);

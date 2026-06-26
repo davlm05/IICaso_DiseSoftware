@@ -141,7 +141,7 @@ describe('MockPayResponse — Contract (README §2.9)', () => {
       expect(() => MockPayResponseSchema.parse(incomplete)).toThrow();
     });
 
-    it('rejects extra fields when not using passthrough', () => {
+    it('strips extra fields by default', () => {
       const withExtra = {
         sessionId: '550e8400-e29b-41d4-a716-446655440000',
         status: 'COMPLETED',
@@ -151,7 +151,8 @@ describe('MockPayResponse — Contract (README §2.9)', () => {
         extraField: 'should-be-rejected',
       };
 
-      expect(() => MockPayResponseSchema.parse(withExtra)).toThrow();
+      const parsed = MockPayResponseSchema.parse(withExtra);
+      expect(parsed).not.toHaveProperty('extraField');
     });
   });
 

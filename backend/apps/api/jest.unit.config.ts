@@ -16,7 +16,7 @@ const config: Config = {
   },
   moduleNameMapper: {
     '^@smartcart/shared-types$':
-      '<rootDir>/../../../packages/shared-types/src/index.ts',
+      '<rootDir>/../../../../packages/shared-types/src/index.ts',
   },
   collectCoverageFrom: [
     '**/*.ts',
