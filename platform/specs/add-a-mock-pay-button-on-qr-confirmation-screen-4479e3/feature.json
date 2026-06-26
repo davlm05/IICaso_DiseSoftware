@@ -1,0 +1,32 @@
+{
+  "id": "add-a-mock-pay-button-on-qr-confirmation-screen-4479e3",
+  "title": "Add a mock pay button on QR confirmation screen",
+  "description": "Add a mock pay button on QR confirmation screen",
+  "status": "BUILD_FAILED",
+  "createdAt": "2026-06-26T00:34:26.906Z",
+  "updatedAt": "2026-06-26T01:02:12.039Z",
+  "specs": {
+    "frontend": "platform/specs/frontend/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md",
+    "backend": "platform/specs/backend/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md",
+    "data": "platform/specs/data/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md",
+    "observability": "platform/specs/observability/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md",
+    "testing": "platform/specs/testing/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md",
+    "cicd": "platform/specs/cicd/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md"
+  },
+  "history": [
+    {
+      "at": "2026-06-26T00:34:26.906Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-06-26T00:54:48.256Z",
+      "event": "SPECIFIED",
+      "detail": "6 specs authored"
+    },
+    {
+      "at": "2026-06-26T01:02:12.039Z",
+      "event": "BUILD_FAILED",
+      "detail": "claude -p exited 1 for backend: {\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"api_error_status\":429,\"duration_ms\":158242,\"duration_api_ms\":11187,\"num_turns\":3,\"result\":\"You've hit your session limit · resets 5am (UTC)\",\"stop_reason\":\"stop_sequence\",\"session_id\":\"a35a8746-92a2-4752-9a98-3682d1d704af\",\"total_cost_usd\":0.5458035,\"usage\":{\"input_tokens\":2485,\"cache_creation_input_tokens\":41139,\"cache_read_input_tokens\":166351,\"output_tokens\":440,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_ti"
+    }
+  ]
+}

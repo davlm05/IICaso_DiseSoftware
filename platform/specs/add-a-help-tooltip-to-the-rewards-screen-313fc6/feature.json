@@ -1,0 +1,27 @@
+{
+  "id": "add-a-help-tooltip-to-the-rewards-screen-313fc6",
+  "title": "Add a help tooltip to the rewards screen",
+  "description": "Add a help tooltip to the rewards screen",
+  "status": "SPECIFIED",
+  "createdAt": "2026-06-26T00:26:29.371Z",
+  "updatedAt": "2026-06-26T00:43:25.266Z",
+  "specs": {
+    "frontend": "platform/specs/frontend/add-a-help-tooltip-to-the-rewards-screen-313fc6.md",
+    "backend": "platform/specs/backend/add-a-help-tooltip-to-the-rewards-screen-313fc6.md",
+    "data": "platform/specs/data/add-a-help-tooltip-to-the-rewards-screen-313fc6.md",
+    "observability": "platform/specs/observability/add-a-help-tooltip-to-the-rewards-screen-313fc6.md",
+    "testing": "platform/specs/testing/add-a-help-tooltip-to-the-rewards-screen-313fc6.md",
+    "cicd": "platform/specs/cicd/add-a-help-tooltip-to-the-rewards-screen-313fc6.md"
+  },
+  "history": [
+    {
+      "at": "2026-06-26T00:26:29.371Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-06-26T00:43:25.266Z",
+      "event": "SPECIFIED",
+      "detail": "6 specs authored"
+    }
+  ]
+}
