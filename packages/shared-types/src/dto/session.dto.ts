@@ -9,6 +9,7 @@ import {
   AddItemRequestSchema,
   ValidateSessionRequestSchema,
   QrTicketResponseSchema,
+  MockPayResponseSchema,
 } from '../validation/session.schemas';
 
 /**
@@ -26,3 +27,4 @@ export type CreateSessionRequest = z.infer<typeof CreateSessionRequestSchema>;
 export type AddItemRequest = z.infer<typeof AddItemRequestSchema>;
 export type ValidateSessionRequest = z.infer<typeof ValidateSessionRequestSchema>;
 export type QrTicketResponse = z.infer<typeof QrTicketResponseSchema>;
+export type MockPayResponse = z.infer<typeof MockPayResponseSchema>;

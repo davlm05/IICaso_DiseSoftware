@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.QrTicketResponseSchema = exports.ValidateSessionRequestSchema = exports.AddItemRequestSchema = exports.CreateSessionRequestSchema = exports.SessionDTOSchema = exports.SessionItemDTOSchema = exports.ProductDTOSchema = exports.PointsConfigSchema = exports.SessionStatusSchema = exports.BarcodeSchema = void 0;
+exports.MockPayResponseSchema = exports.QrTicketResponseSchema = exports.ValidateSessionRequestSchema = exports.AddItemRequestSchema = exports.CreateSessionRequestSchema = exports.SessionDTOSchema = exports.SessionItemDTOSchema = exports.ProductDTOSchema = exports.PointsConfigSchema = exports.SessionStatusSchema = exports.BarcodeSchema = void 0;
 const zod_1 = require("zod");
 exports.BarcodeSchema = zod_1.z.string().regex(/^\d{8,14}$/).max(14);
 exports.SessionStatusSchema = zod_1.z.enum([
@@ -67,5 +67,12 @@ exports.ValidateSessionRequestSchema = zod_1.z.object({
 exports.QrTicketResponseSchema = zod_1.z.object({
     token: zod_1.z.string(),
     expiresAt: zod_1.z.string().datetime(),
+});
+exports.MockPayResponseSchema = zod_1.z.object({
+    sessionId: zod_1.z.string().uuid(),
+    status: exports.SessionStatusSchema,
+    pointsAwarded: zod_1.z.number().int().nonnegative(),
+    newBalance: zod_1.z.number().int(),
+    mock: zod_1.z.literal(true),
 });
 //# sourceMappingURL=session.schemas.js.map

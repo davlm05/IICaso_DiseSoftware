@@ -87,3 +87,15 @@ export const QrTicketResponseSchema = z.object({
   token: z.string(),
   expiresAt: z.string().datetime(), // ISO-8601; 10-minute window per README §2.3
 });
+
+// ── Mock pay (dev/demo only) ────────────────────────────────────────────────
+// Response of POST /sessions/:id/qr/pay — a feature-gated, owner-scoped mock that
+// drives PENDING_CHECKOUT → COMPLETED, mirroring ValidateSessionResult. The
+// `mock: true` literal marks the settlement as simulated (never a real POS path).
+export const MockPayResponseSchema = z.object({
+  sessionId: z.string().uuid(),
+  status: SessionStatusSchema, // 'COMPLETED' on success
+  pointsAwarded: z.number().int().nonnegative(),
+  newBalance: z.number().int(),
+  mock: z.literal(true),
+});

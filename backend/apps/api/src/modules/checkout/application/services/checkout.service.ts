@@ -7,8 +7,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
   AddItemRequest,
+  MockPayResponse,
   QrTicketResponse,
   SessionDTO,
 } from '@smartcart/shared-types';
@@ -74,6 +76,7 @@ export class CheckoutService {
     @Inject(CATALOG_SERVICE) private readonly catalog: ICatalogService,
     private readonly pointsService: PointsService,
     private readonly metrics: BusinessMetricsService,
+    private readonly config: ConfigService,
   ) {}
 
   // ── Workflow 4: session creation & scanning ─────────────────────────────────
@@ -234,6 +237,71 @@ export class CheckoutService {
       status: session.status,
       pointsAwarded,
       newBalance,
+    };
+  }
+
+  // ── Mock pay (dev/demo only) ────────────────────────────────────────────────
+
+  /**
+   * Mock checkout (README §2.5 A04/A05, backend spec §5). Drives a
+   * PENDING_CHECKOUT session the caller owns to COMPLETED and credits the frozen
+   * points, reusing the exact atomic boundary + state machine of the real
+   * `validateSession()` flow — but WITHOUT the POS API key / QR signature / item
+   * hash checks, because its purpose is to simulate the POS for demos. Disabled
+   * in production behind `MOCK_PAY_ENABLED` so it can never become a points-minting
+   * bypass of the real POS path; when off the endpoint is invisible (404).
+   *
+   * Replay-safety + idempotency are guaranteed purely by the domain state machine:
+   * `completeValidation()` throws `InvalidTransitionError` for any non-
+   * PENDING_CHECKOUT status, so a double-tap of the pay button never double-credits.
+   */
+  async mockPay(sessionId: string, userId: string): Promise<MockPayResponse> {
+    // 1. Feature gate — invisible in production (README §2.5 A05).
+    if (this.config.get<boolean>('MOCK_PAY_ENABLED') !== true) {
+      throw new NotFoundException('Session not found.');
+    }
+
+    // 2. Load + ownership (README §2.5 A01, §2.8 W4 ownership rule).
+    const session = await this.loadOwned(sessionId, userId);
+
+    // 3. Points — same Strategy-pattern path as real validation (sponsored skipped).
+    const pointsAwarded = this.pointsService.calculatePoints(session);
+
+    // 4. State machine + ACID transaction (replay-safe). No external I/O inside.
+    await this.uow.runInTransaction(async (tx) => {
+      session.completeValidation(); // PENDING_CHECKOUT → COMPLETED (guarded)
+      await this.sessions.save(session, tx);
+      await this.points.creditPoints(
+        {
+          userId: session.userId,
+          delta: pointsAwarded,
+          reason: 'PURCHASE',
+          sessionId: session.id,
+        },
+        tx,
+      );
+    });
+
+    const newBalance = await this.points.getBalance(session.userId);
+
+    // 5. Post-commit side effects — best-effort, never roll back the sale.
+    void this.publishSideEffects(session, pointsAwarded);
+
+    this.logger.log({
+      event: 'AUDIT',
+      action: 'mockPay',
+      userId: session.userId,
+      sessionId: session.id,
+      pointsAwarded,
+    });
+
+    // 6. Return the simulated-settlement contract.
+    return {
+      sessionId: session.id,
+      status: session.status,
+      pointsAwarded,
+      newBalance,
+      mock: true,
     };
   }
 

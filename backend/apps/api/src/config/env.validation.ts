@@ -34,6 +34,11 @@ export const envSchema = z.object({
 
   CORS_ORIGIN: z.string().default('*'),
 
+  // README §2.5 A04/A05 — mock checkout endpoint (POST /sessions/:id/qr/pay) is a
+  // dev/demo affordance only. Defaults to false so it 404s in production and can
+  // never substitute for the API-key-scoped POS validation path.
+  MOCK_PAY_ENABLED: z.coerce.boolean().default(false),
+
   // Observability (README §2.6) — all optional; absence disables the exporter.
   SENTRY_DSN: z.string().url().optional(),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),

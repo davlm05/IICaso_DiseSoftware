@@ -293,3 +293,22 @@ export declare const QrTicketResponseSchema: z.ZodObject<{
     token: string;
     expiresAt: string;
 }>;
+export declare const MockPayResponseSchema: z.ZodObject<{
+    sessionId: z.ZodString;
+    status: z.ZodEnum<["ACTIVE", "PENDING_CHECKOUT", "COMPLETED", "VALIDATION_FAILED", "EXPIRED"]>;
+    pointsAwarded: z.ZodNumber;
+    newBalance: z.ZodNumber;
+    mock: z.ZodLiteral<true>;
+}, "strip", z.ZodTypeAny, {
+    status: "ACTIVE" | "PENDING_CHECKOUT" | "COMPLETED" | "VALIDATION_FAILED" | "EXPIRED";
+    sessionId: string;
+    pointsAwarded: number;
+    newBalance: number;
+    mock: true;
+}, {
+    status: "ACTIVE" | "PENDING_CHECKOUT" | "COMPLETED" | "VALIDATION_FAILED" | "EXPIRED";
+    sessionId: string;
+    pointsAwarded: number;
+    newBalance: number;
+    mock: true;
+}>;
