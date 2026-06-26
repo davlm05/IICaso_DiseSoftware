@@ -4,7 +4,7 @@
   "description": "Add a mock pay button on QR confirmation screen",
   "status": "RELEASE_FAILED",
   "createdAt": "2026-06-26T00:34:26.906Z",
-  "updatedAt": "2026-06-26T02:04:59.601Z",
+  "updatedAt": "2026-06-26T04:00:59.056Z",
   "specs": {
     "frontend": "platform/specs/frontend/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md",
     "backend": "platform/specs/backend/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md",
@@ -42,6 +42,16 @@
       "at": "2026-06-26T02:04:59.601Z",
       "event": "RELEASE_FAILED",
       "detail": "backend:test:unit (pnpm test:unit --passWithNoTests) exited 1; frontend:typecheck (npm run typecheck) exited 2; frontend:test (npm test -- --passWithNoTests) exited 1"
+    },
+    {
+      "at": "2026-06-26T02:36:15.563Z",
+      "event": "RELEASE_FAILED",
+      "detail": "backend:test:unit (pnpm test:unit --passWithNoTests) exited 1; frontend:typecheck (npm run typecheck) exited 2; frontend:test (npm test -- --passWithNoTests) exited 1"
+    },
+    {
+      "at": "2026-06-26T04:00:59.056Z",
+      "event": "RELEASE_FAILED",
+      "detail": "git commit failed"
     }
   ],
   "build": {
@@ -97,8 +107,8 @@
   },
   "release": {
     "branch": "feature/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3",
-    "testsPassed": false,
-    "qualityGatesPassed": false,
-    "notes": "Quality gates failed: backend:test:unit (pnpm test:unit --passWithNoTests) exited 1; frontend:typecheck (npm run typecheck) exited 2; frontend:test (npm test -- --passWithNoTests) exited 1"
+    "testsPassed": true,
+    "qualityGatesPassed": true,
+    "notes": "git commit failed: "
   }
 }
