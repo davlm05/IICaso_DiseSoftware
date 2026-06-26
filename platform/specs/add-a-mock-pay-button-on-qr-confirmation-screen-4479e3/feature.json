@@ -2,9 +2,9 @@
   "id": "add-a-mock-pay-button-on-qr-confirmation-screen-4479e3",
   "title": "Add a mock pay button on QR confirmation screen",
   "description": "Add a mock pay button on QR confirmation screen",
-  "status": "RELEASE_FAILED",
+  "status": "RELEASED",
   "createdAt": "2026-06-26T00:34:26.906Z",
-  "updatedAt": "2026-06-26T04:00:59.056Z",
+  "updatedAt": "2026-06-26T04:54:47.084Z",
   "specs": {
     "frontend": "platform/specs/frontend/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md",
     "backend": "platform/specs/backend/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3.md",
@@ -52,6 +52,11 @@
       "at": "2026-06-26T04:00:59.056Z",
       "event": "RELEASE_FAILED",
       "detail": "git commit failed"
+    },
+    {
+      "at": "2026-06-26T04:54:47.084Z",
+      "event": "RELEASED",
+      "detail": "Local release: branch feature/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3 + commit created; push/PR skipped (AIDEV_SKIP_PR=1)."
     }
   ],
   "build": {
@@ -107,8 +112,9 @@
   },
   "release": {
     "branch": "feature/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3",
+    "releaseNotesPath": "platform/specs/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3/RELEASE_NOTES.md",
     "testsPassed": true,
     "qualityGatesPassed": true,
-    "notes": "git commit failed: "
+    "notes": "Local release: branch feature/add-a-mock-pay-button-on-qr-confirmation-screen-4479e3 + commit created; push/PR skipped (AIDEV_SKIP_PR=1)."
   }
 }

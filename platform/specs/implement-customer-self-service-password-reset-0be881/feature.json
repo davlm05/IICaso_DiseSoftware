@@ -1,0 +1,15 @@
+{
+  "id": "implement-customer-self-service-password-reset-0be881",
+  "title": "Implement customer self-service password reset",
+  "description": "Implement customer self-service password reset",
+  "status": "SPECIFIED",
+  "createdAt": "2026-06-25T19:44:07.038Z",
+  "updatedAt": "2026-06-25T19:44:07.038Z",
+  "specs": {},
+  "history": [
+    {
+      "at": "2026-06-25T19:44:07.038Z",
+      "event": "created"
+    }
+  ]
+}

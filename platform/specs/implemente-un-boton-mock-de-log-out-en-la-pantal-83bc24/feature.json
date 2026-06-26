@@ -1,0 +1,15 @@
+{
+  "id": "implemente-un-boton-mock-de-log-out-en-la-pantal-83bc24",
+  "title": "Implemente un boton mock de log out en la pantalla de perfil",
+  "description": "Implemente un boton mock de log out en la pantalla de perfil",
+  "status": "SPECIFIED",
+  "createdAt": "2026-06-26T01:12:48.233Z",
+  "updatedAt": "2026-06-26T01:12:48.235Z",
+  "specs": {},
+  "history": [
+    {
+      "at": "2026-06-26T01:12:48.233Z",
+      "event": "created"
+    }
+  ]
+}

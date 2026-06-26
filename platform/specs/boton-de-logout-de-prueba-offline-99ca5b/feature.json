@@ -1,0 +1,27 @@
+{
+  "id": "boton-de-logout-de-prueba-offline-99ca5b",
+  "title": "Boton de logout de prueba offline",
+  "description": "Boton de logout de prueba offline",
+  "status": "SPECIFIED",
+  "createdAt": "2026-06-26T01:53:50.114Z",
+  "updatedAt": "2026-06-26T01:53:50.464Z",
+  "specs": {
+    "frontend": "platform/specs/frontend/boton-de-logout-de-prueba-offline-99ca5b.md",
+    "backend": "platform/specs/backend/boton-de-logout-de-prueba-offline-99ca5b.md",
+    "data": "platform/specs/data/boton-de-logout-de-prueba-offline-99ca5b.md",
+    "observability": "platform/specs/observability/boton-de-logout-de-prueba-offline-99ca5b.md",
+    "testing": "platform/specs/testing/boton-de-logout-de-prueba-offline-99ca5b.md",
+    "cicd": "platform/specs/cicd/boton-de-logout-de-prueba-offline-99ca5b.md"
+  },
+  "history": [
+    {
+      "at": "2026-06-26T01:53:50.114Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-06-26T01:53:50.464Z",
+      "event": "SPECIFIED",
+      "detail": "6 specs authored"
+    }
+  ]
+}

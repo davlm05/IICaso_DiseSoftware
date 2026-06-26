@@ -76,15 +76,6 @@ Check health: `docker compose ps` · API liveness: `curl localhost:3000/api/v1/h
 ### 4. Run the spec-driven workflow
 Drive it inside the orchestrator container. Two equivalent forms:
 
-**CLI form (recommended for scripting):**
-```bash
-docker compose exec orchestrator aidev feature "Implement customer self-service password reset"
-docker compose exec orchestrator aidev build-feature <feature-id>
-docker compose exec orchestrator aidev validate-feature <feature-id>
-docker compose exec orchestrator aidev release-feature <feature-id>
-docker compose exec orchestrator aidev list           # see every feature + status
-```
-
 **REPL form (the literal `/feature` syntax from the case):**
 ```bash
 docker compose exec orchestrator aidev repl
@@ -95,17 +86,6 @@ aidev> /release-feature <feature-id>
 ```
 > The `feature` command prints the generated `<feature-id>`; pass it to the next three commands.
 
-### Alternative: run on the host (no Docker)
-```bash
-cd platform
-npm install && npm run build
-export ANTHROPIC_API_KEY=sk-ant-...        # or: source scripts/use-claude-auth.sh
-node dist/cli.js feature "Implement customer self-service password reset"
-node dist/cli.js build-feature <feature-id>
-node dist/cli.js validate-feature <feature-id>
-node dist/cli.js release-feature <feature-id>
-node dist/cli.js repl                       # interactive REPL ( /feature ... )
-```
 
 ### What each command does
 | Command | Produces |
@@ -118,6 +98,60 @@ node dist/cli.js repl                       # interactive REPL ( /feature ... )
 Offline equivalent (no credential, deterministic): add `--offline`, e.g.
 `aidev --offline feature "..."`. Full reference and the OAuth/auth modes:
 [`platform/README.md`](platform/README.md).
+
+### Running a real release on a Claude subscription (verified steps)
+
+These are the exact steps we used to drive `/release-feature` end-to-end using a
+**Claude Pro/Max subscription** (no metered API key), plus the gotchas we hit.
+
+**1. Configure `.env` for subscription (OAuth) auth.** Use the Claude Code token,
+and set the provider to `claude-code` so the agents run through the CLI (the raw
+Messages API rejects subscription tokens):
+```dotenv
+# Get the token: run `claude setup-token` in a terminal (prints sk-ant-oat01-...)
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
+ANTHROPIC_AUTH_TOKEN=          # leave EMPTY — it forces "API-key precedence" and breaks OAuth
+ANTHROPIC_API_KEY=            # leave EMPTY when using the subscription
+AIDEV_AUTH_MODE=oauth
+AIDEV_PROVIDER=claude-code
+AIDEV_SKIP_PR=1               # local-only release: branch + commit, no push/PR
+```
+
+**2. Make sure the orchestrator image has the Claude Code CLI.** The
+`claude-code` provider spawns the `claude` binary *inside* the container, so the
+image must be rebuilt after any Dockerfile change:
+```bash
+docker compose build orchestrator
+docker compose up -d --force-recreate orchestrator   # also reloads .env
+```
+Verify: `docker compose exec orchestrator claude --version`.
+
+**3. Drive the workflow in the REPL:**
+```bash
+docker compose exec orchestrator aidev repl
+aidev> /feature "Add a mock pay button on QR confirmation screen"
+aidev> /build-feature <feature-id>
+aidev> /validate-feature <feature-id>
+aidev> /release-feature <feature-id>
+```
+
+**4. If `/release-feature` reports `RELEASE_FAILED`**, a quality gate failed. The
+gates are the same commands CI runs (see [`platform/src/engine.ts`](platform/src/engine.ts) →
+`qualityGates()`). Reproduce each one directly to see the real error:
+```bash
+docker compose exec orchestrator sh -c "cd /workspace/backend  && pnpm lint && pnpm type-check && pnpm test:unit --passWithNoTests"
+docker compose exec orchestrator sh -c "cd /workspace/frontend && npm run typecheck && npm test -- --passWithNoTests"
+```
+Fix the offending code/tests, then re-run `/release-feature <feature-id>`. On
+success the status flips to **RELEASED** and a `feat: <title>` commit lands on
+branch `feature/<feature-id>`.
+
+> **Gotchas we hit:** (a) a paste-corrupted OAuth token with a stray space →
+> auth fails silently; (b) CRLF line endings on `*.sh` scripts break the Linux
+> entrypoint — keep them LF (see [`.gitattributes`](.gitattributes)); (c) the
+> orchestrator image must be rebuilt to pick up the `claude` CLI; (d) a 429
+> `rate_limit_error` (not 401) means the **subscription usage limit** is reached —
+> wait for the window to reset or use a different account.
 
 ---
 

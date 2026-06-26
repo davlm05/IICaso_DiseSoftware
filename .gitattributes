@@ -1,0 +1,13 @@
+# Force LF on shell scripts and entrypoints so they run inside Linux containers.
+# (CRLF in a shebang line makes the kernel look for `bash\r` → "can't execute 'bash'".)
+*.sh            text eol=lf
+entrypoint-*.sh text eol=lf
+
+# Other text files: normalize to LF in the repo, let git handle checkout.
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
